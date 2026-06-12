@@ -87,7 +87,9 @@ export class GameMap {
   }
 
   buildMesh() {
-    const geo = new THREE.PlaneGeometry(WORLD, WORLD, GRID - 1, GRID - 1);
+    // 2x grid density for smoother hill silhouettes; heights sampled bilinearly
+    const SEG = GRID * 2 - 1;
+    const geo = new THREE.PlaneGeometry(WORLD, WORLD, SEG, SEG);
     geo.rotateX(-Math.PI / 2);
     geo.translate(WORLD / 2, 0, WORLD / 2);
     const pos = geo.attributes.position;
@@ -97,10 +99,11 @@ export class GameMap {
           cRock = new THREE.Color(0x2a2a33), cSand = new THREE.Color(0x6b5e4c),
           cMoss = new THREE.Color(0x44524a);
     for (let i = 0; i < pos.count; i++) {
-      const gx = i % GRID, gy = Math.floor(i / GRID);
-      const h = this.height[this.idx(gx, gy)];
+      const wx = pos.getX(i), wz = pos.getZ(i);
+      const h = this.heightAt(wx, wz);
       pos.setY(i, h);
-      const n = noise(gx * 0.2, gy * 0.2);
+      const gx = wx / TILE, gy = wz / TILE;
+      const n = noise(gx * 0.2, gy * 0.2) * 0.8 + noise(gx * 0.7, gy * 0.7) * 0.2;
       let c = cBase.clone().lerp(cAsh, n);
       if (n > 0.62) c.lerp(cSand, (n - 0.62) * 1.6);
       if (n < 0.3) c.lerp(cMoss, (0.3 - n) * 1.2);

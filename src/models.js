@@ -432,6 +432,15 @@ export function buildDoodad(type) {
 // ---------- factory ----------
 
 const factionMats = new Map();
+
+// Subtle "living sigil" flicker on all faction glow materials.
+export function tickGlowMats(time) {
+  let i = 0;
+  for (const { g } of factionMats.values()) {
+    g.emissiveIntensity = 1.8 + Math.sin(time * 2.4 + i * 1.7) * 0.22;
+    i++;
+  }
+}
 function getFactionMats(color, glow) {
   const key = color + ':' + glow;
   if (!factionMats.has(key)) {

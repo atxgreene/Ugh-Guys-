@@ -1,9 +1,13 @@
 // Core RTS engine: entities, orders, combat, economy, production, win/loss.
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GameMap, GRID, TILE, WORLD } from './terrain.js';
 import { findPath, findNearestWalkable } from './pathfinding.js';
 import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP } from './data.js';
-import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat } from './models.js';
+import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats } from './models.js';
 import { Sound } from './audio.js';
 
 let nextId = 1;
@@ -46,6 +50,7 @@ export class Unit extends Entity {
     this.scanT = Math.random() * 0.3;
     this.animT = Math.random() * 10;
     this.facing = Math.random() * Math.PI * 2;
+    this.facingTarget = this.facing;
     this.leash = null;         // neutral guard post
     const f = owner === 2 ? { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW } : game.players[owner].faction;
     this.mesh = buildUnitMesh(def.model, f.color, f.glow);
@@ -101,7 +106,7 @@ export class Unit extends Entity {
     const sp = this.def.speed * dt;
     this.pos.x += (mx / md) * sp;
     this.pos.z += (mz / md) * sp;
-    this.facing = Math.atan2(mx, mz);
+    this.facingTarget = Math.atan2(mx, mz);
     this.moving = true;
     if (!wp && md < 0.5) { this.path = null; }
     return Math.hypot(x - this.pos.x, z - this.pos.z) <= near;
@@ -175,7 +180,7 @@ export class Unit extends Entity {
         }
         const inRange = this.distTo(t) <= this.attackRange(t);
         if (!inRange) { this.seek(t.pos.x, t.pos.z, this.attackRange(t) - 0.2, dt); break; }
-        this.facing = Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
+        this.facingTarget = Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
         if (this.cooldown <= 0) {
           this.cooldown = atk.cooldown;
           this.lungeT = 0.18;
@@ -188,7 +193,7 @@ export class Unit extends Entity {
         if (!n || n.amount <= 0) { this.findNewNode(); break; }
         if (this.seek(n.pos.x, n.pos.z, n.radius + this.radius + 0.5, dt)) {
           this.gatherT = (this.gatherT ?? 0) + dt;
-          this.facing = Math.atan2(n.pos.x - this.pos.x, n.pos.z - this.pos.z);
+          this.facingTarget = Math.atan2(n.pos.x - this.pos.x, n.pos.z - this.pos.z);
           const info = RESOURCE_NODES[n.type];
           if (this.gatherT >= info.gatherTime) {
             this.gatherT = 0;
@@ -216,7 +221,7 @@ export class Unit extends Entity {
         const s = this.buildSite;
         if (!s || s.dead || s.complete) { this.stop(); break; }
         if (this.seek(s.pos.x, s.pos.z, s.radius + this.radius + 0.8, dt)) {
-          this.facing = Math.atan2(s.pos.x - this.pos.x, s.pos.z - this.pos.z);
+          this.facingTarget = Math.atan2(s.pos.x - this.pos.x, s.pos.z - this.pos.z);
           s.builders = Math.min(3, (s.builders || 0) + 1);
         }
         break;
@@ -249,12 +254,15 @@ export class Unit extends Entity {
       }
     }
 
-    // visuals
+    // visuals — smooth turn toward facing target (shortest arc)
+    const dA = ((this.facingTarget - this.facing + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    this.facing += dA * Math.min(1, dt * 11);
     this.animT += dt * (this.moving ? 10 : 2);
     const h = this.game.map.heightAt(this.pos.x, this.pos.z);
     this.mesh.position.set(this.pos.x, h + (this.moving ? Math.abs(Math.sin(this.animT)) * 0.12 : 0), this.pos.z);
     this.mesh.rotation.y = this.facing;
     this.mesh.rotation.z = this.moving ? Math.sin(this.animT) * 0.06 : 0;
+    this.mesh.rotation.x = this.moving ? 0.05 : 0; // slight lean into the run
     if (this.lungeT > 0) {
       this.lungeT -= dt;
       this.mesh.position.x += Math.sin(this.facing) * 0.25 * (this.lungeT / 0.18);
@@ -306,6 +314,15 @@ export class Building extends Entity {
     this.mesh.scale.y = 0.08;
     this.mesh.userData.entity = this;
     game.scene.add(this.mesh);
+    // faction-colored claim glow under the structure
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(size * TILE * 0.6, 24),
+      new THREE.MeshBasicMaterial({ color: f.glow, transparent: true, opacity: 0.09, depthWrite: false })
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.set(cx, this.groundY + 0.06, cz);
+    game.scene.add(disc);
+    this.disc = disc;
     // block tiles
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++)
       game.map.blocked[game.map.idx(tx + x, ty + y)] = 1;
@@ -410,6 +427,7 @@ export class Game {
     this.map = new GameMap(opts.seed);
     this.scene.add(this.map.buildMesh());
     this.map.scatterDoodads(this.scene);
+    this.initAtmosphere();
     this.spawnInitial();
     this.map.updateFog(this.playerViewers());
     this.applyFogVisibility();
@@ -429,7 +447,7 @@ export class Game {
   }
 
   initRenderer() {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
@@ -461,11 +479,70 @@ export class Game {
     star.position.set(WORLD * 0.5, 38, -90);
     this.scene.add(star);
 
+    // bloom pipeline (MSAA target so edges stay clean)
+    const w = this.container.clientWidth, h = this.container.clientHeight;
+    const rt = new THREE.WebGLRenderTarget(w, h, { samples: 4, type: THREE.HalfFloatType });
+    this.composer = new EffectComposer(this.renderer, rt);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.45, 0.55, 0.62);
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
+
     window.addEventListener('resize', this.onResize = () => {
-      this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+      const cw = this.container.clientWidth, ch = this.container.clientHeight;
+      this.camera.aspect = cw / ch;
       this.camera.updateProjectionMatrix();
-      this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+      this.renderer.setSize(cw, ch);
+      this.composer.setSize(cw, ch);
     });
+  }
+
+  initAtmosphere() {
+    // still black water in the lowland basins
+    const water = new THREE.Mesh(
+      new THREE.PlaneGeometry(WORLD, WORLD),
+      new THREE.MeshStandardMaterial({ color: 0x0d1118, metalness: 0.85, roughness: 0.25 })
+    );
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(WORLD / 2, 0.24, WORLD / 2);
+    water.receiveShadow = true;
+    this.scene.add(water);
+
+    // drifting embers — ash of the age, caught by bloom
+    const N = 160;
+    const posArr = new Float32Array(N * 3);
+    this.emberVel = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      posArr[i * 3] = Math.random() * WORLD;
+      posArr[i * 3 + 1] = Math.random() * 10;
+      posArr[i * 3 + 2] = Math.random() * WORLD;
+      this.emberVel[i] = 0.4 + Math.random() * 0.9;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+    this.embers = new THREE.Points(geo, new THREE.PointsMaterial({
+      color: 0xff8a50, size: 0.32, sizeAttenuation: true, transparent: true,
+      opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    this.scene.add(this.embers);
+  }
+
+  updateEmbers(dt) {
+    const a = this.embers.geometry.attributes.position;
+    for (let i = 0; i < a.count; i++) {
+      let y = a.getY(i) + this.emberVel[i] * dt;
+      let x = a.getX(i) + Math.sin(this.time * 0.7 + i) * dt * 0.6;
+      if (y > 11) {
+        // respawn at ground level, only over ground the player has seen
+        for (let tries = 0; tries < 4; tries++) {
+          const nx = Math.random() * WORLD, nz = Math.random() * WORLD;
+          if (this.map.fogStateAt(nx, nz) >= 1) { x = nx; a.setZ(i, nz); break; }
+        }
+        y = this.map.heightAt(x, a.getZ(i)) + 0.5;
+      }
+      a.setX(i, x); a.setY(i, y);
+    }
+    a.needsUpdate = true;
   }
 
   spawnInitial() {
@@ -729,6 +806,16 @@ export class Game {
       p.mesh.position.lerpVectors(p.from, new THREE.Vector3(p.to.x, this.map.heightAt(p.to.x, p.to.z) + 0.8, p.to.z), t);
       p.mesh.position.y += Math.sin(t * Math.PI) * p.arc;
       p.mesh.visible = this.map.fogStateAt(p.mesh.position.x, p.mesh.position.z) === 2;
+      // fading trail puffs
+      p.trailT = (p.trailT || 0) - dt;
+      if (p.trailT <= 0 && p.mesh.visible && p.t < 1) {
+        p.trailT = 0.045;
+        const m = new THREE.Mesh(p.mesh.geometry, p.mesh.material);
+        m.position.copy(p.mesh.position);
+        m.scale.setScalar(0.7);
+        this.scene.add(m);
+        this.effects.push({ mesh: m, life: 0.28, max: 0.28, type: 'shrink' });
+      }
       if (p.t >= 1) {
         p.done = true;
         this.scene.remove(p.mesh);
@@ -754,6 +841,7 @@ export class Game {
   addEffect(x, z, r, material) {
     const mesh = new THREE.Mesh(new THREE.RingGeometry(r * 0.3, r, 18), material.clone());
     mesh.material.transparent = true; mesh.material.side = THREE.DoubleSide;
+    mesh.material.emissiveIntensity = Math.min(1.1, mesh.material.emissiveIntensity || 1.1);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(x, this.map.heightAt(x, z) + 0.15, z);
     this.scene.add(mesh);
@@ -783,8 +871,21 @@ export class Game {
   }
 
   removeUnit(u) {
-    // death animation: topple + sink
+    // death animation: topple + sink, plus a burst of debris
     this.effects.push({ mesh: u.mesh, life: 1.0, max: 1.0, type: 'corpse' });
+    if (this.map.fogStateAt(u.pos.x, u.pos.z) === 2) {
+      const h = this.map.heightAt(u.pos.x, u.pos.z);
+      for (let i = 0; i < 5; i++) {
+        const m = new THREE.Mesh(this.debrisGeo ||= new THREE.BoxGeometry(0.16, 0.16, 0.16), u.mesh.children[0]?.material);
+        m.position.set(u.pos.x, h + 0.8, u.pos.z);
+        this.scene.add(m);
+        this.effects.push({
+          mesh: m, life: 0.8, max: 0.8, type: 'debris',
+          vel: new THREE.Vector3((Math.random() - 0.5) * 6, 2.5 + Math.random() * 3, (Math.random() - 0.5) * 6),
+          spin: Math.random() * 10,
+        });
+      }
+    }
     this.units = this.units.filter(x => x !== u);
     this.selection = this.selection.filter(x => x !== u);
     this._combat = null;
@@ -795,6 +896,7 @@ export class Game {
   removeBuilding(b) {
     for (let y = 0; y < b.size; y++) for (let x = 0; x < b.size; x++)
       this.map.blocked[this.map.idx(b.tx + x, b.ty + y)] = 0;
+    if (b.disc) this.scene.remove(b.disc);
     this.addEffect(b.pos.x, b.pos.z, b.radius * 1.4, glowMat(0xff5522, 1.5));
     this.effects.push({ mesh: b.mesh, life: 1.4, max: 1.4, type: 'rubble' });
     this.buildings = this.buildings.filter(x => x !== b);
@@ -869,6 +971,7 @@ export class Game {
       const st = this.map.fogStateAt(b.pos.x, b.pos.z);
       if (st === 2) b.discovered = true;
       b.mesh.visible = b.discovered && st >= 1;
+      if (b.disc) b.disc.visible = b.mesh.visible;
     }
     for (const r of this.resources) {
       r.mesh.visible = this.map.fogStateAt(r.pos.x, r.pos.z) >= 1;
@@ -898,6 +1001,13 @@ export class Game {
       } else if (e.type === 'corpse') {
         e.mesh.rotation.x = t * Math.PI / 2;
         e.mesh.position.y -= dt * 0.8;
+      } else if (e.type === 'shrink') {
+        e.mesh.scale.setScalar(Math.max(0.01, 0.7 * (1 - t)));
+      } else if (e.type === 'debris') {
+        e.vel.y -= dt * 14;
+        e.mesh.position.addScaledVector(e.vel, dt);
+        e.mesh.rotation.x += e.spin * dt; e.mesh.rotation.z += e.spin * 0.7 * dt;
+        e.mesh.scale.setScalar(Math.max(0.05, 1 - t * 0.7));
       } else if (e.type === 'rubble') {
         e.mesh.scale.y = Math.max(0.05, 1 - t);
         e.mesh.position.y -= dt * 0.5;
@@ -914,10 +1024,27 @@ export class Game {
       this.applyFogVisibility();
     }
 
+    tickGlowMats(this.time);
+    this.updateEmbers(dt);
+
     if (this.ai) this.ai.update(dt);
   }
 
-  render() { this.renderer.render(this.scene, this.camera); }
+  render() {
+    if (this.lowQuality) this.renderer.render(this.scene, this.camera);
+    else this.composer.render();
+  }
+
+  // Called by the main loop when sustained frame times are poor.
+  setLowQuality() {
+    if (this.lowQuality) return;
+    this.lowQuality = true;
+    this.renderer.setPixelRatio(1);
+    this.renderer.shadowMap.enabled = false;
+    this.sun.castShadow = false;
+    this.scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
+    this.emit('toast', 'Reduced visual quality for smoother play');
+  }
 
   dispose() {
     window.removeEventListener('resize', this.onResize);

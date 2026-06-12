@@ -50,10 +50,18 @@ function startGame(playerFactionKey) {
   ui.toast(`The ${FACTIONS[enemyKey].name} stir beyond the ridge…`);
 
   let last = performance.now();
+  let slowFrames = 0, totalFrames = 0;
   const loop = (now) => {
     current.raf = requestAnimationFrame(loop);
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const rawDt = (now - last) / 1000;
+    const dt = Math.min(0.05, rawDt);
     last = now;
+    // auto quality: after warmup, sustained slow frames drop bloom + pixel ratio
+    totalFrames++;
+    if (totalFrames > 40 && !game.lowQuality) {
+      slowFrames = rawDt > 0.045 ? slowFrames + 1 : Math.max(0, slowFrames - 2);
+      if (slowFrames > 25) game.setLowQuality();
+    }
     game.update(dt);
     controls.updateCamera(dt);
     ui.update(dt);

@@ -11,10 +11,13 @@ export class Controls {
     this.ui = ui;
     this.dom = game.renderer.domElement;
 
-    // camera rig
+    // camera rig (focus/dist/yaw ease toward their targets each frame)
     this.focus = new THREE.Vector3(game.playerMain.pos.x, 0, game.playerMain.pos.z + 6);
+    this.focusT = this.focus.clone();
     this.yaw = Math.PI * 0.25;   // look NE toward map center
+    this.yawT = this.yaw;
     this.dist = 42;
+    this.distT = 42;
     this.keys = {};
     // inside=false until the first real mousemove, so edge-scroll can't trigger
     this.mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2, inside: false };
@@ -38,7 +41,7 @@ export class Controls {
     window.addEventListener('mousemove', e => this.onMouseMove(e));
     window.addEventListener('mouseup', e => this.onMouseUp(e));
     d.addEventListener('wheel', e => {
-      this.dist = Math.max(16, Math.min(80, this.dist + e.deltaY * 0.03));
+      this.distT = Math.max(16, Math.min(80, this.distT + e.deltaY * 0.035));
       e.preventDefault();
     }, { passive: false });
     window.addEventListener('keydown', e => this.onKeyDown(e));
@@ -54,7 +57,7 @@ export class Controls {
     if (k === 'a' && !this.placement) { if (this.selectedUnits().length) this.attackMoveArm = true; }
     if (k === 's') { this.selectedUnits().forEach(u => u.stop()); this.attackMoveArm = false; }
     if (k === 'escape') { this.cancelPlacement(); this.attackMoveArm = false; this.ui.buildMenuOpen = false; this.ui.refreshPanel(); }
-    if (k === 'h') { const m = this.game.playerMain; if (m) { this.focus.x = m.pos.x; this.focus.z = m.pos.z; } }
+    if (k === 'h') { const m = this.game.playerMain; if (m) { this.focusT.x = m.pos.x; this.focusT.z = m.pos.z; } }
     if (k === 'b' && this.selectedUnits().some(u => u.def.worker)) { this.ui.buildMenuOpen = true; this.ui.refreshPanel(); }
     if (k >= '1' && k <= '9') {
       if (e.ctrlKey || e.metaKey) {
@@ -127,7 +130,7 @@ export class Controls {
   onMouseMove(e) {
     this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.inside = true;
     if (this.rotating) {
-      this.yaw = this.rotating.yaw + (e.clientX - this.rotating.x) * 0.008;
+      this.yawT = this.rotating.yaw + (e.clientX - this.rotating.x) * 0.008;
     }
     if (this.dragStart) {
       const dx = Math.abs(e.clientX - this.dragStart.x), dy = Math.abs(e.clientY - this.dragStart.y);
@@ -237,8 +240,8 @@ export class Controls {
 
   // ---------- per-frame ----------
   moveCameraTo(wx, wz) {
-    this.focus.x = Math.max(0, Math.min(WORLD, wx));
-    this.focus.z = Math.max(0, Math.min(WORLD, wz));
+    this.focusT.x = Math.max(0, Math.min(WORLD, wx));
+    this.focusT.z = Math.max(0, Math.min(WORLD, wz));
   }
 
   updateCamera(dt) {
@@ -257,15 +260,20 @@ export class Controls {
       if (this.mouse.y < m) mz = -1;
       if (this.mouse.y > window.innerHeight - m) mz = 1;
     }
-    if (this.keys['q']) this.yaw += dt * 1.8;
-    if (this.keys['e']) this.yaw -= dt * 1.8;
+    if (this.keys['q']) this.yawT += dt * 1.8;
+    if (this.keys['e']) this.yawT -= dt * 1.8;
     if (mx || mz) {
       const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw);
-      this.focus.x += (mx * cos - mz * sin) * speed;
-      this.focus.z += (mx * sin + mz * cos) * speed;
-      this.focus.x = Math.max(4, Math.min(WORLD - 4, this.focus.x));
-      this.focus.z = Math.max(4, Math.min(WORLD - 4, this.focus.z));
+      this.focusT.x += (mx * cos - mz * sin) * speed;
+      this.focusT.z += (mx * sin + mz * cos) * speed;
+      this.focusT.x = Math.max(4, Math.min(WORLD - 4, this.focusT.x));
+      this.focusT.z = Math.max(4, Math.min(WORLD - 4, this.focusT.z));
     }
+    // ease toward targets — exponential smoothing keeps motion fluid at any fps
+    const ease = 1 - Math.exp(-dt * 9);
+    this.focus.lerp(this.focusT, ease);
+    this.dist += (this.distT - this.dist) * (1 - Math.exp(-dt * 7));
+    this.yaw += (this.yawT - this.yaw) * (1 - Math.exp(-dt * 10));
     const cam = this.game.camera;
     const pitch = 0.9 + (this.dist - 16) / 64 * 0.25; // steeper when zoomed out
     const fy = this.game.map.heightAt(this.focus.x, this.focus.z);
@@ -294,15 +302,17 @@ export class Controls {
       this.game.scene.add(ring);
       this.selRings.push(ring);
     }
+    const pulse = 0.68 + 0.22 * Math.sin(this.game.time * 5);
     for (let i = 0; i < this.selRings.length; i++) {
       const ring = this.selRings[i];
       const e = sel[i];
       if (!e || e.dead) { ring.visible = false; continue; }
       ring.visible = true;
-      const r = e.radius + 0.3;
+      const r = (e.radius + 0.3) * (1 + 0.04 * Math.sin(this.game.time * 5));
       ring.scale.setScalar(r);
       ring.position.set(e.pos.x, this.game.map.heightAt(e.pos.x, e.pos.z) + 0.08, e.pos.z);
       ring.material.color.set(e.owner === 0 ? 0x66ff88 : e.owner === 1 ? 0xff5544 : 0xcccc88);
+      ring.material.opacity = pulse;
     }
   }
 }
