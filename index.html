@@ -93,6 +93,12 @@
       background: rgba(10,10,16,0.75); border: 1px solid #2e2a3a; border-radius: 4px; display: none;
       line-height: 1.7; }
     #help b { color: #b8aa88; }
+
+    #loading { position: absolute; inset: 0; z-index: 60; display: none; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px; background: #08080c;
+      color: #b8aa88; font-style: italic; letter-spacing: 2px; }
+    .load-glyph { font-size: 42px; color: #ffd56e; animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 0.35; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.1); } }
   </style>
 </head>
 <body>
@@ -127,6 +133,7 @@
     <div class="hud" id="help"></div>
     <div id="selbox"></div>
     <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button></div>
+    <div id="loading"><div class="load-glyph">✦</div><div>Shaping the world before the flood…</div></div>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>

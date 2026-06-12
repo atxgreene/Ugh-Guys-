@@ -8,6 +8,7 @@ import { GameMap, GRID, TILE, WORLD } from './terrain.js';
 import { findPath, findNearestWalkable } from './pathfinding.js';
 import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP } from './data.js';
 import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats } from './models.js';
+import { waterNormalMap } from './textures.js';
 import { Sound } from './audio.js';
 
 let nextId = 1;
@@ -498,15 +499,36 @@ export class Game {
   }
 
   initAtmosphere() {
-    // still black water in the lowland basins
+    // black water in the lowland basins, with slow drifting ripples
+    this.waterNormal = waterNormalMap();
+    this.waterNormal.repeat.set(36, 36);
     const water = new THREE.Mesh(
       new THREE.PlaneGeometry(WORLD, WORLD),
-      new THREE.MeshStandardMaterial({ color: 0x0d1118, metalness: 0.85, roughness: 0.25 })
+      new THREE.MeshStandardMaterial({
+        color: 0x0d1118, metalness: 0.85, roughness: 0.22,
+        normalMap: this.waterNormal, normalScale: new THREE.Vector2(0.35, 0.35),
+      })
     );
     water.rotation.x = -Math.PI / 2;
     water.position.set(WORLD / 2, 0.24, WORLD / 2);
     water.receiveShadow = true;
     this.scene.add(water);
+
+    // far starfield (unaffected by scene fog)
+    const starN = 420, starPos = new Float32Array(starN * 3);
+    for (let i = 0; i < starN; i++) {
+      const a = Math.random() * Math.PI * 2, el = 0.06 + Math.random() * 0.9;
+      const r = 380;
+      starPos[i * 3] = WORLD / 2 + Math.cos(a) * Math.cos(el) * r;
+      starPos[i * 3 + 1] = Math.sin(el) * r * 0.6;
+      starPos[i * 3 + 2] = WORLD / 2 + Math.sin(a) * Math.cos(el) * r;
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    this.scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({
+      color: 0xaab6e8, size: 1.7, sizeAttenuation: false, transparent: true,
+      opacity: 0.75, fog: false, depthWrite: false,
+    })));
 
     // drifting embers — ash of the age, caught by bloom
     const N = 160;
@@ -1026,6 +1048,7 @@ export class Game {
 
     tickGlowMats(this.time);
     this.updateEmbers(dt);
+    this.waterNormal.offset.set(this.time * 0.008, this.time * 0.005);
 
     if (this.ai) this.ai.update(dt);
   }

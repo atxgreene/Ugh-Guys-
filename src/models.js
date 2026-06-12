@@ -2,16 +2,35 @@
 // carried by emissive glow accents. All builders return a THREE.Group whose
 // origin sits at ground level.
 import * as THREE from 'three';
+import { stoneMaps, blockMaps, woodMaps, boneMaps } from './textures.js';
+
+// Attach a procedural PBR surface to a material; brightens base color to
+// compensate for the albedo multiply.
+function applySurface(m, kind, gain = 1.9) {
+  const s = kind === 'wood' ? woodMaps() : kind === 'bone' ? boneMaps()
+    : kind === 'blocks' ? blockMaps() : stoneMaps();
+  m.map = s.map; m.normalMap = s.normalMap; m.roughnessMap = s.roughnessMap;
+  m.normalScale = new THREE.Vector2(0.6, 0.6);
+  m.color.multiplyScalar(gain);
+}
 
 const matCache = new Map();
 function mat(color, opts = {}) {
   const key = color + '|' + JSON.stringify(opts);
   if (!matCache.has(key)) {
-    matCache.set(key, new THREE.MeshStandardMaterial({
+    const m = new THREE.MeshStandardMaterial({
       color, roughness: opts.rough ?? 0.85, metalness: opts.metal ?? 0.1,
       emissive: opts.emissive ?? 0x000000, emissiveIntensity: opts.ei ?? 1,
       flatShading: true,
-    }));
+    });
+    // textured surfaces for the common structural materials (not for glows)
+    if (!opts.emissive) {
+      if (color === 0x3d3228 || color === 0x2e2620) applySurface(m, 'wood');
+      else if (color === 0x6b6457) applySurface(m, 'bone');
+      else if (color === 0x26262c || color === 0x1b1b20) applySurface(m, 'stone');
+      else if (color === 0x3a3a40) applySurface(m, 'blocks');
+    }
+    matCache.set(key, m);
   }
   return matCache.get(key);
 }
@@ -447,8 +466,10 @@ function getFactionMats(color, glow) {
     // Dark body tinted toward faction color; bright emissive accent.
     const c = new THREE.Color(color);
     const body = new THREE.Color(0x35353e).lerp(c, 0.4);
+    const b = new THREE.MeshStandardMaterial({ color: body, roughness: 0.8, metalness: 0.15, flatShading: true });
+    applySurface(b, 'blocks');
     factionMats.set(key, {
-      b: new THREE.MeshStandardMaterial({ color: body, roughness: 0.8, metalness: 0.15, flatShading: true }),
+      b,
       g: new THREE.MeshStandardMaterial({ color: 0x111114, emissive: glow, emissiveIntensity: 1.8, roughness: 0.5, flatShading: true }),
     });
   }

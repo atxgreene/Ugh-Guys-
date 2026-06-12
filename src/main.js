@@ -28,6 +28,17 @@ function buildMenu() {
 }
 
 function startGame(playerFactionKey) {
+  // world generation takes a moment — paint the loading screen first
+  document.getElementById('menu').style.display = 'none';
+  const loading = document.getElementById('loading');
+  loading.style.display = 'flex';
+  requestAnimationFrame(() => setTimeout(() => {
+    startGameNow(playerFactionKey);
+    loading.style.display = 'none';
+  }, 30));
+}
+
+function startGameNow(playerFactionKey) {
   stopGame();
   // enemy: random different faction
   const others = Object.keys(FACTIONS).filter(k => k !== playerFactionKey);

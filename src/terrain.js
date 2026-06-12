@@ -2,6 +2,7 @@
 // World is GRID x GRID tiles of TILE world units, origin at (0,0).
 import * as THREE from 'three';
 import { buildDoodad } from './models.js';
+import { terrainMaps } from './textures.js';
 
 export const GRID = 96;
 export const TILE = 2;
@@ -113,7 +114,15 @@ export class GameMap {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
-    const matr = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0.02 });
+    const tm = terrainMaps();
+    const REP = 22;
+    [tm.map, tm.normalMap, tm.roughnessMap].forEach(t => t.repeat.set(REP, REP));
+    const matr = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 1.0, metalness: 0.02,
+      map: tm.map, normalMap: tm.normalMap, roughnessMap: tm.roughnessMap,
+      normalScale: new THREE.Vector2(0.85, 0.85),
+    });
+    matr.color.setScalar(1.8); // compensate for albedo texture multiplying vertex colors
     // multiply fog texture into terrain color
     const fogTex = this.fogTexture;
     matr.onBeforeCompile = (shader) => {
