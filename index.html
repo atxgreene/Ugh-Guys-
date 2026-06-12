@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shadow of the Watchers — Ancient Apocalyptic RTS</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #08080c;
+      font-family: Georgia, 'Times New Roman', serif; color: #d8d2c4; }
+    #app { position: relative; width: 100%; height: 100%; }
+    #game-container { position: absolute; inset: 0; }
+    canvas { display: block; }
+
+    /* ---------- main menu ---------- */
+    #menu { position: absolute; inset: 0; z-index: 50; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 28px;
+      background: radial-gradient(ellipse at 50% 30%, #1a1626 0%, #0a0a10 65%, #050507 100%); }
+    #menu h1 { font-size: 52px; letter-spacing: 10px; color: #d8c89a; text-transform: uppercase;
+      text-shadow: 0 0 30px rgba(216, 181, 90, 0.35), 0 2px 0 #000; font-weight: normal; }
+    #menu .subtitle { color: #8a8294; font-style: italic; letter-spacing: 2px; margin-top: -16px; }
+    #menu .choose { color: #b8aa88; letter-spacing: 3px; text-transform: uppercase; font-size: 13px; }
+    .factions { display: flex; gap: 18px; }
+    .fcard { width: 250px; padding: 20px 18px; border: 1px solid #3a3544; border-radius: 6px;
+      background: linear-gradient(180deg, rgba(30,28,40,0.9), rgba(14,13,20,0.95));
+      cursor: pointer; transition: all .15s; text-align: center; }
+    .fcard:hover { transform: translateY(-4px); }
+    .fcard h2 { font-size: 19px; margin-bottom: 10px; font-weight: normal; letter-spacing: 1px; }
+    .fcard p { font-size: 12.5px; line-height: 1.5; color: #9a93a5; min-height: 96px; }
+    .fcard .traits { margin-top: 10px; font-size: 11px; color: #7a7488; font-style: italic; }
+    .fcard.covenant:hover { border-color: #e8b33a; box-shadow: 0 0 24px rgba(232,179,58,.25); }
+    .fcard.watchers:hover { border-color: #9a5cff; box-shadow: 0 0 24px rgba(154,92,255,.25); }
+    .fcard.nephilim:hover { border-color: #e05533; box-shadow: 0 0 24px rgba(224,85,51,.25); }
+    #menu .hint { font-size: 12px; color: #6a6478; max-width: 640px; text-align: center; line-height: 1.7; }
+
+    /* ---------- HUD ---------- */
+    .hud { position: absolute; z-index: 10; }
+    #topbar { top: 0; left: 0; right: 0; height: 38px; display: none; align-items: center;
+      padding: 0 12px; gap: 18px;
+      background: linear-gradient(180deg, rgba(10,10,16,0.95), rgba(10,10,16,0.75));
+      border-bottom: 1px solid #2e2a3a; font-size: 14px; }
+    #resources { display: flex; gap: 16px; }
+    .res b { font-family: inherit; }
+    #clock { margin-left: auto; color: #8a8294; font-variant-numeric: tabular-nums; }
+    #btn-menu { background: #241f30; color: #b8aa88; border: 1px solid #3a3544; padding: 4px 12px;
+      cursor: pointer; font-family: inherit; border-radius: 3px; }
+    #btn-menu:hover { background: #322b42; }
+
+    #minimap-wrap { left: 10px; bottom: 10px; padding: 5px; display: none;
+      background: rgba(10,10,16,0.9); border: 1px solid #2e2a3a; border-radius: 4px; }
+    #minimap { width: 208px; height: 208px; display: block; image-rendering: pixelated; cursor: crosshair; }
+
+    #panel { left: 240px; right: 10px; bottom: 10px; min-height: 118px; max-width: 980px;
+      display: none; gap: 14px; padding: 10px 14px;
+      background: rgba(10,10,16,0.9); border: 1px solid #2e2a3a; border-radius: 4px; }
+    #selinfo { width: 270px; flex-shrink: 0; border-right: 1px solid #2e2a3a; padding-right: 12px; }
+    .sel-name { font-size: 16px; color: #d8c89a; letter-spacing: 1px; }
+    .sel-hp { font-size: 12px; color: #9be86e; margin-top: 3px; }
+    .sel-desc { font-size: 11.5px; color: #8a8294; font-style: italic; margin-top: 5px; line-height: 1.45; }
+    .queue { font-size: 12px; margin-top: 6px; color: #b8aa88; }
+    .queue progress { width: 90px; height: 8px; }
+    #commands { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+    .cmd { width: 104px; height: 64px; background: #1c1926; border: 1px solid #3a3544; color: #c8c2b4;
+      cursor: pointer; font-family: inherit; border-radius: 4px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 1px; padding: 2px; }
+    .cmd:hover { border-color: #d8c89a; background: #262134; }
+    .cmd.disabled { opacity: 0.35; cursor: not-allowed; }
+    .cmd-icon { font-size: 18px; }
+    .cmd-label { font-size: 10.5px; text-align: center; line-height: 1.1; }
+    .cmd-sub { font-size: 9.5px; color: #8a8294; }
+    .cmd-act { width: 76px; }
+
+    #selbox { position: absolute; z-index: 20; display: none; border: 1px solid #9be86e;
+      background: rgba(155,232,110,0.12); pointer-events: none; }
+    #overlay { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+
+    #toasts { top: 48px; left: 50%; transform: translateX(-50%); display: flex;
+      flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
+    .toast { background: rgba(20,18,30,0.92); border: 1px solid #4a4458; padding: 7px 18px;
+      border-radius: 3px; font-size: 13.5px; color: #d8c89a; letter-spacing: 0.5px;
+      transition: opacity .6s; }
+    .toast.fade { opacity: 0; }
+
+    #gameover { position: absolute; inset: 0; z-index: 40; display: none; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px; background: rgba(5,5,8,0.82); }
+    #gameover h1 { font-size: 64px; letter-spacing: 14px; font-weight: normal; text-shadow: 0 0 40px currentColor; }
+    #gameover p { color: #9a93a5; font-style: italic; font-size: 16px; }
+    #btn-restart { background: #241f30; color: #d8c89a; border: 1px solid #4a4458; padding: 12px 36px;
+      font-size: 17px; cursor: pointer; font-family: inherit; letter-spacing: 2px; border-radius: 3px; }
+    #btn-restart:hover { background: #322b42; border-color: #d8c89a; }
+
+    #help { right: 10px; top: 46px; width: 230px; padding: 10px 12px; font-size: 11px; color: #7a7488;
+      background: rgba(10,10,16,0.75); border: 1px solid #2e2a3a; border-radius: 4px; display: none;
+      line-height: 1.7; }
+    #help b { color: #b8aa88; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="game-container"></div>
+    <canvas id="overlay"></canvas>
+
+    <div id="menu">
+      <h1>Shadow of the Watchers</h1>
+      <div class="subtitle">an RTS of the age before the flood</div>
+      <div class="choose">— choose your people —</div>
+      <div class="factions" id="faction-cards"></div>
+      <div class="hint">
+        <b>Left-click / drag</b> select · <b>Right-click</b> move, gather, attack · <b>A</b> attack-move ·
+        <b>B</b> build · <b>S</b> stop · <b>Q/E or middle-drag</b> rotate · <b>Wheel</b> zoom ·
+        <b>Arrows / screen edge</b> pan · <b>Ctrl+1-9</b> control groups · <b>H</b> go home<br/>
+        Destroy the enemy's seat of power before they destroy yours. Beware what guards the obelisks.
+      </div>
+    </div>
+
+    <div class="hud" id="topbar">
+      <div id="resources"></div>
+      <div id="clock">0:00</div>
+      <button id="btn-menu">Surrender</button>
+    </div>
+    <div class="hud" id="minimap-wrap"><canvas id="minimap" width="208" height="208"></canvas></div>
+    <div class="hud" id="panel" style="display:none;">
+      <div id="selinfo"></div>
+      <div id="commands"></div>
+    </div>
+    <div class="hud" id="toasts"></div>
+    <div class="hud" id="help"></div>
+    <div id="selbox"></div>
+    <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button></div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
