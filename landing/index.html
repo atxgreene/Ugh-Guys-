@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Shadow of the Watchers — Ancient Apocalyptic RTS</title>
+<meta name="description" content="A cinematic, browser-based real-time strategy game set in the last age before the Flood. Command priest-king cities, fallen Watchers, or giant-blooded clans. 100% procedural — no engine, no external assets." />
+<!-- Open Graph / social preview -->
+<meta property="og:title" content="Shadow of the Watchers" />
+<meta property="og:description" content="An ancient-apocalyptic RTS of the age before the Flood. Build, raise an army, and shatter your enemy. Free in your browser." />
+<meta property="og:type" content="website" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<style>
+  /* ====== PLAY LINK — point this at your Vercel production URL ====== */
+  /* (set once here; used by both Play buttons below) */
+
+  :root{
+    --gold:#e8b33a; --gold-glow:#ffd56e; --temple-blue:#2f6f9f;
+    --violet:#9a5cff; --violet-glow:#c08bff; --magenta:#d14cff;
+    --red:#e05533; --ember:#ff7a4d; --blood:#7f241d;
+    --ink:#0a0a10; --ink2:#12101a; --stone:#1b1822; --bone:#cdbf9a;
+    --text:#d8d2c4; --muted:#8a8294;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--ink);color:var(--text);font-family:'Cormorant Garamond',Georgia,serif;
+    font-size:19px;line-height:1.6;overflow-x:hidden}
+  h1,h2,h3,.cinzel{font-family:'Cinzel',Georgia,serif}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+  .glow-text{text-shadow:0 0 30px rgba(255,213,110,.45),0 2px 4px #000}
+
+  /* ---------- background canvas (embers) ---------- */
+  #embers{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;min-height:100vh;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;z-index:1;overflow:hidden}
+  .hero::before{content:"";position:absolute;inset:0;z-index:-1;
+    background:
+      radial-gradient(1200px 700px at 50% 8%, rgba(154,92,255,.18), transparent 60%),
+      radial-gradient(900px 500px at 50% 100%, rgba(224,85,51,.16), transparent 60%),
+      radial-gradient(700px 700px at 50% 42%, rgba(255,213,110,.10), transparent 60%),
+      linear-gradient(180deg,#0b0a14 0%,#0a0a10 45%,#0c0a0e 100%)}
+  /* doomed star + halo */
+  .star-halo{position:absolute;top:13%;left:50%;transform:translateX(-50%);z-index:-1;
+    width:340px;height:340px;opacity:.9}
+  .star-halo .ring{position:absolute;inset:0;border-radius:50%;border:1px solid rgba(192,139,255,.35);
+    animation:spin 60s linear infinite}
+  .star-halo .ring.b{inset:36px;border-color:rgba(255,213,110,.25);animation-duration:90s;animation-direction:reverse}
+  .star-halo .core{position:absolute;top:50%;left:50%;width:14px;height:14px;border-radius:50%;
+    transform:translate(-50%,-50%);background:#fff;
+    box-shadow:0 0 24px 8px rgba(192,139,255,.8),0 0 60px 24px rgba(154,92,255,.5)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .eyebrow{letter-spacing:.5em;text-transform:uppercase;font-size:13px;color:var(--violet-glow);
+    font-family:'Cinzel',serif;margin-bottom:18px}
+  .hero h1{font-size:clamp(40px,8vw,92px);font-weight:900;letter-spacing:.08em;line-height:1.02;
+    color:#f0e6cf;text-transform:uppercase}
+  .hero h1 .b{color:var(--gold)}
+  .hero .sub{font-style:italic;font-size:clamp(18px,2.4vw,26px);color:var(--bone);margin-top:14px;
+    letter-spacing:.04em}
+  .rule{width:min(560px,80vw);height:1px;margin:30px auto;
+    background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+  .pitch{max-width:680px;color:#c4bca8;font-size:clamp(17px,2vw,21px)}
+  .cta-row{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:36px}
+  .btn{font-family:'Cinzel',serif;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    font-size:15px;padding:16px 40px;border-radius:4px;cursor:pointer;transition:.18s;display:inline-block}
+  .btn-play{color:#1a1206;background:linear-gradient(180deg,var(--gold-glow),var(--gold));
+    border:1px solid #ffe7a8;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 8px 30px rgba(232,179,58,.4)}
+  .btn-play:hover{transform:translateY(-2px);box-shadow:0 0 0 1px rgba(0,0,0,.4),0 12px 40px rgba(232,179,58,.6)}
+  .btn-ghost{color:var(--bone);border:1px solid #4a4458;background:rgba(20,18,30,.5)}
+  .btn-ghost:hover{border-color:var(--gold);color:var(--gold-glow)}
+  .scroll-hint{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);color:var(--muted);
+    font-size:12px;letter-spacing:.3em;text-transform:uppercase;animation:bob 2.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{opacity:.5;transform:translate(-50%,0)}50%{opacity:1;transform:translate(-50%,8px)}}
+
+  /* ---------- sections ---------- */
+  section{position:relative;z-index:1;padding:96px 0}
+  .section-tag{font-family:'Cinzel',serif;letter-spacing:.4em;text-transform:uppercase;font-size:12px;
+    color:var(--muted);text-align:center;margin-bottom:14px}
+  .section-title{font-size:clamp(28px,4.5vw,46px);font-weight:700;text-align:center;color:#ece2cb;
+    letter-spacing:.04em;margin-bottom:18px}
+  .section-lead{max-width:720px;margin:0 auto 56px;text-align:center;color:#b6ae9c;font-size:20px}
+
+  .lore{background:linear-gradient(180deg,#0a0a10,#0e0b14)}
+  .lore .section-lead{font-size:clamp(19px,2.2vw,24px);font-style:italic;color:#c9bfa6}
+
+  /* ---------- factions ---------- */
+  .factions-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .fcard{position:relative;border:1px solid #2c2738;border-radius:8px;padding:30px 26px;overflow:hidden;
+    background:linear-gradient(180deg,rgba(28,24,38,.85),rgba(12,11,18,.95));transition:.2s}
+  .fcard::before{content:"";position:absolute;inset:0;opacity:.14;pointer-events:none;
+    background:radial-gradient(420px 220px at 50% -10%,var(--accent),transparent 70%)}
+  .fcard:hover{transform:translateY(-6px);border-color:var(--accent)}
+  .fcard .emblem{width:64px;height:64px;margin-bottom:18px;filter:drop-shadow(0 0 12px var(--accent))}
+  .fcard h3{font-size:24px;font-weight:700;color:var(--accent);letter-spacing:.03em}
+  .fcard .motto{font-style:italic;color:var(--muted);font-size:16px;margin:4px 0 16px;letter-spacing:.04em}
+  .fcard p{color:#bdb3a2;font-size:17px;line-height:1.55}
+  .fcard .pillars{list-style:none;margin-top:18px;display:flex;flex-direction:column;gap:7px}
+  .fcard .pillars li{font-size:15px;color:#cfc6b4;padding-left:18px;position:relative}
+  .fcard .pillars li::before{content:"◆";position:absolute;left:0;color:var(--accent);font-size:10px;top:5px}
+  .swatches{display:flex;gap:7px;margin-top:20px}
+  .swatches span{width:24px;height:24px;border-radius:50%;border:1px solid rgba(255,255,255,.12)}
+  .cov{--accent:var(--gold)} .wat{--accent:var(--violet)} .nep{--accent:var(--red)}
+
+  /* ---------- features ---------- */
+  .features{background:linear-gradient(180deg,#0c0a0e,#0a0a12)}
+  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .feat{border:1px solid #241f2e;border-radius:8px;padding:26px 24px;background:rgba(18,16,26,.6);transition:.18s}
+  .feat:hover{border-color:#4a4458;background:rgba(26,22,36,.7)}
+  .feat .ic{font-size:26px;margin-bottom:12px;display:block;filter:drop-shadow(0 0 10px rgba(255,213,110,.4))}
+  .feat h4{font-family:'Cinzel',serif;font-size:17px;color:var(--gold-glow);margin-bottom:8px;letter-spacing:.03em}
+  .feat p{color:#a9a08f;font-size:16px;line-height:1.5}
+
+  /* ---------- final cta ---------- */
+  .finale{text-align:center;background:
+    radial-gradient(800px 400px at 50% 50%,rgba(154,92,255,.14),transparent 65%),
+    linear-gradient(180deg,#0a0a12,#08070c)}
+  .finale h2{font-size:clamp(30px,5vw,54px);color:#f0e6cf;letter-spacing:.05em;margin-bottom:10px}
+  .finale p{color:var(--bone);font-style:italic;font-size:21px;margin-bottom:34px}
+
+  footer{border-top:1px solid #1f1b29;padding:40px 0;text-align:center;color:var(--muted);font-size:15px;
+    position:relative;z-index:1}
+  footer a{color:var(--bone);border-bottom:1px solid transparent;transition:.15s}
+  footer a:hover{color:var(--gold-glow);border-color:var(--gold)}
+  .badges{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
+  .badge{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.15em;text-transform:uppercase;
+    color:#9a8f78;border:1px solid #3a3324;border-radius:3px;padding:5px 12px;background:rgba(30,26,16,.4)}
+
+  @media(max-width:860px){
+    .factions-grid,.feat-grid{grid-template-columns:1fr}
+    section{padding:68px 0}
+    body{font-size:18px}
+  }
+</style>
+</head>
+<body>
+<canvas id="embers"></canvas>
+
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="star-halo" aria-hidden="true">
+    <div class="ring"></div><div class="ring b"></div><div class="core"></div>
+  </div>
+  <div class="wrap">
+    <div class="eyebrow">An ancient-apocalyptic real-time strategy game</div>
+    <h1>Shadow of <span class="b glow-text">the Watchers</span></h1>
+    <div class="sub">Command civilizations in the last age before the Flood.</div>
+    <div class="rule"></div>
+    <p class="pitch">Beautiful, advanced, violent, sacred, corrupted, and doomed. Raise a bronze-age
+      city, wield the forbidden knowledge of fallen angels, or lead giant-blooded clans down from the
+      burning mountains — and shatter your enemy before judgment falls on you all.</p>
+    <div class="cta-row">
+      <a class="btn btn-play js-play" href="#">▶ Play Free in Your Browser</a>
+      <a class="btn btn-ghost" href="https://github.com/atxgreene/Ugh-Guys-" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+  </div>
+  <div class="scroll-hint">Descend ↓</div>
+</header>
+
+<!-- ============ LORE ============ -->
+<section class="lore">
+  <div class="wrap">
+    <div class="section-tag">The Setting</div>
+    <h2 class="section-title">The World Before the Flood</h2>
+    <p class="section-lead">Humanity reached impossible heights — metallurgy, astronomy, monumental
+      architecture, and ritual knowledge — but was corrupted by the forbidden teachings the Watchers
+      brought down from heaven. Cities of gold rise beside obsidian towers of star-metal, while the
+      giants gather in the mountains. The sky remembers. The waters are coming.</p>
+  </div>
+</section>
+
+<!-- ============ FACTIONS ============ -->
+<section>
+  <div class="wrap">
+    <div class="section-tag">Three Asymmetric Powers</div>
+    <h2 class="section-title">Choose Your People</h2>
+    <p class="section-lead">Each faction is genuinely different — its own units, buildings, upgrade
+      trees, economy, and path to victory.</p>
+    <div class="factions-grid">
+
+      <article class="fcard cov">
+        <svg class="emblem" viewBox="0 0 64 64" fill="none" stroke="var(--gold)" stroke-width="2">
+          <circle cx="32" cy="32" r="13"/><circle cx="32" cy="32" r="4" fill="var(--gold)"/>
+          <g stroke-linecap="round">
+            <path d="M32 4v10M32 50v10M4 32h10M50 32h10M12 12l7 7M45 45l7 7M52 12l-7 7M19 45l-7 7"/>
+          </g>
+        </svg>
+        <h3>The Covenant Cities</h3>
+        <div class="motto">Build. Defend. Endure.</div>
+        <p>Priest-king city-states bound by faith, law, and the covenant. Bronze, grain, and the favor
+          of heaven hold their walls against the encroaching dark.</p>
+        <ul class="pillars">
+          <li>Balanced economy &amp; strong defenses</li>
+          <li>Disciplined bronze infantry &amp; chariots</li>
+          <li>Temple favor, prophets, holy fire</li>
+        </ul>
+        <div class="swatches">
+          <span style="background:#e8b33a"></span><span style="background:#ffd56e"></span>
+          <span style="background:#2f6f9f"></span><span style="background:#f1e5c8"></span>
+        </div>
+      </article>
+
+      <article class="fcard wat">
+        <svg class="emblem" viewBox="0 0 64 64" fill="none" stroke="var(--violet)" stroke-width="2">
+          <ellipse cx="32" cy="32" rx="26" ry="11"/><circle cx="32" cy="32" r="9"/>
+          <circle cx="32" cy="32" r="3" fill="var(--violet)"/>
+          <path d="M32 6v9M32 49v9" stroke-linecap="round"/>
+        </svg>
+        <h3>The Watcher Remnant</h3>
+        <div class="motto">Forbidden Knowledge. Rewrite Creation.</div>
+        <p>Fallen sons of heaven and their bound disciples. They wield star-metal, burning script, and
+          hybrid flesh to transcend mortal law — and corrupt the world.</p>
+        <ul class="pillars">
+          <li>Powerful elite units &amp; deep tech</li>
+          <li>Devastating sigil-casters &amp; skyfire</li>
+          <li>Risk-reward forbidden power</li>
+        </ul>
+        <div class="swatches">
+          <span style="background:#9a5cff"></span><span style="background:#c08bff"></span>
+          <span style="background:#d14cff"></span><span style="background:#b8b4c9"></span>
+        </div>
+      </article>
+
+      <article class="fcard nep">
+        <svg class="emblem" viewBox="0 0 64 64" fill="none" stroke="var(--red)" stroke-width="2">
+          <path d="M10 52L32 10l22 42z"/><path d="M22 52l10-18 10 18" />
+          <circle cx="26" cy="40" r="2.5" fill="var(--red)" stroke="none"/>
+          <circle cx="38" cy="40" r="2.5" fill="var(--red)" stroke="none"/>
+        </svg>
+        <h3>The Nephilim Clans</h3>
+        <div class="motto">Break. Consume. Dominate.</div>
+        <p>Giant-blooded clans of the burning mountains. They do not build walls — they break them,
+          with brutal raids, war-beasts, and giants older than the cities they end.</p>
+        <ul class="pillars">
+          <li>Overwhelming melee &amp; fast raids</li>
+          <li>Mountain giants that level bases</li>
+          <li>Fear, fury, and bone totems</li>
+        </ul>
+        <div class="swatches">
+          <span style="background:#e05533"></span><span style="background:#ff7a4d"></span>
+          <span style="background:#7f241d"></span><span style="background:#cdbf9a"></span>
+        </div>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section class="features">
+  <div class="wrap">
+    <div class="section-tag">A Complete RTS, Built From Scratch</div>
+    <h2 class="section-title">No Engine. No Assets. Just Code.</h2>
+    <p class="section-lead">Every model, sound, texture, and map is generated procedurally in the
+      browser with Three.js — no game engine, no art files, no copyrighted IP.</p>
+    <div class="feat-grid">
+      <div class="feat"><span class="ic">⚔️</span><h4>Real RTS Loop</h4><p>Gather, build, tech up, raise an army, and crush the enemy's seat of power. Worker harassment and expansion matter.</p></div>
+      <div class="feat"><span class="ic">🧠</span><h4>Reactive AI</h4><p>An opponent that manages workers, follows build orders, scouts, defends, and escalates into coordinated attack waves.</p></div>
+      <div class="feat"><span class="ic">🌫️</span><h4>Fog of War</h4><p>Persistent discovery with real-time visibility, minimap intel, and neutral guardians watching the obelisks.</p></div>
+      <div class="feat"><span class="ic">🗺️</span><h4>Six Living Biomes</h4><p>River valley, cedar stands, basalt highlands, Nephilim wasteland, Watcher ruins, sacred foothills — each with its own mood sky.</p></div>
+      <div class="feat"><span class="ic">🎬</span><h4>Cinematic Presentation</h4><p>Opening flyover, faction intro cards, bloom-lit sacred fire, storm-lightning skies, and an end-game camera over the ruins.</p></div>
+      <div class="feat"><span class="ic">🏛️</span><h4>Distinct Factions</h4><p>Detailed, readable unit silhouettes; buildings that rise on scaffolds and burn as they fall; counter-based combat.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FINAL CTA ============ -->
+<section class="finale">
+  <div class="wrap">
+    <div class="section-tag">The Last Age Awaits</div>
+    <h2>Will your name survive the Flood?</h2>
+    <p>Free. No download. Runs in your browser.</p>
+    <a class="btn btn-play js-play" href="#">▶ Enter the World</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="badges">
+      <span class="badge">Three.js + Vite</span>
+      <span class="badge">100% Procedural</span>
+      <span class="badge">No External Assets</span>
+      <span class="badge">CC0 · Public Domain</span>
+    </div>
+    <p>Shadow of the Watchers — <a href="https://github.com/atxgreene/Ugh-Guys-" target="_blank" rel="noopener">source on GitHub</a></p>
+  </div>
+</footer>
+
+<script>
+  // ===== Set the play link once — change PLAY_URL to your Vercel production URL =====
+  const PLAY_URL = "https://aethercraft.vercel.app";
+  for (const a of document.querySelectorAll('.js-play')) a.href = PLAY_URL;
+
+  // ===== Drifting embers (matches the in-game atmosphere) =====
+  const c = document.getElementById('embers'), x = c.getContext('2d');
+  let W, H, parts;
+  function resize(){ W = c.width = innerWidth; H = c.height = innerHeight;
+    parts = Array.from({length: Math.min(90, (W*H)/22000)|0}, spawn); }
+  function spawn(){ return { x: Math.random()*W, y: H + Math.random()*H,
+    r: .6 + Math.random()*2, vy: .25 + Math.random()*.9, vx: (Math.random()-.5)*.3,
+    a: .2 + Math.random()*.6, hue: Math.random() }; }
+  function tick(){
+    x.clearRect(0,0,W,H);
+    for (const p of parts){
+      p.y -= p.vy; p.x += p.vx + Math.sin(p.y*0.01)*0.2;
+      if (p.y < -10){ Object.assign(p, spawn(), {y: H+10}); }
+      // warm gold / violet embers
+      const col = p.hue < .7 ? '255,170,80' : '180,130,255';
+      x.beginPath(); x.arc(p.x, p.y, p.r, 0, 6.28);
+      x.fillStyle = 'rgba('+col+','+p.a+')';
+      x.shadowBlur = 8; x.shadowColor = 'rgba('+col+',.8)';
+      x.fill();
+    }
+    requestAnimationFrame(tick);
+  }
+  addEventListener('resize', resize); resize(); tick();
+</script>
+</body>
+</html>
