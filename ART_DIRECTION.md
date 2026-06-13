@@ -53,12 +53,15 @@ world's history: fallen obelisks, altars, half-buried Nephilim ribcages, colossa
 blades, boundary stones, dead sacred trees, shattered tablets.
 **[planned]** carved rivers with fords + ancient roads (held back to protect base access/balance); cliff faces.
 
-## 7. Buildings
-**[done]** faction-specific silhouettes (Covenant ziggurat/temple, Watcher spire/gate/pit,
-Nephilim hearth/lodge/den), masonry PBR, eased grow-in construction, claim-glow discs,
-living smoke/sparks, damage-state smoke, collapse FX, team-color glow accents.
-**[planned]** explicit 2–3 stage construction scaffolds; cracked damage meshes; per-building
-night braziers; small prop dressing (grain sacks, ox carts, banners that wave).
+## 7. Buildings  **[done]**
+Faction-specific silhouettes (Covenant ziggurat/temple, Watcher spire/gate/pit, Nephilim
+hearth/lodge/den), masonry PBR, claim-glow discs, living smoke/sparks, collapse FX,
+team-color glow accents. **Construction:** structures now rise within a timber **scaffold**
+(corner poles + lashing beams + planks) that drops in a puff of dust on completion.
+**Damage stages:** at <66% HP a building gains charred scorch chunks and a slight lean;
+at <34% it catches **fire** (flickering flame cluster) and smokes heavily — all per-instance
+so shared materials are never mutated. **[planned]** prop dressing (grain sacks, ox carts,
+waving banners); per-building night braziers as real point-lights.
 
 ## 8. Units
 **[done]** distinct per-class procedural meshes, faction body tint + glow accent, smooth
@@ -100,9 +103,10 @@ quality fallback** (drops bloom/shadows/pixel-ratio under sustained slow frames)
 5. ✅ Biome presets (6 lands, each with palette + clutter + paired mood)
 6. ✅ Cinematic intro flyover, faction cards & end-game camera
 7. ✅ Resource-gather particles + worker harvest animation
-8. ⏳ Building construction/damage stages + prop dressing
-9. ⏳ Carved rivers/roads/cliffs (balance-careful)
-10. ⏳ Instancing/LOD pass for scale
+8. ✅ Building construction scaffolds + damage/fire stages
+9. ⏳ Prop dressing (grain sacks, carts, waving banners)
+10. ⏳ Carved rivers/roads/cliffs (balance-careful)
+11. ⏳ Instancing/LOD pass for scale
 
 ## 15. Code map
 `game.js` engine + atmosphere/lighting/sky/FX • `fx.js` particle pools • `models.js`

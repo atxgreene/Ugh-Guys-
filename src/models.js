@@ -432,6 +432,47 @@ export function buildResourceNode(type) {
   return grp;
 }
 
+// Timber scaffold that wraps a building under construction. `span` is footprint
+// world-width, `tall` the build height. Cheap: corner poles + lashing beams + planks.
+export function buildScaffold(span, tall) {
+  const grp = new THREE.Group();
+  const wood = mat(0x3d3228), rope = mat(0x2e2620);
+  const h = Math.max(2.2, tall * 0.95);
+  const r = span * 0.5 + 0.35;
+  const corners = [[-r, -r], [r, -r], [r, r], [-r, r]];
+  for (const [x, z] of corners) {
+    grp.add(cyl(0.09, 0.11, h, wood, 5, x, h / 2, z));
+    // angled brace
+    grp.add(cyl(0.05, 0.05, h * 0.7, wood, 4, x * 0.7, h * 0.4, z * 0.7, 0.35 * Math.sign(z || 1), 0, 0.35 * Math.sign(x || 1)));
+  }
+  for (const y of [h * 0.45, h * 0.82]) {
+    grp.add(box(r * 2 + 0.2, 0.07, 0.07, rope, 0, y, -r));
+    grp.add(box(r * 2 + 0.2, 0.07, 0.07, rope, 0, y, r));
+    grp.add(box(0.07, 0.07, r * 2 + 0.2, rope, -r, y, 0));
+    grp.add(box(0.07, 0.07, r * 2 + 0.2, rope, r, y, 0));
+    // a couple of working planks
+    grp.add(box(r * 1.6, 0.06, 0.4, wood, (Math.random() - 0.5) * r, y + 0.05, -r));
+  }
+  grp.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
+  return grp;
+}
+
+// Flickering flame sprite cluster for burning/damaged buildings.
+export function buildFireCluster(n, scale = 1) {
+  const grp = new THREE.Group();
+  const fire = new THREE.MeshBasicMaterial({ color: 0xff7a30, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false });
+  const core = new THREE.MeshBasicMaterial({ color: 0xffd66e, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false });
+  for (let i = 0; i < n; i++) {
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.28 * scale, 0.8 * scale, 5), i % 2 ? core : fire);
+    f.position.set((Math.random() - 0.5) * scale * 1.6, 0.4 * scale, (Math.random() - 0.5) * scale * 1.6);
+    f.userData.phase = Math.random() * 6.28;
+    grp.add(f);
+  }
+  return grp;
+}
+
 export function buildDoodad(type) {
   const grp = new THREE.Group();
   if (type === 'rock') {

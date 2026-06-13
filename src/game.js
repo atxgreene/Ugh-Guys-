@@ -8,7 +8,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GameMap, BIOMES, GRID, TILE, WORLD } from './terrain.js';
 import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
 import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP } from './data.js';
-import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats } from './models.js';
+import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats, buildScaffold, buildFireCluster } from './models.js';
 import { waterNormalMap } from './textures.js';
 import { ParticlePool } from './fx.js';
 import { Sound } from './audio.js';
@@ -451,6 +451,11 @@ export class Building extends Entity {
     this.emitsSmoke = this.emitsSparks || HEARTH.includes(def.model);
     this.smokeY = size * 1.6 + 1.2;
     this.emitT = Math.random();
+    this.damageStage = 0;
+    // timber scaffold while it's being raised
+    this.scaffold = buildScaffold(size * TILE, size * 1.6 + 1);
+    this.scaffold.position.set(cx, this.groundY, cz);
+    game.scene.add(this.scaffold);
   }
 
   get radius() { return this.def.radius; }
@@ -467,15 +472,23 @@ export class Building extends Entity {
         if (Math.random() < dt * 4 && this.game.map.fogStateAt(this.pos.x, this.pos.z) === 2)
           this.game.dustAt(this.pos.x + (Math.random() - 0.5) * this.radius * 2,
                            this.pos.z + (Math.random() - 0.5) * this.radius * 2, 1.2);
+        // scaffold planks settle a touch as the structure rises within them
+        if (this.scaffold) {
+          this.scaffold.visible = this.mesh.visible;
+          this.scaffold.position.y = this.groundY + Math.sin(this.game.time * 3) * 0.02;
+        }
         if (this.progress >= 1) {
           this.complete = true;
           this.mesh.scale.y = 1;
+          this.removeScaffold();
           this.game.onBuildingComplete(this);
         }
       }
       this.builders = 0;
       return;
     }
+    // progressive battle damage: char → smoke → fire + structural lean
+    this.updateDamage(dt);
     // living chimney smoke / forge sparks, and distress smoke when damaged
     const visible = this.mesh.visible && this.game.map.fogStateAt(this.pos.x, this.pos.z) >= 1;
     if (visible) {
@@ -534,8 +547,68 @@ export class Building extends Entity {
     }
   }
 
+  removeScaffold() {
+    if (!this.scaffold) return;
+    this.game.scene.remove(this.scaffold);
+    this.scaffold.traverse(o => { if (o.isMesh) o.geometry.dispose?.(); });
+    this.scaffold = null;
+    // a puff of dust as the frame comes down
+    if (this.game.map.fogStateAt(this.pos.x, this.pos.z) === 2)
+      for (let i = 0; i < 6; i++)
+        this.game.dustAt(this.pos.x + (Math.random() - 0.5) * this.radius * 2,
+                         this.pos.z + (Math.random() - 0.5) * this.radius * 2, 1.3);
+  }
+
+  // escalate visible damage at HP thresholds; clear it again if repaired.
+  // NB: building meshes share cached materials, so damage is shown with
+  // per-instance scorch geometry + tilt + fire, never by recoloring materials.
+  updateDamage(dt) {
+    const frac = this.hp / this.maxHp;
+    const stage = frac < 0.34 ? 2 : frac < 0.66 ? 1 : 0;
+    if (stage !== this.damageStage) {
+      this.damageStage = stage;
+      // structural lean as it fails
+      this.mesh.rotation.z = stage === 2 ? 0.05 : stage === 1 ? 0.02 : 0;
+      // scorch marks: a few charred chunks clinging to the structure
+      if (stage >= 1 && !this.scorch) {
+        this.scorch = new THREE.Group();
+        const char = new THREE.MeshStandardMaterial({ color: 0x140f0c, roughness: 1, flatShading: true });
+        const span = this.size * TILE * 0.5;
+        for (let i = 0; i < this.size + 2; i++) {
+          const c = new THREE.Mesh(new THREE.BoxGeometry(0.4 + Math.random() * 0.5, 0.4 + Math.random() * 0.6, 0.2), char);
+          c.position.set((Math.random() - 0.5) * span * 1.6, this.size * (0.4 + Math.random()),
+            span + 0.05);
+          c.rotation.set(Math.random(), Math.random(), Math.random());
+          this.scorch.add(c);
+        }
+        this.scorch.position.set(this.pos.x, this.groundY, this.pos.z);
+        this.game.scene.add(this.scorch);
+      }
+      if (stage === 2 && !this.fire) {
+        this.fire = buildFireCluster(Math.min(6, this.size * 2), 0.9);
+        this.fire.position.set(this.pos.x, this.groundY + this.size * 0.9, this.pos.z);
+        this.game.scene.add(this.fire);
+      } else if (stage < 2 && this.fire) {
+        this.game.scene.remove(this.fire); this.fire = null;
+      }
+      if (stage === 0 && this.scorch) { this.game.scene.remove(this.scorch); this.scorch = null; }
+    }
+    if (this.scorch) this.scorch.visible = this.mesh.visible;
+    if (this.fire) {
+      const t = this.game.time;
+      this.fire.visible = this.mesh.visible;
+      this.fire.children.forEach(f => {
+        f.scale.y = 0.7 + Math.abs(Math.sin(t * 9 + f.userData.phase)) * 0.7;
+        f.material.opacity = 0.7 + Math.sin(t * 12 + f.userData.phase) * 0.25;
+      });
+    }
+  }
+
   die(attacker) {
     this.dead = true;
+    this.removeScaffold();
+    if (this.fire) { this.game.scene.remove(this.fire); this.fire = null; }
+    if (this.scorch) { this.game.scene.remove(this.scorch); this.scorch = null; }
     this.game.removeBuilding(this);
     Sound.buildingDie();
   }
@@ -906,6 +979,7 @@ export class Game {
       const def = p.faction.buildings[mainKey];
       const b = new Building(this, owner, { ...def }, mainKey, site.x - def.size / 2 | 0, site.y - def.size / 2 | 0);
       b.complete = true; b.progress = 1; b.hp = b.maxHp; b.mesh.scale.y = 1;
+      b.removeScaffold();
       this.buildings.push(b);
       if (owner === 0) this.playerMain = b; else this.enemyMain = b;
       // starting workers
