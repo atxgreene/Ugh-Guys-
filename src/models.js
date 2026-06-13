@@ -2,16 +2,35 @@
 // carried by emissive glow accents. All builders return a THREE.Group whose
 // origin sits at ground level.
 import * as THREE from 'three';
+import { stoneMaps, blockMaps, woodMaps, boneMaps } from './textures.js';
+
+// Attach a procedural PBR surface to a material; brightens base color to
+// compensate for the albedo multiply.
+function applySurface(m, kind, gain = 1.9) {
+  const s = kind === 'wood' ? woodMaps() : kind === 'bone' ? boneMaps()
+    : kind === 'blocks' ? blockMaps() : stoneMaps();
+  m.map = s.map; m.normalMap = s.normalMap; m.roughnessMap = s.roughnessMap;
+  m.normalScale = new THREE.Vector2(0.6, 0.6);
+  m.color.multiplyScalar(gain);
+}
 
 const matCache = new Map();
 function mat(color, opts = {}) {
   const key = color + '|' + JSON.stringify(opts);
   if (!matCache.has(key)) {
-    matCache.set(key, new THREE.MeshStandardMaterial({
+    const m = new THREE.MeshStandardMaterial({
       color, roughness: opts.rough ?? 0.85, metalness: opts.metal ?? 0.1,
       emissive: opts.emissive ?? 0x000000, emissiveIntensity: opts.ei ?? 1,
       flatShading: true,
-    }));
+    });
+    // textured surfaces for the common structural materials (not for glows)
+    if (!opts.emissive) {
+      if (color === 0x3d3228 || color === 0x2e2620) applySurface(m, 'wood');
+      else if (color === 0x6b6457) applySurface(m, 'bone');
+      else if (color === 0x26262c || color === 0x1b1b20) applySurface(m, 'stone');
+      else if (color === 0x3a3a40) applySurface(m, 'blocks');
+    }
+    matCache.set(key, m);
   }
   return matCache.get(key);
 }
@@ -425,6 +444,53 @@ export function buildDoodad(type) {
       grp.add(box(0.5, 0.6 + Math.random() * 1.4, 0.5, mat(ASH), (Math.random() - 0.5) * 2.4, 0.5, (Math.random() - 0.5) * 2.4, 0, Math.random()));
   } else if (type === 'crystal') {
     grp.add(prim(new THREE.OctahedronGeometry(0.5), glowMat(0x355a7a, 0.7), 0, 0.5, 0, 0.3, 0.5));
+  } else if (type === 'fallen_obelisk') {
+    // a toppled, half-buried Watcher pillar — broken sacred geometry
+    const ob = box(0.7, 4.5, 0.7, mat(DARKER), 0, 0.45, 0, 0, Math.random() * 0.5, Math.PI / 2 - 0.12);
+    grp.add(ob);
+    grp.add(box(0.74, 0.16, 0.16, glowMat(0x6f8cff, 0.5), 0.2, 0.55, 0.37));
+    grp.add(box(0.74, 0.16, 0.16, glowMat(0x6f8cff, 0.5), -1.0, 0.55, 0.37));
+    grp.add(prim(new THREE.DodecahedronGeometry(0.5), mat(DARK), 2.3, 0.3, 0.2)); // broken cap
+  } else if (type === 'altar') {
+    // abandoned offering altar, soot-stained
+    grp.add(cyl(1.1, 1.3, 0.5, mat(ASH), 8, 0, 0.25, 0));
+    grp.add(box(1.0, 0.7, 1.0, mat(0x3a3a40), 0, 0.85, 0));
+    grp.add(box(1.2, 0.18, 1.2, mat(DARK), 0, 1.28, 0));
+    grp.add(prim(new THREE.CircleGeometry(0.45, 10), glowMat(0xff6a30, 0.35), 0, 1.39, 0, -Math.PI / 2)); // cold embers
+  } else if (type === 'giant_bones') {
+    // half-buried Nephilim ribcage rising from the earth
+    const bm = mat(BONE);
+    grp.add(cyl(0.18, 0.22, 1.0, bm, 5, 0, 0.3, 0, 0, 0, 0.4)); // spine stub
+    for (let i = 0; i < 5; i++) {
+      const t = i / 4, x = (t - 0.5) * 2.4;
+      const rib = prim(new THREE.TorusGeometry(0.9 - Math.abs(t - 0.5) * 0.6, 0.1, 5, 9, Math.PI), bm,
+        x, 0.1, 0, 0, 0, 0);
+      rib.rotation.z = 0.1 * (i - 2);
+      grp.add(rib);
+    }
+  } else if (type === 'giant_weapon') {
+    // a colossal broken bronze blade thrust into the ground
+    grp.add(box(0.5, 5.0, 0.16, mat(0x6b5024, { metal: 0.5, rough: 0.5 }), 0, 1.6, 0, 0.12, 0.4, 0.18));
+    grp.add(box(0.9, 0.6, 0.4, mat(WOOD), 0, -0.7, 0, 0.12, 0.4, 0.18)); // buried hilt/guard
+    grp.add(prim(new THREE.DodecahedronGeometry(0.4), mat(DARK), 0.5, 0.1, 0.3));
+  } else if (type === 'boundary_stone') {
+    // inscribed kudurru boundary marker
+    grp.add(box(0.6, 1.7, 0.5, mat(0x46423a), 0, 0.85, 0, 0, Math.random(), 0.04));
+    grp.add(cone(0.42, 0.4, mat(0x46423a), 6, 0, 1.85, 0));
+    for (let y = 0.5; y < 1.5; y += 0.32)
+      grp.add(box(0.62, 0.1, 0.1, mat(0x2a2722), 0, y, 0.2));
+  } else if (type === 'dead_tree') {
+    // a sacred grove tree, long dead — gnarled silhouette
+    grp.add(cyl(0.18, 0.34, 2.6, mat(0x2a2218), 6, 0, 1.3, 0));
+    for (let i = 0; i < 5; i++) {
+      const a = i / 5 * Math.PI * 2;
+      grp.add(cyl(0.05, 0.11, 1.3, mat(0x2a2218), 4,
+        Math.cos(a) * 0.5, 2.2 + (i % 2) * 0.3, Math.sin(a) * 0.5, 0.5 + Math.random() * 0.4, a, 0));
+    }
+  } else if (type === 'tablet') {
+    // shattered clay tablet leaning in the dust
+    grp.add(box(1.0, 1.3, 0.14, mat(0x5a4a36), 0, 0.6, 0, -0.5, Math.random(), 0.1));
+    grp.add(box(0.5, 0.7, 0.14, mat(0x4a3c2c), 0.7, 0.25, 0.3, -0.7, Math.random(), 0.3)); // broken-off piece
   }
   return grp;
 }
@@ -432,14 +498,25 @@ export function buildDoodad(type) {
 // ---------- factory ----------
 
 const factionMats = new Map();
+
+// Subtle "living sigil" flicker on all faction glow materials.
+export function tickGlowMats(time) {
+  let i = 0;
+  for (const { g } of factionMats.values()) {
+    g.emissiveIntensity = 1.8 + Math.sin(time * 2.4 + i * 1.7) * 0.22;
+    i++;
+  }
+}
 function getFactionMats(color, glow) {
   const key = color + ':' + glow;
   if (!factionMats.has(key)) {
     // Dark body tinted toward faction color; bright emissive accent.
     const c = new THREE.Color(color);
     const body = new THREE.Color(0x35353e).lerp(c, 0.4);
+    const b = new THREE.MeshStandardMaterial({ color: body, roughness: 0.8, metalness: 0.15, flatShading: true });
+    applySurface(b, 'blocks');
     factionMats.set(key, {
-      b: new THREE.MeshStandardMaterial({ color: body, roughness: 0.8, metalness: 0.15, flatShading: true }),
+      b,
       g: new THREE.MeshStandardMaterial({ color: 0x111114, emissive: glow, emissiveIntensity: 1.8, roughness: 0.5, flatShading: true }),
     });
   }

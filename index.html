@@ -33,41 +33,61 @@
     .fcard.nephilim:hover { border-color: #e05533; box-shadow: 0 0 24px rgba(224,85,51,.25); }
     #menu .hint { font-size: 12px; color: #6a6478; max-width: 640px; text-align: center; line-height: 1.7; }
 
-    /* ---------- HUD ---------- */
+    /* ---------- HUD (ancient bronze + carved stone) ---------- */
     .hud { position: absolute; z-index: 10; }
-    #topbar { top: 0; left: 0; right: 0; height: 38px; display: none; align-items: center;
-      padding: 0 12px; gap: 18px;
-      background: linear-gradient(180deg, rgba(10,10,16,0.95), rgba(10,10,16,0.75));
-      border-bottom: 1px solid #2e2a3a; font-size: 14px; }
-    #resources { display: flex; gap: 16px; }
+    #topbar { top: 0; left: 0; right: 0; height: 42px; display: none; align-items: center;
+      padding: 0 16px; gap: 18px; font-size: 14px;
+      background:
+        linear-gradient(180deg, rgba(34,28,20,0.97), rgba(20,17,13,0.94)),
+        repeating-linear-gradient(90deg, rgba(0,0,0,0.12) 0 2px, rgba(255,255,255,0.015) 2px 4px);
+      border-bottom: 2px solid transparent;
+      border-image: linear-gradient(90deg, #5a4424, #b88a3e, #e6c074, #b88a3e, #5a4424) 1;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.6), inset 0 1px 0 rgba(230,192,116,0.18); }
+    #resources { display: flex; gap: 18px; }
+    .res { padding: 2px 4px; }
     .res b { font-family: inherit; }
-    #clock { margin-left: auto; color: #8a8294; font-variant-numeric: tabular-nums; }
-    #btn-menu { background: #241f30; color: #b8aa88; border: 1px solid #3a3544; padding: 4px 12px;
-      cursor: pointer; font-family: inherit; border-radius: 3px; }
-    #btn-menu:hover { background: #322b42; }
+    #clock { margin-left: auto; color: #c9a86a; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    #btn-menu { background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6c074;
+      border: 1px solid #7a5a2c; padding: 5px 14px; cursor: pointer; font-family: inherit; border-radius: 3px;
+      box-shadow: inset 0 1px 0 rgba(230,192,116,0.2); }
+    #btn-menu:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); border-color: #b88a3e; }
 
-    #minimap-wrap { left: 10px; bottom: 10px; padding: 5px; display: none;
-      background: rgba(10,10,16,0.9); border: 1px solid #2e2a3a; border-radius: 4px; }
-    #minimap { width: 208px; height: 208px; display: block; image-rendering: pixelated; cursor: crosshair; }
+    /* minimap framed as an inscribed stone tablet with bronze rim */
+    #minimap-wrap { left: 12px; bottom: 12px; padding: 9px; display: none;
+      background: linear-gradient(160deg, #2a241c, #15110c);
+      border: 2px solid transparent;
+      border-image: linear-gradient(135deg, #7a5a2c, #d9ad5e, #6a4e26) 1;
+      border-radius: 4px; box-shadow: 0 4px 16px rgba(0,0,0,0.7), inset 0 0 18px rgba(0,0,0,0.6); }
+    #minimap { width: 206px; height: 206px; display: block; image-rendering: pixelated; cursor: crosshair;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.6); }
 
-    #panel { left: 240px; right: 10px; bottom: 10px; min-height: 118px; max-width: 980px;
-      display: none; gap: 14px; padding: 10px 14px;
-      background: rgba(10,10,16,0.9); border: 1px solid #2e2a3a; border-radius: 4px; }
-    #selinfo { width: 270px; flex-shrink: 0; border-right: 1px solid #2e2a3a; padding-right: 12px; }
-    .sel-name { font-size: 16px; color: #d8c89a; letter-spacing: 1px; }
+    /* command panel as a carved stone slab */
+    #panel { left: 246px; right: 12px; bottom: 12px; min-height: 122px; max-width: 980px;
+      display: none; gap: 14px; padding: 12px 16px;
+      background:
+        linear-gradient(180deg, rgba(40,34,26,0.96), rgba(20,17,12,0.96)),
+        repeating-linear-gradient(0deg, rgba(0,0,0,0.10) 0 3px, rgba(255,255,255,0.012) 3px 6px);
+      border: 2px solid transparent;
+      border-image: linear-gradient(135deg, #5a4424, #b88a3e, #5a4424) 1;
+      border-radius: 4px; box-shadow: 0 4px 18px rgba(0,0,0,0.7), inset 0 1px 0 rgba(230,192,116,0.12); }
+    #selinfo { width: 270px; flex-shrink: 0; border-right: 1px solid #5a4424; padding-right: 12px; }
+    .sel-name { font-size: 16px; color: #e6c074; letter-spacing: 1px; }
     .sel-hp { font-size: 12px; color: #9be86e; margin-top: 3px; }
     .sel-desc { font-size: 11.5px; color: #8a8294; font-style: italic; margin-top: 5px; line-height: 1.45; }
     .queue { font-size: 12px; margin-top: 6px; color: #b8aa88; }
     .queue progress { width: 90px; height: 8px; }
     #commands { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
-    .cmd { width: 104px; height: 64px; background: #1c1926; border: 1px solid #3a3544; color: #c8c2b4;
-      cursor: pointer; font-family: inherit; border-radius: 4px; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 1px; padding: 2px; }
-    .cmd:hover { border-color: #d8c89a; background: #262134; }
-    .cmd.disabled { opacity: 0.35; cursor: not-allowed; }
-    .cmd-icon { font-size: 18px; }
-    .cmd-label { font-size: 10.5px; text-align: center; line-height: 1.1; }
-    .cmd-sub { font-size: 9.5px; color: #8a8294; }
+    .cmd { width: 104px; height: 64px; color: #d8c8a8;
+      background: linear-gradient(180deg, #2c2519, #1a150d);
+      border: 1px solid #6a4e26; cursor: pointer; font-family: inherit; border-radius: 4px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 2px;
+      box-shadow: inset 0 1px 0 rgba(230,192,116,0.12), inset 0 -2px 4px rgba(0,0,0,0.4); }
+    .cmd:hover { border-color: #e6c074; background: linear-gradient(180deg, #3c3322, #241d12);
+      box-shadow: inset 0 1px 0 rgba(230,192,116,0.25), 0 0 10px rgba(230,192,116,0.18); }
+    .cmd.disabled { opacity: 0.32; cursor: not-allowed; }
+    .cmd-icon { font-size: 19px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6)); }
+    .cmd-label { font-size: 10.5px; text-align: center; line-height: 1.1; color: #cdbf9a; }
+    .cmd-sub { font-size: 9.5px; color: #b89a5e; }
     .cmd-act { width: 76px; }
 
     #selbox { position: absolute; z-index: 20; display: none; border: 1px solid #9be86e;
@@ -76,9 +96,10 @@
 
     #toasts { top: 48px; left: 50%; transform: translateX(-50%); display: flex;
       flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
-    .toast { background: rgba(20,18,30,0.92); border: 1px solid #4a4458; padding: 7px 18px;
-      border-radius: 3px; font-size: 13.5px; color: #d8c89a; letter-spacing: 0.5px;
-      transition: opacity .6s; }
+    .toast { background: linear-gradient(180deg, rgba(40,32,20,0.95), rgba(22,18,12,0.95));
+      border: 1px solid #8a6a30; border-left: 3px solid #e6c074; padding: 7px 18px;
+      border-radius: 3px; font-size: 13.5px; color: #e6cf94; letter-spacing: 0.5px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5); transition: opacity .6s; }
     .toast.fade { opacity: 0; }
 
     #gameover { position: absolute; inset: 0; z-index: 40; display: none; flex-direction: column;
@@ -93,6 +114,24 @@
       background: rgba(10,10,16,0.75); border: 1px solid #2e2a3a; border-radius: 4px; display: none;
       line-height: 1.7; }
     #help b { color: #b8aa88; }
+
+    /* faction intro card — fades over the opening flyover */
+    #introcard { position: absolute; left: 0; right: 0; top: 32%; z-index: 38; display: none;
+      flex-direction: column; align-items: center; gap: 14px; pointer-events: none;
+      opacity: 0; transition: opacity 1.1s ease; text-align: center; }
+    #introcard.show { opacity: 1; }
+    #introcard h2 { font-size: 46px; letter-spacing: 9px; font-weight: normal; color: #e6c074;
+      text-shadow: 0 0 32px rgba(230,192,116,0.5), 0 2px 4px #000; text-transform: uppercase; }
+    #introcard .ic-sub { font-size: 16px; font-style: italic; color: #cdbf9a; letter-spacing: 2px;
+      text-shadow: 0 2px 6px #000; max-width: 640px; }
+    #introcard .ic-rule { width: 320px; height: 2px; border: 0;
+      background: linear-gradient(90deg, transparent, #b88a3e, transparent); }
+
+    #loading { position: absolute; inset: 0; z-index: 60; display: none; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px; background: #08080c;
+      color: #b8aa88; font-style: italic; letter-spacing: 2px; }
+    .load-glyph { font-size: 42px; color: #ffd56e; animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 0.35; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.1); } }
   </style>
 </head>
 <body>
@@ -127,6 +166,8 @@
     <div class="hud" id="help"></div>
     <div id="selbox"></div>
     <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button></div>
+    <div id="introcard"><div class="ic-rule"></div><h2 id="ic-name"></h2><div class="ic-sub" id="ic-sub"></div><div class="ic-rule"></div></div>
+    <div id="loading"><div class="load-glyph">✦</div><div>Shaping the world before the flood…</div></div>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>

@@ -28,6 +28,17 @@ function buildMenu() {
 }
 
 function startGame(playerFactionKey) {
+  // world generation takes a moment — paint the loading screen first
+  document.getElementById('menu').style.display = 'none';
+  const loading = document.getElementById('loading');
+  loading.style.display = 'flex';
+  requestAnimationFrame(() => setTimeout(() => {
+    startGameNow(playerFactionKey);
+    loading.style.display = 'none';
+  }, 30));
+}
+
+function startGameNow(playerFactionKey) {
   stopGame();
   // enemy: random different faction
   const others = Object.keys(FACTIONS).filter(k => k !== playerFactionKey);
@@ -40,20 +51,30 @@ function startGame(playerFactionKey) {
   document.getElementById('gameover').style.display = 'none';
 
   const container = document.getElementById('game-container');
-  const game = new Game(container, playerFactionKey, enemyKey);
+  const game = new Game(container, playerFactionKey, enemyKey, window.__forceOpts || {});
   const ui = new UI(game, returnToMenu);
   const controls = new Controls(game, ui);
   ui.controls = controls;
+  game.controls = controls;
   game.ai = new AI(game);
   window.__game = game; window.__controls = controls;
 
-  ui.toast(`The ${FACTIONS[enemyKey].name} stir beyond the ridge…`);
+  ui.showIntroCard(FACTIONS[playerFactionKey]);
+  ui.toast(`${game.map.biome.name} — the ${FACTIONS[enemyKey].name} stir beyond the ridge…`);
 
   let last = performance.now();
+  let slowFrames = 0, totalFrames = 0;
   const loop = (now) => {
     current.raf = requestAnimationFrame(loop);
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const rawDt = (now - last) / 1000;
+    const dt = Math.min(0.05, rawDt);
     last = now;
+    // auto quality: after warmup, sustained slow frames drop bloom + pixel ratio
+    totalFrames++;
+    if (totalFrames > 40 && !game.lowQuality) {
+      slowFrames = rawDt > 0.045 ? slowFrames + 1 : Math.max(0, slowFrames - 2);
+      if (slowFrames > 25) game.setLowQuality();
+    }
     game.update(dt);
     controls.updateCamera(dt);
     ui.update(dt);
@@ -76,6 +97,7 @@ function returnToMenu() {
   document.getElementById('minimap-wrap').style.display = 'none';
   document.getElementById('panel').style.display = 'none';
   document.getElementById('gameover').style.display = 'none';
+  const ic = document.getElementById('introcard'); ic.style.display = 'none'; ic.classList.remove('show');
   document.getElementById('toasts').innerHTML = '';
   const ov = document.getElementById('overlay');
   ov.getContext('2d').clearRect(0, 0, ov.width, ov.height);

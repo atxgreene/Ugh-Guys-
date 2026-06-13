@@ -13,23 +13,27 @@ class MinHeap {
   get size() { return this.a.length; }
 }
 
-export function findNearestWalkable(map, tx, ty, maxR = 10) {
-  if (map.isWalkable(tx, ty)) return { x: tx, y: ty };
+export function findNearestWalkable(map, tx, ty, maxR = 10, clearance = 0) {
+  if (map.isWalkableClear(tx, ty, clearance)) return { x: tx, y: ty };
   for (let r = 1; r <= maxR; r++) {
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-      if (map.isWalkable(tx + dx, ty + dy)) return { x: tx + dx, y: ty + dy };
+      if (map.isWalkableClear(tx + dx, ty + dy, clearance)) return { x: tx + dx, y: ty + dy };
     }
   }
+  // fall back to bare walkable so a unit is never left without a target tile
+  if (clearance > 0) return findNearestWalkable(map, tx, ty, maxR, 0);
   return null;
 }
 
 // Returns array of world-space waypoints {x, z}, or null.
-export function findPath(map, startW, goalW) {
+// `clearance` (in tiles) keeps wide units away from walls they can't squeeze past.
+export function findPath(map, startW, goalW, clearance = 0) {
+  const walkable = (x, y) => map.isWalkableClear(x, y, clearance);
   const s0 = map.tileOf(startW.x, startW.z);
   const g0 = map.tileOf(goalW.x, goalW.z);
-  const start = findNearestWalkable(map, s0.x, s0.y) || s0;
-  const goal = findNearestWalkable(map, g0.x, g0.y);
+  const start = findNearestWalkable(map, s0.x, s0.y, 10, clearance) || s0;
+  const goal = findNearestWalkable(map, g0.x, g0.y, 10, clearance);
   if (!goal) return null;
   if (start.x === goal.x && start.y === goal.y) return [{ x: goalW.x, z: goalW.z }];
 
@@ -55,8 +59,8 @@ export function findPath(map, startW, goalW) {
     if (cur.x === goal.x && cur.y === goal.y) { found = true; break; }
     for (const [dx, dy, cost] of DIRS) {
       const nx = cur.x + dx, ny = cur.y + dy;
-      if (!map.isWalkable(nx, ny)) continue;
-      if (dx && dy && (!map.isWalkable(cur.x + dx, cur.y) || !map.isWalkable(cur.x, cur.y + dy))) continue; // no corner cutting
+      if (!walkable(nx, ny)) continue;
+      if (dx && dy && (!walkable(cur.x + dx, cur.y) || !walkable(cur.x, cur.y + dy))) continue; // no corner cutting
       const ni = idx(nx, ny);
       if (closed[ni]) continue;
       const ng = gScore[ci] + cost;
@@ -66,7 +70,9 @@ export function findPath(map, startW, goalW) {
       }
     }
   }
-  if (!found) return null;
+  // No wide-clearance route exists (e.g. a giant facing a narrow pass) — retry
+  // without clearance so there's always a path; wall-sliding handles the squeeze.
+  if (!found) return clearance > 0 ? findPath(map, startW, goalW, 0) : null;
   // reconstruct
   let tiles = [];
   let i = idx(goal.x, goal.y);
@@ -79,7 +85,7 @@ export function findPath(map, startW, goalW) {
     const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
     let err = dx - dy;
     for (;;) {
-      if (!map.isWalkable(x0, y0)) return false;
+      if (!walkable(x0, y0)) return false;
       if (x0 === x1 && y0 === y1) return true;
       const e2 = 2 * err;
       if (e2 > -dy) { err -= dy; x0 += sx; }
@@ -97,4 +103,9 @@ export function findPath(map, startW, goalW) {
   const gt = map.tileOf(goalW.x, goalW.z);
   if (map.isWalkable(gt.x, gt.y)) pts[pts.length - 1] = { x: goalW.x, z: goalW.z };
   return pts;
+}
+
+// Tiles of clearance a unit of world-radius r needs to avoid clipping walls.
+export function clearanceFor(radius) {
+  return radius > 1.0 ? 1 : 0;
 }

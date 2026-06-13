@@ -2,6 +2,7 @@
 // World is GRID x GRID tiles of TILE world units, origin at (0,0).
 import * as THREE from 'three';
 import { buildDoodad } from './models.js';
+import { terrainMaps } from './textures.js';
 
 export const GRID = 96;
 export const TILE = 2;
@@ -23,9 +24,53 @@ function makeNoise(seed) {
   };
 }
 
+// Biomes give each map a distinct land identity: ground palette, what litters it,
+// and the sky moods it pairs with. Layout/movement are unchanged for fairness.
+export const BIOMES = {
+  river_valley: {
+    name: 'Fertile River Valley',
+    base: 0x4c5240, ash: 0x6a6b4a, rock: 0x3a3a33, sand: 0x7a6c4e, moss: 0x4e6a48,
+    clutter: { rock: 0.3, ruin: 0.2, dead_tree: 0.15, monolith: 0.1, boundary_stone: 0.15, crystal: 0.1 },
+    moods: ['dawn', 'noon', 'dusk'],
+  },
+  cedar_forest: {
+    name: 'Ancient Cedar Stands',
+    base: 0x36402f, ash: 0x4a4a38, rock: 0x2c2e28, sand: 0x55503a, moss: 0x3a4e34,
+    clutter: { rock: 0.25, dead_tree: 0.35, ruin: 0.15, monolith: 0.1, tablet: 0.15 },
+    moods: ['dusk', 'dawn', 'night'],
+  },
+  basalt_highland: {
+    name: 'Basalt Highlands',
+    base: 0x33333c, ash: 0x44444e, rock: 0x1f1f26, sand: 0x4a4640, moss: 0x32403a,
+    clutter: { rock: 0.45, monolith: 0.2, ruin: 0.15, fallen_obelisk: 0.1, crystal: 0.1 },
+    moods: ['storm', 'dusk', 'night'],
+  },
+  nephilim_waste: {
+    name: 'Nephilim Wasteland',
+    base: 0x46403a, ash: 0x564a42, rock: 0x2e2824, sand: 0x6a5a48, moss: 0x4a4030, tint: 0x3a2420,
+    clutter: { rock: 0.3, giant_bones: 0.25, giant_weapon: 0.15, ruin: 0.15, altar: 0.15 },
+    moods: ['storm', 'night', 'dusk'],
+  },
+  watcher_ruins: {
+    name: 'The Watcher Ruins',
+    base: 0x2c2e3a, ash: 0x3a3c4c, rock: 0x1c1e28, sand: 0x44465a, moss: 0x2e3848,
+    clutter: { fallen_obelisk: 0.3, monolith: 0.2, crystal: 0.2, tablet: 0.15, ruin: 0.15 },
+    moods: ['night', 'storm', 'dusk'],
+  },
+  sacred_foothills: {
+    name: 'Sacred Mountain Foothills',
+    base: 0x52543e, ash: 0x6e6a4c, rock: 0x40403a, sand: 0x80714e, moss: 0x566a4a,
+    clutter: { rock: 0.3, altar: 0.2, dead_tree: 0.2, boundary_stone: 0.2, tablet: 0.1 },
+    moods: ['dawn', 'noon', 'dusk'],
+  },
+};
+
 export class GameMap {
-  constructor(seed = Math.floor(Math.random() * 1e9)) {
+  constructor(seed = Math.floor(Math.random() * 1e9), biomeKey) {
     this.seed = seed;
+    const bkeys = Object.keys(BIOMES);
+    this.biomeKey = biomeKey && BIOMES[biomeKey] ? biomeKey : bkeys[Math.floor(Math.random() * bkeys.length)];
+    this.biome = BIOMES[this.biomeKey];
     const noise = makeNoise(seed);
     this.height = new Float32Array(GRID * GRID);
     this.mountain = new Uint8Array(GRID * GRID);
@@ -76,6 +121,38 @@ export class GameMap {
   tileOf(wx, wz) { return { x: Math.max(0, Math.min(GRID - 1, Math.floor(wx / TILE))), y: Math.max(0, Math.min(GRID - 1, Math.floor(wz / TILE))) }; }
   isWalkable(x, y) { return this.inBounds(x, y) && !this.blocked[this.idx(x, y)]; }
 
+  // A tile is "clear" for a unit needing `clearance` tiles of margin only if
+  // every tile within that margin is walkable. Used so large units don't get
+  // routed through gaps too narrow to physically fit.
+  isWalkableClear(x, y, clearance = 0) {
+    if (!this.isWalkable(x, y)) return false;
+    if (clearance <= 0) return true;
+    for (let dy = -clearance; dy <= clearance; dy++)
+      for (let dx = -clearance; dx <= clearance; dx++)
+        if (!this.isWalkable(x + dx, y + dy)) return false;
+    return true;
+  }
+
+  // True if a unit-circle of world-radius r centred at (wx,wz) overlaps any
+  // blocked tile. Cheap AABB-vs-circle test over the few tiles it could touch.
+  circleBlocked(wx, wz, r) {
+    if (wx < r || wz < r || wx > WORLD - r || wz > WORLD - r) return true;
+    const minTx = Math.floor((wx - r) / TILE), maxTx = Math.floor((wx + r) / TILE);
+    const minTy = Math.floor((wz - r) / TILE), maxTy = Math.floor((wz + r) / TILE);
+    for (let ty = minTy; ty <= maxTy; ty++) {
+      for (let tx = minTx; tx <= maxTx; tx++) {
+        if (!this.inBounds(tx, ty)) return true;
+        if (!this.blocked[this.idx(tx, ty)]) continue;
+        // closest point on the tile rect to the circle centre
+        const rx = Math.max(tx * TILE, Math.min(wx, (tx + 1) * TILE));
+        const rz = Math.max(ty * TILE, Math.min(wz, (ty + 1) * TILE));
+        const ddx = wx - rx, ddz = wz - rz;
+        if (ddx * ddx + ddz * ddz < r * r) return true;
+      }
+    }
+    return false;
+  }
+
   heightAt(wx, wz) {
     const fx = Math.max(0, Math.min(GRID - 1.001, wx / TILE - 0.5));
     const fy = Math.max(0, Math.min(GRID - 1.001, wz / TILE - 0.5));
@@ -87,20 +164,24 @@ export class GameMap {
   }
 
   buildMesh() {
-    const geo = new THREE.PlaneGeometry(WORLD, WORLD, GRID - 1, GRID - 1);
+    // 2x grid density for smoother hill silhouettes; heights sampled bilinearly
+    const SEG = GRID * 2 - 1;
+    const geo = new THREE.PlaneGeometry(WORLD, WORLD, SEG, SEG);
     geo.rotateX(-Math.PI / 2);
     geo.translate(WORLD / 2, 0, WORLD / 2);
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
     const noise = makeNoise(this.seed + 7);
-    const cBase = new THREE.Color(0x42424e), cAsh = new THREE.Color(0x595449),
-          cRock = new THREE.Color(0x2a2a33), cSand = new THREE.Color(0x6b5e4c),
-          cMoss = new THREE.Color(0x44524a);
+    const B = this.biome;
+    const cBase = new THREE.Color(B.base), cAsh = new THREE.Color(B.ash),
+          cRock = new THREE.Color(B.rock), cSand = new THREE.Color(B.sand),
+          cMoss = new THREE.Color(B.moss);
     for (let i = 0; i < pos.count; i++) {
-      const gx = i % GRID, gy = Math.floor(i / GRID);
-      const h = this.height[this.idx(gx, gy)];
+      const wx = pos.getX(i), wz = pos.getZ(i);
+      const h = this.heightAt(wx, wz);
       pos.setY(i, h);
-      const n = noise(gx * 0.2, gy * 0.2);
+      const gx = wx / TILE, gy = wz / TILE;
+      const n = noise(gx * 0.2, gy * 0.2) * 0.8 + noise(gx * 0.7, gy * 0.7) * 0.2;
       let c = cBase.clone().lerp(cAsh, n);
       if (n > 0.62) c.lerp(cSand, (n - 0.62) * 1.6);
       if (n < 0.3) c.lerp(cMoss, (0.3 - n) * 1.2);
@@ -110,7 +191,15 @@ export class GameMap {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
-    const matr = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0.02 });
+    const tm = terrainMaps();
+    const REP = 22;
+    [tm.map, tm.normalMap, tm.roughnessMap].forEach(t => t.repeat.set(REP, REP));
+    const matr = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 1.0, metalness: 0.02,
+      map: tm.map, normalMap: tm.normalMap, roughnessMap: tm.roughnessMap,
+      normalScale: new THREE.Vector2(0.85, 0.85),
+    });
+    matr.color.setScalar(1.8); // compensate for albedo texture multiplying vertex colors
     // multiply fog texture into terrain color
     const fogTex = this.fogTexture;
     matr.onBeforeCompile = (shader) => {
@@ -130,26 +219,36 @@ export class GameMap {
   }
 
   scatterDoodads(scene) {
-    const noise = makeNoise(this.seed + 13);
     this.doodads = [];
     const sites = [this.basePlayer, this.baseEnemy, ...this.expansions];
-    for (let i = 0; i < 130; i++) {
-      const x = 4 + Math.random() * (GRID - 8), y = 4 + Math.random() * (GRID - 8);
-      if (!this.isWalkable(Math.floor(x), Math.floor(y))) continue;
-      if (sites.some(s => Math.hypot(x - s.x, y - s.y) < 14)) continue;
-      const r = noise(x * 0.5, y * 0.5);
-      const type = r < 0.5 ? 'rock' : r < 0.72 ? 'ruin' : r < 0.9 ? 'monolith' : 'crystal';
-      const d = buildDoodad(type);
-      const wx = x * TILE, wz = y * TILE;
-      d.position.set(wx, this.heightAt(wx, wz), wz);
-      d.rotation.y = Math.random() * Math.PI * 2;
-      scene.add(d);
-      this.doodads.push(d);
-      if (type === 'monolith' || type === 'ruin') {
-        const t = this.tileOf(wx, wz);
-        this.blocked[this.idx(t.x, t.y)] = 1;
+    // weighted clutter table from the biome — defines this land's character
+    const weights = Object.entries(this.biome.clutter);
+    const total = weights.reduce((s, [, w]) => s + w, 0);
+    const pick = () => {
+      let r = Math.random() * total;
+      for (const [type, w] of weights) { if ((r -= w) <= 0) return type; }
+      return weights[0][0];
+    };
+    const BLOCKS = new Set(['monolith', 'ruin', 'fallen_obelisk', 'giant_weapon']);
+    const place = (count, minSite, yOffset) => {
+      let made = 0;
+      for (let attempt = 0; attempt < count * 3 && made < count; attempt++) {
+        const x = 5 + Math.random() * (GRID - 10), y = 5 + Math.random() * (GRID - 10);
+        if (!this.isWalkable(Math.floor(x), Math.floor(y))) continue;
+        if (sites.some(s => Math.hypot(x - s.x, y - s.y) < minSite)) continue;
+        const type = pick();
+        const d = buildDoodad(type);
+        const wx = x * TILE, wz = y * TILE;
+        d.position.set(wx, this.heightAt(wx, wz) + yOffset, wz);
+        d.rotation.y = Math.random() * Math.PI * 2;
+        scene.add(d);
+        this.doodads.push(d);
+        made++;
+        if (BLOCKS.has(type)) { const t = this.tileOf(wx, wz); this.blocked[this.idx(t.x, t.y)] = 1; }
       }
-    }
+    };
+    place(150, 13, 0);     // dense ground cover keeps clear of bases
+    place(20, 11, -0.05);  // a few extra landmarks closer in
   }
 
   // Resource node placement plan: [{type, tx, ty}]
