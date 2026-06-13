@@ -444,6 +444,53 @@ export function buildDoodad(type) {
       grp.add(box(0.5, 0.6 + Math.random() * 1.4, 0.5, mat(ASH), (Math.random() - 0.5) * 2.4, 0.5, (Math.random() - 0.5) * 2.4, 0, Math.random()));
   } else if (type === 'crystal') {
     grp.add(prim(new THREE.OctahedronGeometry(0.5), glowMat(0x355a7a, 0.7), 0, 0.5, 0, 0.3, 0.5));
+  } else if (type === 'fallen_obelisk') {
+    // a toppled, half-buried Watcher pillar — broken sacred geometry
+    const ob = box(0.7, 4.5, 0.7, mat(DARKER), 0, 0.45, 0, 0, Math.random() * 0.5, Math.PI / 2 - 0.12);
+    grp.add(ob);
+    grp.add(box(0.74, 0.16, 0.16, glowMat(0x6f8cff, 0.5), 0.2, 0.55, 0.37));
+    grp.add(box(0.74, 0.16, 0.16, glowMat(0x6f8cff, 0.5), -1.0, 0.55, 0.37));
+    grp.add(prim(new THREE.DodecahedronGeometry(0.5), mat(DARK), 2.3, 0.3, 0.2)); // broken cap
+  } else if (type === 'altar') {
+    // abandoned offering altar, soot-stained
+    grp.add(cyl(1.1, 1.3, 0.5, mat(ASH), 8, 0, 0.25, 0));
+    grp.add(box(1.0, 0.7, 1.0, mat(0x3a3a40), 0, 0.85, 0));
+    grp.add(box(1.2, 0.18, 1.2, mat(DARK), 0, 1.28, 0));
+    grp.add(prim(new THREE.CircleGeometry(0.45, 10), glowMat(0xff6a30, 0.35), 0, 1.39, 0, -Math.PI / 2)); // cold embers
+  } else if (type === 'giant_bones') {
+    // half-buried Nephilim ribcage rising from the earth
+    const bm = mat(BONE);
+    grp.add(cyl(0.18, 0.22, 1.0, bm, 5, 0, 0.3, 0, 0, 0, 0.4)); // spine stub
+    for (let i = 0; i < 5; i++) {
+      const t = i / 4, x = (t - 0.5) * 2.4;
+      const rib = prim(new THREE.TorusGeometry(0.9 - Math.abs(t - 0.5) * 0.6, 0.1, 5, 9, Math.PI), bm,
+        x, 0.1, 0, 0, 0, 0);
+      rib.rotation.z = 0.1 * (i - 2);
+      grp.add(rib);
+    }
+  } else if (type === 'giant_weapon') {
+    // a colossal broken bronze blade thrust into the ground
+    grp.add(box(0.5, 5.0, 0.16, mat(0x6b5024, { metal: 0.5, rough: 0.5 }), 0, 1.6, 0, 0.12, 0.4, 0.18));
+    grp.add(box(0.9, 0.6, 0.4, mat(WOOD), 0, -0.7, 0, 0.12, 0.4, 0.18)); // buried hilt/guard
+    grp.add(prim(new THREE.DodecahedronGeometry(0.4), mat(DARK), 0.5, 0.1, 0.3));
+  } else if (type === 'boundary_stone') {
+    // inscribed kudurru boundary marker
+    grp.add(box(0.6, 1.7, 0.5, mat(0x46423a), 0, 0.85, 0, 0, Math.random(), 0.04));
+    grp.add(cone(0.42, 0.4, mat(0x46423a), 6, 0, 1.85, 0));
+    for (let y = 0.5; y < 1.5; y += 0.32)
+      grp.add(box(0.62, 0.1, 0.1, mat(0x2a2722), 0, y, 0.2));
+  } else if (type === 'dead_tree') {
+    // a sacred grove tree, long dead — gnarled silhouette
+    grp.add(cyl(0.18, 0.34, 2.6, mat(0x2a2218), 6, 0, 1.3, 0));
+    for (let i = 0; i < 5; i++) {
+      const a = i / 5 * Math.PI * 2;
+      grp.add(cyl(0.05, 0.11, 1.3, mat(0x2a2218), 4,
+        Math.cos(a) * 0.5, 2.2 + (i % 2) * 0.3, Math.sin(a) * 0.5, 0.5 + Math.random() * 0.4, a, 0));
+    }
+  } else if (type === 'tablet') {
+    // shattered clay tablet leaning in the dust
+    grp.add(box(1.0, 1.3, 0.14, mat(0x5a4a36), 0, 0.6, 0, -0.5, Math.random(), 0.1));
+    grp.add(box(0.5, 0.7, 0.14, mat(0x4a3c2c), 0.7, 0.25, 0.3, -0.7, Math.random(), 0.3)); // broken-off piece
   }
   return grp;
 }

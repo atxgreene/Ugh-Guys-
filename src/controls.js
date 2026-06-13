@@ -277,11 +277,16 @@ export class Controls {
     const cam = this.game.camera;
     const pitch = 0.9 + (this.dist - 16) / 64 * 0.25; // steeper when zoomed out
     const fy = this.game.map.heightAt(this.focus.x, this.focus.z);
-    const cx = this.focus.x + Math.sin(this.yaw) * Math.cos(pitch) * this.dist;
-    const cz = this.focus.z + Math.cos(this.yaw) * Math.cos(pitch) * this.dist;
-    const cy = fy + Math.sin(pitch) * this.dist;
+    // impact shake (giant footfalls, collapses) — decays in game.update
+    const sh = this.game.shake || 0;
+    const sx = sh ? (Math.random() - 0.5) * sh * 2.2 : 0;
+    const sz = sh ? (Math.random() - 0.5) * sh * 2.2 : 0;
+    const sy = sh ? (Math.random() - 0.5) * sh * 1.6 : 0;
+    const cx = this.focus.x + Math.sin(this.yaw) * Math.cos(pitch) * this.dist + sx;
+    const cz = this.focus.z + Math.cos(this.yaw) * Math.cos(pitch) * this.dist + sz;
+    const cy = fy + Math.sin(pitch) * this.dist + sy;
     cam.position.set(cx, cy, cz);
-    cam.lookAt(this.focus.x, fy, this.focus.z);
+    cam.lookAt(this.focus.x + sx * 0.4, fy, this.focus.z + sz * 0.4);
     // sun follows camera focus so shadows stay crisp
     const sun = this.game.sun;
     sun.position.set(this.focus.x + 40, 70, this.focus.z + 25);

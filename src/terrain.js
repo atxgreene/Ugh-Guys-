@@ -177,6 +177,7 @@ export class GameMap {
     const noise = makeNoise(this.seed + 13);
     this.doodads = [];
     const sites = [this.basePlayer, this.baseEnemy, ...this.expansions];
+    // common natural clutter
     for (let i = 0; i < 130; i++) {
       const x = 4 + Math.random() * (GRID - 8), y = 4 + Math.random() * (GRID - 8);
       if (!this.isWalkable(Math.floor(x), Math.floor(y))) continue;
@@ -190,6 +191,27 @@ export class GameMap {
       scene.add(d);
       this.doodads.push(d);
       if (type === 'monolith' || type === 'ruin') {
+        const t = this.tileOf(wx, wz);
+        this.blocked[this.idx(t.x, t.y)] = 1;
+      }
+    }
+    // rarer environmental-storytelling landmarks — the world's history
+    const story = ['fallen_obelisk', 'altar', 'giant_bones', 'giant_weapon', 'boundary_stone', 'dead_tree', 'tablet'];
+    let placed = 0;
+    for (let attempt = 0; attempt < 140 && placed < 26; attempt++) {
+      const x = 6 + Math.random() * (GRID - 12), y = 6 + Math.random() * (GRID - 12);
+      if (!this.isWalkable(Math.floor(x), Math.floor(y))) continue;
+      if (sites.some(s => Math.hypot(x - s.x, y - s.y) < 12)) continue;
+      const type = story[Math.floor(noise(x * 0.9 + 5, y * 0.9) * story.length) % story.length];
+      const d = buildDoodad(type);
+      const wx = x * TILE, wz = y * TILE;
+      d.position.set(wx, this.heightAt(wx, wz) - 0.05, wz);
+      d.rotation.y = Math.random() * Math.PI * 2;
+      scene.add(d);
+      this.doodads.push(d);
+      placed++;
+      // only large landmarks block; bones/tablets/altars stay passable for readability
+      if (type === 'fallen_obelisk' || type === 'giant_weapon') {
         const t = this.tileOf(wx, wz);
         this.blocked[this.idx(t.x, t.y)] = 1;
       }

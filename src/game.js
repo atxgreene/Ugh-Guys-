@@ -10,11 +10,32 @@ import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
 import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP } from './data.js';
 import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats } from './models.js';
 import { waterNormalMap } from './textures.js';
+import { ParticlePool } from './fx.js';
 import { Sound } from './audio.js';
 
 let nextId = 1;
 
 const NEUTRAL_COLOR = 0x808078, NEUTRAL_GLOW = 0xc2b89a;
+
+// Cinematic time-of-day moods. Each match picks one — sky, sun, fog and ambient
+// shift together so the world reads as the last age before the Flood.
+const TIME_PRESETS = {
+  dawn:  { name: 'Dawn of the Last Age', sun: 0xffd9a0, sunI: 2.4, hemiSky: 0x6a78a8, hemiGround: 0x33281c, hemiI: 1.2,
+           rim: 0x8fa6ff, rimI: 0.9, fog: 0x2a2e3e, fogD: 0.0045, bg: 0x222a3c, env: 0.65,
+           skyTop: '#1c2750', skyHorizon: '#c98a5a', skyGround: '#241a16', exposure: 1.5, storm: 0.2 },
+  noon:  { name: 'High Sun', sun: 0xfff0d0, sunI: 3.0, hemiSky: 0x8aa0c8, hemiGround: 0x3a3024, hemiI: 1.5,
+           rim: 0x9fb4ff, rimI: 0.7, fog: 0x9aa2b0, fogD: 0.003, bg: 0x6a7892, env: 0.85,
+           skyTop: '#3a5a9a', skyHorizon: '#b9c2cf', skyGround: '#4a4030', exposure: 1.5, storm: 0.15 },
+  dusk:  { name: 'Red Dusk', sun: 0xff8a4a, sunI: 2.7, hemiSky: 0x5a4a6a, hemiGround: 0x2a1c14, hemiI: 1.1,
+           rim: 0x7a6cff, rimI: 1.1, fog: 0x3a2230, fogD: 0.0052, bg: 0x2e1c28, env: 0.6,
+           skyTop: '#1a1430', skyHorizon: '#d9622e', skyGround: '#1a1012', exposure: 1.6, storm: 0.4 },
+  night: { name: 'The Watch of Night', sun: 0x9fb0e0, sunI: 1.0, hemiSky: 0x2a3450, hemiGround: 0x14110e, hemiI: 0.8,
+           rim: 0x6f8cff, rimI: 1.3, fog: 0x0c1020, fogD: 0.006, bg: 0x080a14, env: 0.4,
+           skyTop: '#05060f', skyHorizon: '#2a3358', skyGround: '#06060a', exposure: 1.7, storm: 0.45, night: true },
+  storm: { name: 'The Gathering Flood', sun: 0x8a90a0, sunI: 1.4, hemiSky: 0x3a4256, hemiGround: 0x1a1a20, hemiI: 1.0,
+           rim: 0x6a7cc0, rimI: 1.0, fog: 0x222834, fogD: 0.0072, bg: 0x1a1e28, env: 0.5,
+           skyTop: '#10141e', skyHorizon: '#3a4150', skyGround: '#0c0e14', exposure: 1.45, storm: 1.0, lightning: true },
+};
 
 export class Entity {
   constructor(game, owner, def, key, x, z) {
@@ -72,7 +93,7 @@ export class Unit extends Entity {
     this.target = null; this.gatherNode = null; this.buildSite = null; this.carryReturn = false;
     this.path = findPath(this.game.map, this.pos, { x, z }, this.clearance);
     this.pathI = 0; this.dest = { x, z }; this.pathGoal = { x, z };
-    this.stuckT = 0;
+    this.stuckT = 0; this.lastDist = undefined; this.ckDist = undefined; this.ckT = 0;
     // even with no tile path (e.g. destination deep in a wall) still head there;
     // the collision resolver will slide along barriers rather than freeze.
     this.state = attackMove ? 'attackMove' : 'move';
@@ -121,6 +142,7 @@ export class Unit extends Entity {
     if (!this.path || goalMoved) {
       this.path = findPath(this.game.map, this.pos, { x, z }, this.clearance);
       this.pathGoal = { x, z }; this.pathI = 0; this.stuckT = 0; this.repathT = 0.4;
+      this.lastDist = undefined; this.ckDist = undefined; this.ckT = 0;
     }
 
     // advance past waypoints we've effectively reached
@@ -136,28 +158,41 @@ export class Unit extends Entity {
     const target = this.def.speed * (dist < 2.5 ? Math.max(0.35, dist / 2.5) : 1);
     this.curSpeed += (target - this.curSpeed) * Math.min(1, dt * 8);
     const step = this.curSpeed * dt;
-    const moved = this.moveBy((mx / md) * step, (mz / md) * step);
+    this.moveBy((mx / md) * step, (mz / md) * step);
     this.facingTarget = Math.atan2(mx, mz);
     this.moving = true;
 
-    // stuck detection: barely moved despite wanting to → re-route, then nudge,
-    // then give up if we're close enough that crowding is the likely cause.
-    if (moved < step * 0.35) {
+    // backstop: if we haven't gained real ground (≥2 units) in 4s, settle. Legit
+    // long journeys keep improving and reset this; only true grinders trip it.
+    if (this.ckDist === undefined || dist < this.ckDist - 2) { this.ckDist = dist; this.ckT = 0; }
+    else { this.ckT = (this.ckT || 0) + dt; if (this.ckT > 4) { this.moving = false; this.ckDist = undefined; return true; } }
+
+    // stuck detection by NET PROGRESS toward the goal (robust to crowd jitter):
+    // if we aren't actually getting closer, escalate from re-route → slip → give up.
+    const progress = (this.lastDist === undefined ? 0 : this.lastDist - dist);
+    this.lastDist = dist;
+    if (progress < step * 0.25) {
       this.stuckT += dt;
       if (this.stuckT > 0.3 && this.repathT <= 0) {
         this.path = findPath(this.game.map, this.pos, { x, z }, this.clearance);
         this.pathGoal = { x, z }; this.pathI = 0; this.repathT = 0.5;
       }
-      if (this.stuckT > 0.55) {
+      if (this.stuckT > 0.5) {
         // perpendicular slip to escape a corner or a clump
         const px = -(mz / md), pz = (mx / md);
         const side = ((this.id & 1) ? 1 : -1);
         this.moveBy(px * step * side, pz * step * side);
       }
-      if (this.stuckT > 1.1 && dist <= near + this.radius * 2 + 1.4) { this.moving = false; return true; }
-      if (this.stuckT > 2.2) { this.moving = false; return true; } // never freeze forever
+      // jammed among allies anywhere near the destination → the slot is taken,
+      // settle here rather than grinding (handles deep formation stragglers)
+      if (this.stuckT > 0.8) {
+        const crowd = this.game.unitsNear(this.pos, this.radius + 1.3, this).length;
+        if (crowd >= 2 && dist <= near + this.radius * 2 + 9) { this.moving = false; return true; }
+      }
+      if (this.stuckT > 0.9 && dist <= near + this.radius * 2 + 2.0) { this.moving = false; return true; }
+      if (this.stuckT > 2.0) { this.moving = false; return true; }
     } else {
-      this.stuckT = Math.max(0, this.stuckT - dt * 2);
+      this.stuckT = 0;
     }
     return Math.hypot(x - this.pos.x, z - this.pos.z) <= near;
   }
@@ -324,6 +359,21 @@ export class Unit extends Entity {
       this.mesh.position.x += Math.sin(this.facing) * 0.25 * (this.lungeT / 0.18);
       this.mesh.position.z += Math.cos(this.facing) * 0.25 * (this.lungeT / 0.18);
     }
+    // kicked-up dust while moving — heavier and shakier for the great ones
+    if (this.moving) {
+      const massive = (this.def.tags || []).includes('massive');
+      const interval = massive ? 0.28 : 0.5;
+      this.dustT = (this.dustT || 0) - dt;
+      if (this.dustT <= 0) {
+        this.dustT = interval;
+        this.game.dustAt(this.pos.x, this.pos.z, massive ? 2.4 : 0.9);
+        if (massive) {
+          this.game.dustAt(this.pos.x + (Math.random() - 0.5), this.pos.z + (Math.random() - 0.5), 1.8);
+          const f = this.game.controls && this.game.controls.focus;
+          if (f && Math.hypot(this.pos.x - f.x, this.pos.z - f.z) < 26) this.game.addShake(0.06);
+        }
+      }
+    }
   }
 
   findNewNode() {
@@ -383,6 +433,13 @@ export class Building extends Entity {
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++)
       game.map.blocked[game.map.idx(tx + x, ty + y)] = 1;
     this.hp = Math.max(1, Math.round(def.hp * 0.1));
+    // smoke/spark emission profile by building type
+    const FORGE = ['foundry', 'starforge', 'star_forge'];
+    const HEARTH = ['city_center', 'spire', 'hearth', 'granary', 'bonepit', 'temple', 'archive'];
+    this.emitsSparks = FORGE.includes(def.model);
+    this.emitsSmoke = this.emitsSparks || HEARTH.includes(def.model);
+    this.smokeY = size * 1.6 + 1.2;
+    this.emitT = Math.random();
   }
 
   get radius() { return this.def.radius; }
@@ -393,7 +450,12 @@ export class Building extends Entity {
         const rate = Math.sqrt(this.builders);
         this.progress += (dt / this.def.buildTime) * rate;
         this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.9 * (dt / this.def.buildTime) * rate);
+        // ease the rise so structures grow out of the ground rather than snapping
         this.mesh.scale.y = 0.08 + 0.92 * Math.min(1, this.progress);
+        // construction dust around the footprint
+        if (Math.random() < dt * 4 && this.game.map.fogStateAt(this.pos.x, this.pos.z) === 2)
+          this.game.dustAt(this.pos.x + (Math.random() - 0.5) * this.radius * 2,
+                           this.pos.z + (Math.random() - 0.5) * this.radius * 2, 1.2);
         if (this.progress >= 1) {
           this.complete = true;
           this.mesh.scale.y = 1;
@@ -402,6 +464,32 @@ export class Building extends Entity {
       }
       this.builders = 0;
       return;
+    }
+    // living chimney smoke / forge sparks, and distress smoke when damaged
+    const visible = this.mesh.visible && this.game.map.fogStateAt(this.pos.x, this.pos.z) >= 1;
+    if (visible) {
+      this.emitT -= dt;
+      const hurt = this.hp < this.maxHp * 0.5;
+      if (this.emitT <= 0) {
+        this.emitT = 0.18 + Math.random() * 0.18;
+        if (this.emitsSmoke || hurt) {
+          const c = hurt ? 0.9 : 0.5;
+          this.game.fxSmoke.spawn(this.pos.x + (Math.random() - 0.5) * this.radius,
+            this.groundY + this.smokeY, this.pos.z + (Math.random() - 0.5) * this.radius,
+            (Math.random() - 0.5) * 0.4, 1.0 + Math.random(), (Math.random() - 0.5) * 0.4,
+            2.2 + Math.random(), 1.2 + Math.random() * 0.8, c, 2.6);
+        }
+      }
+      if (this.emitsSparks && Math.random() < dt * 12) {
+        this.game.fxSpark.spawn(this.pos.x + (Math.random() - 0.5) * this.radius, this.groundY + 1.6,
+          this.pos.z + (Math.random() - 0.5) * this.radius,
+          (Math.random() - 0.5) * 2, 2 + Math.random() * 2, (Math.random() - 0.5) * 2,
+          0.5 + Math.random() * 0.3, 0.18, 1.0);
+      }
+      if (hurt && Math.random() < dt * 3) {
+        this.game.fxSpark.spawn(this.pos.x + (Math.random() - 0.5) * this.radius * 1.5, this.groundY + this.smokeY * 0.6,
+          this.pos.z + (Math.random() - 0.5) * this.radius * 1.5, 0, 0.5, 0, 0.5, 0.16, 1.0);
+      }
     }
     // production
     if (this.trainQueue.length) {
@@ -468,6 +556,11 @@ export class Game {
     this.speed = 1;
     this.over = false;
     this.fogTimer = 0;
+    // weighted toward the moodier presets; the doomed age favours dusk and storm
+    const moods = opts.timeOfDay ? [opts.timeOfDay]
+      : ['dusk', 'dusk', 'storm', 'storm', 'night', 'dawn', 'noon'];
+    this.timeOfDay = moods[Math.floor(Math.random() * moods.length)];
+    this.preset = TIME_PRESETS[this.timeOfDay];
     this.units = []; this.buildings = []; this.resources = [];
     this.projectiles = []; this.effects = [];
     this.selection = [];
@@ -509,24 +602,25 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.6;
+    this.renderer.toneMappingExposure = this.preset.exposure;
     this.container.appendChild(this.renderer.domElement);
 
+    const P = this.preset;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0b0b10);
-    this.scene.fog = new THREE.FogExp2(0x090910, 0.0052);
+    this.scene.background = new THREE.Color(P.bg);
+    this.scene.fog = new THREE.FogExp2(P.fog, P.fogD);
 
     // Image-based lighting from a procedural dusk sky — gives every surface
     // soft ambient gradient and lets bronze/star-metal actually reflect.
     this.scene.environment = this.buildEnvironment();
-    this.scene.environmentIntensity = 0.55;
+    this.scene.environmentIntensity = P.env;
 
     this.camera = new THREE.PerspectiveCamera(48, this.container.clientWidth / this.container.clientHeight, 1, 600);
 
-    const hemi = new THREE.HemisphereLight(0x5a6694, 0x2a2018, 1.1);
-    this.scene.add(hemi);
+    const hemi = new THREE.HemisphereLight(P.hemiSky, P.hemiGround, P.hemiI);
+    this.scene.add(hemi); this.hemi = hemi;
     // warm key sun
-    this.sun = new THREE.DirectionalLight(0xe6b878, 2.7);
+    this.sun = new THREE.DirectionalLight(P.sun, P.sunI);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(3072, 3072);
     this.sun.shadow.camera.near = 10; this.sun.shadow.camera.far = 280;
@@ -538,7 +632,7 @@ export class Game {
     this.sun.shadow.radius = 3;
     this.scene.add(this.sun); this.scene.add(this.sun.target);
     // cool rim/back light makes units and buildings pop off the dark ground (LoL look)
-    this.rim = new THREE.DirectionalLight(0x6f8cff, 1.05);
+    this.rim = new THREE.DirectionalLight(P.rim, P.rimI);
     this.scene.add(this.rim); this.scene.add(this.rim.target);
 
     // doomed red star on the horizon (pure mood)
@@ -582,21 +676,22 @@ export class Game {
     });
   }
 
-  // Procedural dusk-sky environment map for image-based lighting.
+  // Procedural sky environment map for image-based lighting, tinted to the mood.
   buildEnvironment() {
+    const P = this.preset;
     const c = document.createElement('canvas');
     c.width = 512; c.height = 256;
     const ctx = c.getContext('2d');
     const g = ctx.createLinearGradient(0, 0, 0, 256);
-    g.addColorStop(0.0, '#1a2038');   // zenith
-    g.addColorStop(0.45, '#2a2740');
-    g.addColorStop(0.6, '#6a3a2e');   // ember horizon (the doomed star's glow)
-    g.addColorStop(0.7, '#3a2820');
-    g.addColorStop(1.0, '#0c0a0e');   // ground
+    g.addColorStop(0.0, P.skyTop);
+    g.addColorStop(0.5, P.skyHorizon);
+    g.addColorStop(0.62, P.skyHorizon);
+    g.addColorStop(0.72, P.skyGround);
+    g.addColorStop(1.0, P.skyGround);
     ctx.fillStyle = g; ctx.fillRect(0, 0, 512, 256);
-    // faint warm bloom near the horizon on one side
+    // faint warm bloom near the horizon (the doomed star's glow)
     const rg = ctx.createRadialGradient(380, 150, 10, 380, 150, 150);
-    rg.addColorStop(0, 'rgba(255,90,40,0.55)'); rg.addColorStop(1, 'rgba(255,90,40,0)');
+    rg.addColorStop(0, 'rgba(255,90,40,0.5)'); rg.addColorStop(1, 'rgba(255,90,40,0)');
     ctx.fillStyle = rg; ctx.fillRect(0, 0, 512, 256);
     const tex = new THREE.CanvasTexture(c);
     tex.mapping = THREE.EquirectangularReflectionMapping;
@@ -607,7 +702,70 @@ export class Game {
     return env;
   }
 
+  // Gradient sky dome + storm cloud wall + lunar halo + distant rain curtain.
+  buildSky() {
+    const P = this.preset;
+    const geo = new THREE.SphereGeometry(440, 32, 16);
+    const mat = new THREE.ShaderMaterial({
+      side: THREE.BackSide, fog: false, depthWrite: false,
+      uniforms: {
+        top: { value: new THREE.Color(P.skyTop) },
+        horizon: { value: new THREE.Color(P.skyHorizon) },
+        ground: { value: new THREE.Color(P.skyGround) },
+        flash: { value: 0 },
+      },
+      vertexShader: 'varying vec3 vW; void main(){ vW = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);} ',
+      fragmentShader: `
+        varying vec3 vW; uniform vec3 top, horizon, ground; uniform float flash;
+        void main(){
+          float h = vW.y;
+          vec3 c = h > 0.0 ? mix(horizon, top, pow(clamp(h,0.0,1.0), 0.55))
+                           : mix(horizon, ground, clamp(-h*2.2,0.0,1.0));
+          c += flash * vec3(0.5,0.55,0.75) * smoothstep(0.5,-0.1,h); // lightning lifts the low sky
+          gl_FragColor = vec4(c, 1.0);
+        }`,
+    });
+    const dome = new THREE.Mesh(geo, mat);
+    dome.position.set(WORLD / 2, 0, WORLD / 2);
+    this.scene.add(dome);
+    this.skyMat = mat;
+
+    // distant storm cloud wall — a dark banded ring that slowly drifts
+    if (P.storm > 0.25) {
+      const cloud = new THREE.Mesh(
+        new THREE.CylinderGeometry(410, 410, 150 * P.storm, 48, 1, true),
+        new THREE.MeshBasicMaterial({ color: P.lightning ? 0x161a24 : 0x241c28, transparent: true,
+          opacity: 0.55 + P.storm * 0.35, side: THREE.BackSide, fog: false, depthWrite: false })
+      );
+      cloud.position.set(WORLD / 2, 60, WORLD / 2);
+      this.scene.add(cloud); this.stormBand = cloud;
+      // far rain curtain on one flank
+      const rain = new THREE.Mesh(
+        new THREE.PlaneGeometry(280, 150),
+        new THREE.MeshBasicMaterial({ color: 0x3a4456, transparent: true, opacity: 0.22 * P.storm,
+          fog: false, depthWrite: false, side: THREE.DoubleSide })
+      );
+      rain.position.set(WORLD / 2 - 300, 70, WORLD / 2 + 120);
+      rain.lookAt(WORLD / 2, 30, WORLD / 2);
+      this.scene.add(rain);
+    }
+
+    // lunar halo at night / dawn
+    if (P.night || this.timeOfDay === 'dawn') {
+      const moon = new THREE.Mesh(new THREE.CircleGeometry(14, 32),
+        new THREE.MeshBasicMaterial({ color: 0xcdd6f0, transparent: true, opacity: 0.9, fog: false, depthWrite: false }));
+      const halo = new THREE.Mesh(new THREE.RingGeometry(16, 34, 40),
+        new THREE.MeshBasicMaterial({ color: 0x8fa0d0, transparent: true, opacity: 0.18, fog: false,
+          side: THREE.DoubleSide, depthWrite: false }));
+      const mp = new THREE.Vector3(WORLD / 2 - 160, 150, WORLD / 2 - 360);
+      moon.position.copy(mp); halo.position.copy(mp);
+      moon.lookAt(WORLD / 2, 40, WORLD / 2); halo.lookAt(WORLD / 2, 40, WORLD / 2);
+      this.scene.add(moon); this.scene.add(halo);
+    }
+  }
+
   initAtmosphere() {
+    this.buildSky();
     // black water in the lowland basins, with slow drifting ripples
     this.waterNormal = waterNormalMap();
     this.waterNormal.repeat.set(36, 36);
@@ -634,9 +792,10 @@ export class Game {
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starOpacity = this.preset.night ? 0.85 : this.timeOfDay === 'noon' ? 0.12 : 0.5;
     this.scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({
       color: 0xaab6e8, size: 1.7, sizeAttenuation: false, transparent: true,
-      opacity: 0.75, fog: false, depthWrite: false,
+      opacity: starOpacity, fog: false, depthWrite: false,
     })));
 
     // drifting embers — ash of the age, caught by bloom
@@ -656,6 +815,22 @@ export class Game {
       opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false,
     }));
     this.scene.add(this.embers);
+
+    // particle pools: marching/footstep dust, building & damage smoke, foundry sparks
+    this.fxDust = new ParticlePool(this.scene, { capacity: 360, color: 0xb9a98a, gravity: -1.2 });
+    this.fxSmoke = new ParticlePool(this.scene, { capacity: 300, color: 0x6a6358, gravity: 0.6 });
+    this.fxSpark = new ParticlePool(this.scene, { capacity: 180, color: 0xffb24a, gravity: -7, blending: THREE.AdditiveBlending });
+    this.shake = 0;
+  }
+
+  addShake(amount) { this.shake = Math.min(1.2, this.shake + amount); }
+
+  // spawn a small dust kick at a unit's feet (only where the player can see it)
+  dustAt(x, z, scale = 1) {
+    if (this.map.fogStateAt(x, z) !== 2) return;
+    const y = this.map.heightAt(x, z) + 0.15;
+    this.fxDust.spawn(x, y, z, (Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.5,
+      (Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.3, 0.55 * scale, 0.5, 2.4);
   }
 
   updateEmbers(dt) {
@@ -1030,6 +1205,18 @@ export class Game {
     if (b.disc) this.scene.remove(b.disc);
     this.addEffect(b.pos.x, b.pos.z, b.radius * 1.4, glowMat(0xff5522, 1.5));
     this.effects.push({ mesh: b.mesh, life: 1.4, max: 1.4, type: 'rubble' });
+    // collapse: billowing dust + smoke and a ground shake felt near the camera
+    if (this.map.fogStateAt(b.pos.x, b.pos.z) === 2) {
+      for (let i = 0; i < 14; i++) {
+        const a = Math.random() * Math.PI * 2, r = Math.random() * b.radius;
+        this.fxSmoke.spawn(b.pos.x + Math.cos(a) * r, b.groundY + Math.random() * b.size,
+          b.pos.z + Math.sin(a) * r, Math.cos(a) * 2, 0.6 + Math.random() * 1.5, Math.sin(a) * 2,
+          2.5 + Math.random() * 1.5, 1.6 + Math.random(), 0.95, 2.8);
+        this.dustAt(b.pos.x + Math.cos(a) * r, b.pos.z + Math.sin(a) * r, 2.5);
+      }
+      const f = this.controls && this.controls.focus;
+      if (f && Math.hypot(b.pos.x - f.x, b.pos.z - f.z) < 40) this.addShake(0.6);
+    }
     this.buildings = this.buildings.filter(x => x !== b);
     this.selection = this.selection.filter(x => x !== b);
     this._combat = null;
@@ -1083,10 +1270,13 @@ export class Game {
   formationMove(units, wx, wz, attackMove) {
     const n = units.length;
     const cols = Math.ceil(Math.sqrt(n));
-    const spacing = 1.6;
+    // space slots to the largest unit so big bodies aren't fighting for one tile
+    const maxR = units.reduce((m, u) => Math.max(m, u.radius), 0.5);
+    const spacing = Math.max(1.7, maxR * 2.2);
+    const rows = Math.ceil(n / cols);
     units.forEach((u, i) => {
       const r = Math.floor(i / cols), c = i % cols;
-      const ox = (c - (cols - 1) / 2) * spacing, oz = (r - (Math.ceil(n / cols) - 1) / 2) * spacing;
+      const ox = (c - (cols - 1) / 2) * spacing, oz = (r - (rows - 1) / 2) * spacing;
       u.orderMove(wx + ox, wz + oz, attackMove);
     });
   }
@@ -1158,8 +1348,26 @@ export class Game {
     tickGlowMats(this.time);
     this.updateEmbers(dt);
     this.waterNormal.offset.set(this.time * 0.008, this.time * 0.005);
+    this.fxDust.update(dt); this.fxSmoke.update(dt); this.fxSpark.update(dt);
+    this.updateSky(dt);
+    this.shake = Math.max(0, this.shake - dt * 2.2);
 
     if (this.ai) this.ai.update(dt);
+  }
+
+  updateSky(dt) {
+    if (this.stormBand) this.stormBand.rotation.y += dt * 0.012;
+    if (this.skyMat) {
+      // distant lightning during storms: brief stacked flashes
+      let f = 0;
+      if (this.preset.lightning) {
+        this._boltT = (this._boltT || 2 + Math.random() * 6) - dt;
+        if (this._boltT <= 0) { this._flash = 0.9; this._boltT = 3 + Math.random() * 7; }
+        this._flash = Math.max(0, (this._flash || 0) - dt * 4);
+        f = this._flash * (0.6 + Math.random() * 0.4);
+      }
+      this.skyMat.uniforms.flash.value = f;
+    }
   }
 
   render() {
@@ -1180,6 +1388,9 @@ export class Game {
 
   dispose() {
     window.removeEventListener('resize', this.onResize);
+    this.fxDust?.dispose(); this.fxSmoke?.dispose(); this.fxSpark?.dispose();
+    this.composer?.dispose?.();
+    this.scene.environment?.dispose?.();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

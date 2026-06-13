@@ -70,7 +70,9 @@ export function findPath(map, startW, goalW, clearance = 0) {
       }
     }
   }
-  if (!found) return null;
+  // No wide-clearance route exists (e.g. a giant facing a narrow pass) — retry
+  // without clearance so there's always a path; wall-sliding handles the squeeze.
+  if (!found) return clearance > 0 ? findPath(map, startW, goalW, 0) : null;
   // reconstruct
   let tiles = [];
   let i = idx(goal.x, goal.y);

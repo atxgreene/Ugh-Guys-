@@ -51,10 +51,11 @@ function startGameNow(playerFactionKey) {
   document.getElementById('gameover').style.display = 'none';
 
   const container = document.getElementById('game-container');
-  const game = new Game(container, playerFactionKey, enemyKey);
+  const game = new Game(container, playerFactionKey, enemyKey, window.__forceOpts || {});
   const ui = new UI(game, returnToMenu);
   const controls = new Controls(game, ui);
   ui.controls = controls;
+  game.controls = controls;
   game.ai = new AI(game);
   window.__game = game; window.__controls = controls;
 
