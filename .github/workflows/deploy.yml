@@ -1,8 +1,13 @@
-name: Deploy to GitHub Pages
+name: Deploy landing page to GitHub Pages
 
+# The playable game is deployed on Vercel (production). GitHub Pages serves the
+# marketing/landing page in landing/, which links out to the Vercel build.
 on:
   push:
     branches: [main]
+    paths:
+      - 'landing/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 permissions:
@@ -15,28 +20,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./dist
   deploy:
-    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./landing
       - id: deployment
         uses: actions/deploy-pages@v4
