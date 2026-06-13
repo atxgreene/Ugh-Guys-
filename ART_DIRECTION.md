@@ -63,11 +63,24 @@ at <34% it catches **fire** (flickering flame cluster) and smokes heavily — al
 so shared materials are never mutated. **[planned]** prop dressing (grain sacks, ox carts,
 waving banners); per-building night braziers as real point-lights.
 
-## 8. Units
-**[done]** distinct per-class procedural meshes, faction body tint + glow accent, smooth
-shortest-arc turning, run-lean + bob, attack lunge, selection rings, death topple+debris,
-giants scaled with larger dust + shake. **[planned]** draw/release archer poses, brace-before-
-swing for heavy melee, waving cloth/banners, hero/commander units with unique silhouettes.
+## 8. Units  **[done]**
+Fully redesigned, anatomically detailed per-class meshes with distinct silhouettes and
+materials — each built once and clone()'d per spawn so the detail is nearly free:
+- **Covenant** — Laborer (hunched, mattock + back-basket), Bronze Spearman (crested helm,
+  round shield, spear, pteruges kilt), Sling-Archer (light tunic, whirling sling, quiver),
+  War Chariot (two maned horses, spoked wheels, driver + reins), Temple Guard (tower shield,
+  glaive, winged halo helm), Prophet (layered robe, halo ring, flame staff + summoned fire).
+- **Watchers** — Star-Metal Warrior (faceted plate, shoulder spikes, greatsword, glowing
+  seams), Adept (hooded, crossed sigil rings, sigil orb), Skyfire Caster (orbiting glyph
+  rings + captive star on a raised staff), Nephilim Hybrid (winged, horned beast-skull,
+  clawed, glowing chest).
+- **Nephilim** — Raider (lean, topknot, war-axe), Bone-Club Champion (bone pauldrons +
+  horns, fur kilt, huge club), War Beast (spined tusked quadruped), Mountain Giant (towering,
+  craggy, boulder pauldron, ripped-tree club, rune-slab, glowing eyes), Clan Shaman (antlered
+  skull headdress, hide cloak, ember skull-staff). Neutral Devourer (hexapod, gaping toothed maw, many eyes).
+Plus smooth turning, run-lean/bob, idle breathing, attack wind-up, harvest swing, selection
+rings, death topple + debris; giants get larger dust + screen shake.
+**[planned]** hero/commander units with unique silhouettes; per-limb attack animation.
 
 ## 9. Movement & barrier interaction  **[done]**
 LoL-smooth: collision **wall-sliding**, radius/clearance-aware pathfinding with tight-route
