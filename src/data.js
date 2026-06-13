@@ -30,6 +30,7 @@ export const FACTIONS = {
     name: 'The Covenant Cities',
     color: 0xe8b33a, colorCss: '#e8b33a',
     glow: 0xffd56e,
+    accent: 0x2f6f9f, glow2: 0xffd56e,   // Temple Blue cloth/banners; sacred-gold light
     desc: 'Priest-king city-states of the river valleys. Bronze, grain, and the favor of heaven hold their walls against the coming dark.',
     worker: 'laborer',
     main: 'city_center',
@@ -120,6 +121,7 @@ export const FACTIONS = {
     name: 'The Watcher Remnant',
     color: 0x9a5cff, colorCss: '#9a5cff',
     glow: 0xc08bff,
+    accent: 0xb8b4c9, glow2: 0xd14cff,   // Star-Metal Silver armor; Sigil Magenta arcana
     desc: 'Fallen sons of heaven and their bound disciples. Star-metal, forbidden writing, and flesh remade in obsidian halls.',
     worker: 'servitor',
     main: 'fallen_spire',
@@ -202,6 +204,7 @@ export const FACTIONS = {
     name: 'The Nephilim Clans',
     color: 0xe05533, colorCss: '#e05533',
     glow: 0xff7a4d,
+    accent: 0x7f241d, glow2: 0xff7a4d,   // Dried-Blood war-leather; ember light
     desc: 'Giant-blooded clans of the burning mountains. They do not build walls; they break them.',
     worker: 'thrall',
     main: 'clan_hearth',

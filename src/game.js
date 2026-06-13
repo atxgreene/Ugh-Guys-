@@ -80,7 +80,7 @@ export class Unit extends Entity {
     this.curSpeed = 0;         // eased speed for smooth accel/decel
     this.leash = null;         // neutral guard post
     const f = owner === 2 ? { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW } : game.players[owner].faction;
-    this.mesh = buildUnitMesh(def.model, f.color, f.glow);
+    this.mesh = buildUnitMesh(def.model, f.color, f.glow, f.accent, f.glow2);
     this.mesh.position.copy(this.pos);
     this.mesh.userData.entity = this;
     game.scene.add(this.mesh);
@@ -422,7 +422,7 @@ export class Building extends Entity {
     this.cooldown = 0;
     this.def.radius = size * TILE * 0.55;
     const f = game.players[owner].faction;
-    this.mesh = buildBuildingMesh(def.model, f.color, f.glow);
+    this.mesh = buildBuildingMesh(def.model, f.color, f.glow, f.accent, f.glow2);
     // average ground height across footprint
     let hs = 0;
     for (let y = 0; y <= size; y++) for (let x = 0; x <= size; x++) hs += game.map.heightAt((tx + x) * TILE, (ty + y) * TILE);

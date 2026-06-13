@@ -16,11 +16,16 @@ where light is the storyteller: warm sacred fire, cool Watcher sigils, ember-red
 omen-light. Every faction reads by silhouette and a single signature glow color.
 Atmosphere over detail — the world should feel doomed and beautiful, never noisy.
 
-## 2. Color palettes
-- **Covenant Cities** — sand, clay-red, ochre, reed-tan, bronze, gold sacred fire (`#e8b33a`).
-- **Watcher Remnant** — black basalt, burnished gold, deep blue, copper-green, violet sigil-fire (`#9a5cff`).
-- **Nephilim Clans** — ash gray, dried-blood red, bone, tarnished bronze, ember red (`#e05533`).
-- **World** — basalt `#2a2a33`→ash `#595449`, moss `#44524a`, sand `#6b5e4c`, black flood-water.
+## 2. Color palettes — canonical (locked to the faction art-bible)
+Primaries match the reference sheet exactly; each faction now also carries a **secondary
+accent** + **secondary glow** that the models apply to cloth, banners, armor, and arcana.
+- **Covenant Cities** — Covenant Gold `#e8b33a`, Sacred Glow `#ffd56e`, **Temple Blue `#2f6f9f`**
+  (banners, shield rondels, pteruges, shawls), Sunbaked Stone `#c9ad7a`, Linen `#f1e5c8`, Cedar `#7a5631`.
+- **Watcher Remnant** — Watcher Violet `#9a5cff`, Forbidden Glow `#c08bff`, **Star-Metal Silver
+  `#b8b4c9`** (warrior plate), **Sigil Magenta `#d14cff`** (adept & skyfire arcana), Obsidian `#15111f`, Void Blue `#1b2a4a`.
+- **Nephilim Clans** — Nephilim Red `#e05533`, Ember Glow `#ff7a4d`, **Dried Blood `#7f241d`**
+  (war-kilts, harness straps, drapes), Bone White `#9c8d72`, Charcoal `#211715`, Ash `#6d625c`.
+- **World** — basalt → ash → moss → sand ramps per biome (see §6); black flood-water.
 
 ## 3. Lighting system  **[done]**
 - Per-match **time-of-day mood preset** — `dawn / noon / dusk / night / storm` (weighted to dusk & storm). Each drives sun color+intensity, hemisphere fill, cool rim light, fog color+density, sky gradient, env-map tint, and tone-map exposure together. (`TIME_PRESETS` in `game.js`.)
