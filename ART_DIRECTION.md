@@ -16,11 +16,16 @@ where light is the storyteller: warm sacred fire, cool Watcher sigils, ember-red
 omen-light. Every faction reads by silhouette and a single signature glow color.
 Atmosphere over detail — the world should feel doomed and beautiful, never noisy.
 
-## 2. Color palettes
-- **Covenant Cities** — sand, clay-red, ochre, reed-tan, bronze, gold sacred fire (`#e8b33a`).
-- **Watcher Remnant** — black basalt, burnished gold, deep blue, copper-green, violet sigil-fire (`#9a5cff`).
-- **Nephilim Clans** — ash gray, dried-blood red, bone, tarnished bronze, ember red (`#e05533`).
-- **World** — basalt `#2a2a33`→ash `#595449`, moss `#44524a`, sand `#6b5e4c`, black flood-water.
+## 2. Color palettes — canonical (locked to the faction art-bible)
+Primaries match the reference sheet exactly; each faction now also carries a **secondary
+accent** + **secondary glow** that the models apply to cloth, banners, armor, and arcana.
+- **Covenant Cities** — Covenant Gold `#e8b33a`, Sacred Glow `#ffd56e`, **Temple Blue `#2f6f9f`**
+  (banners, shield rondels, pteruges, shawls), Sunbaked Stone `#c9ad7a`, Linen `#f1e5c8`, Cedar `#7a5631`.
+- **Watcher Remnant** — Watcher Violet `#9a5cff`, Forbidden Glow `#c08bff`, **Star-Metal Silver
+  `#b8b4c9`** (warrior plate), **Sigil Magenta `#d14cff`** (adept & skyfire arcana), Obsidian `#15111f`, Void Blue `#1b2a4a`.
+- **Nephilim Clans** — Nephilim Red `#e05533`, Ember Glow `#ff7a4d`, **Dried Blood `#7f241d`**
+  (war-kilts, harness straps, drapes), Bone White `#9c8d72`, Charcoal `#211715`, Ash `#6d625c`.
+- **World** — basalt → ash → moss → sand ramps per biome (see §6); black flood-water.
 
 ## 3. Lighting system  **[done]**
 - Per-match **time-of-day mood preset** — `dawn / noon / dusk / night / storm` (weighted to dusk & storm). Each drives sun color+intensity, hemisphere fill, cool rim light, fog color+density, sky gradient, env-map tint, and tone-map exposure together. (`TIME_PRESETS` in `game.js`.)
@@ -53,18 +58,34 @@ world's history: fallen obelisks, altars, half-buried Nephilim ribcages, colossa
 blades, boundary stones, dead sacred trees, shattered tablets.
 **[planned]** carved rivers with fords + ancient roads (held back to protect base access/balance); cliff faces.
 
-## 7. Buildings
-**[done]** faction-specific silhouettes (Covenant ziggurat/temple, Watcher spire/gate/pit,
-Nephilim hearth/lodge/den), masonry PBR, eased grow-in construction, claim-glow discs,
-living smoke/sparks, damage-state smoke, collapse FX, team-color glow accents.
-**[planned]** explicit 2–3 stage construction scaffolds; cracked damage meshes; per-building
-night braziers; small prop dressing (grain sacks, ox carts, banners that wave).
+## 7. Buildings  **[done]**
+Faction-specific silhouettes (Covenant ziggurat/temple, Watcher spire/gate/pit, Nephilim
+hearth/lodge/den), masonry PBR, claim-glow discs, living smoke/sparks, collapse FX,
+team-color glow accents. **Construction:** structures now rise within a timber **scaffold**
+(corner poles + lashing beams + planks) that drops in a puff of dust on completion.
+**Damage stages:** at <66% HP a building gains charred scorch chunks and a slight lean;
+at <34% it catches **fire** (flickering flame cluster) and smokes heavily — all per-instance
+so shared materials are never mutated. **[planned]** prop dressing (grain sacks, ox carts,
+waving banners); per-building night braziers as real point-lights.
 
-## 8. Units
-**[done]** distinct per-class procedural meshes, faction body tint + glow accent, smooth
-shortest-arc turning, run-lean + bob, attack lunge, selection rings, death topple+debris,
-giants scaled with larger dust + shake. **[planned]** draw/release archer poses, brace-before-
-swing for heavy melee, waving cloth/banners, hero/commander units with unique silhouettes.
+## 8. Units  **[done]**
+Fully redesigned, anatomically detailed per-class meshes with distinct silhouettes and
+materials — each built once and clone()'d per spawn so the detail is nearly free:
+- **Covenant** — Laborer (hunched, mattock + back-basket), Bronze Spearman (crested helm,
+  round shield, spear, pteruges kilt), Sling-Archer (light tunic, whirling sling, quiver),
+  War Chariot (two maned horses, spoked wheels, driver + reins), Temple Guard (tower shield,
+  glaive, winged halo helm), Prophet (layered robe, halo ring, flame staff + summoned fire).
+- **Watchers** — Star-Metal Warrior (faceted plate, shoulder spikes, greatsword, glowing
+  seams), Adept (hooded, crossed sigil rings, sigil orb), Skyfire Caster (orbiting glyph
+  rings + captive star on a raised staff), Nephilim Hybrid (winged, horned beast-skull,
+  clawed, glowing chest).
+- **Nephilim** — Raider (lean, topknot, war-axe), Bone-Club Champion (bone pauldrons +
+  horns, fur kilt, huge club), War Beast (spined tusked quadruped), Mountain Giant (towering,
+  craggy, boulder pauldron, ripped-tree club, rune-slab, glowing eyes), Clan Shaman (antlered
+  skull headdress, hide cloak, ember skull-staff). Neutral Devourer (hexapod, gaping toothed maw, many eyes).
+Plus smooth turning, run-lean/bob, idle breathing, attack wind-up, harvest swing, selection
+rings, death topple + debris; giants get larger dust + screen shake.
+**[planned]** hero/commander units with unique silhouettes; per-limb attack animation.
 
 ## 9. Movement & barrier interaction  **[done]**
 LoL-smooth: collision **wall-sliding**, radius/clearance-aware pathfinding with tight-route
@@ -100,9 +121,10 @@ quality fallback** (drops bloom/shadows/pixel-ratio under sustained slow frames)
 5. ✅ Biome presets (6 lands, each with palette + clutter + paired mood)
 6. ✅ Cinematic intro flyover, faction cards & end-game camera
 7. ✅ Resource-gather particles + worker harvest animation
-8. ⏳ Building construction/damage stages + prop dressing
-9. ⏳ Carved rivers/roads/cliffs (balance-careful)
-10. ⏳ Instancing/LOD pass for scale
+8. ✅ Building construction scaffolds + damage/fire stages
+9. ⏳ Prop dressing (grain sacks, carts, waving banners)
+10. ⏳ Carved rivers/roads/cliffs (balance-careful)
+11. ⏳ Instancing/LOD pass for scale
 
 ## 15. Code map
 `game.js` engine + atmosphere/lighting/sky/FX • `fx.js` particle pools • `models.js`

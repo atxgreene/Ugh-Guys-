@@ -65,8 +65,9 @@ export class Controls {
     this.keys[k] = true;
     if (e.target.tagName === 'INPUT') return;
     this.skipIntro();
-    if (k === 'a' && !this.placement) { if (this.selectedUnits().length) this.attackMoveArm = true; }
-    if (k === 's') { this.selectedUnits().forEach(u => u.stop()); this.attackMoveArm = false; }
+    // WASD pan the camera, so unit commands live on F (attack-move) and X (stop)
+    if (k === 'f' && !this.placement) { if (this.selectedUnits().length) this.attackMoveArm = true; }
+    if (k === 'x') { this.selectedUnits().forEach(u => u.stop()); this.attackMoveArm = false; }
     if (k === 'escape') { this.cancelPlacement(); this.attackMoveArm = false; this.ui.buildMenuOpen = false; this.ui.refreshPanel(); }
     if (k === 'h') { const m = this.game.playerMain; if (m) { this.focusT.x = m.pos.x; this.focusT.z = m.pos.z; } }
     if (k === 'b' && this.selectedUnits().some(u => u.def.worker)) { this.ui.buildMenuOpen = true; this.ui.refreshPanel(); }
@@ -273,28 +274,31 @@ export class Controls {
     }
 
     const speed = (30 + this.dist * 0.6) * dt;
-    let mx = 0, mz = 0;
+    // strafe = screen-right (+) / left (-) ; fwd = screen-forward/up (+) / back/down (-)
+    let strafe = 0, fwd = 0;
     if (!inputLocked && !this.game.over) {
-      // arrow keys pan (WASD letters are reserved for command hotkeys)
-      if (this.keys['arrowup']) mz -= 1;
-      if (this.keys['arrowdown']) mz += 1;
-      if (this.keys['arrowleft']) mx -= 1;
-      if (this.keys['arrowright']) mx += 1;
+      // WASD (and arrow keys) pan the camera across the ground
+      if (this.keys['w'] || this.keys['arrowup']) fwd += 1;
+      if (this.keys['s'] || this.keys['arrowdown']) fwd -= 1;
+      if (this.keys['a'] || this.keys['arrowleft']) strafe -= 1;
+      if (this.keys['d'] || this.keys['arrowright']) strafe += 1;
       // edge scroll
       if (this.mouse.inside && !this.dragStart) {
         const m = 14;
-        if (this.mouse.x < m) mx = -1;
-        if (this.mouse.x > window.innerWidth - m) mx = 1;
-        if (this.mouse.y < m) mz = -1;
-        if (this.mouse.y > window.innerHeight - m) mz = 1;
+        if (this.mouse.x < m) strafe -= 1;
+        if (this.mouse.x > window.innerWidth - m) strafe += 1;
+        if (this.mouse.y < m) fwd += 1;
+        if (this.mouse.y > window.innerHeight - m) fwd -= 1;
       }
       if (this.keys['q']) this.yawT += dt * 1.8;
       if (this.keys['e']) this.yawT -= dt * 1.8;
     }
-    if (mx || mz) {
+    if (strafe || fwd) {
+      // pan along the camera's true ground basis so directions match the screen at
+      // any yaw: forward (into screen) = (-sin, -cos); right = (cos, -sin).
       const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw);
-      this.focusT.x += (mx * cos - mz * sin) * speed;
-      this.focusT.z += (mx * sin + mz * cos) * speed;
+      this.focusT.x += (strafe * cos - fwd * sin) * speed;
+      this.focusT.z += (-strafe * sin - fwd * cos) * speed;
       this.focusT.x = Math.max(4, Math.min(WORLD - 4, this.focusT.x));
       this.focusT.z = Math.max(4, Math.min(WORLD - 4, this.focusT.z));
     }

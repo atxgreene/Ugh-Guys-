@@ -43,13 +43,18 @@ Each faction is genuinely asymmetric — different units, buildings, upgrade tre
 | Input | Action |
 | --- | --- |
 | **Left-click** | Select a unit or building |
-| **Left-click + drag** | Box-select your units |
-| **Right-click** | Move / attack / issue order |
-| **Arrow keys** or **screen edge** | Pan the camera |
+| **Left-click + drag** | Box-select your units (prefers soldiers over workers) |
+| **Right-click** | Move / gather / attack / set rally / resume construction |
+| **WASD**, **arrow keys**, or **screen edge** | Pan the camera |
+| **Q / E** or **middle-drag** | Rotate the camera |
 | **Mouse wheel** | Zoom |
-| **Ctrl + number** | Assign a control group |
-| **Number** | Recall a control group |
-| **Command hotkeys** | Build, train, and attack-move (shown on the HUD) |
+| **F** | Attack-move |
+| **X** | Stop |
+| **B** | Build menu (workers) · **Esc** cancels |
+| **H** | Center on your base |
+| **Ctrl + number** | Assign a control group · **number** recalls it |
+
+Right-click the minimap to order moves; left-click/drag it to pan the camera.
 
 ## Run locally
 

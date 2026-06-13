@@ -217,8 +217,8 @@ export class UI {
     const faction = this.game.players[0].faction;
 
     if (units.length) {
-      cmds.push({ icon: '⚔', label: 'Attack-Move (A)', cls: 'cmd-act', fn: () => { this.controls.attackMoveArm = true; } });
-      cmds.push({ icon: '✋', label: 'Stop (S)', cls: 'cmd-act', fn: () => units.forEach(u => u.stop()) });
+      cmds.push({ icon: '⚔', label: 'Attack-Move (F)', cls: 'cmd-act', fn: () => { this.controls.attackMoveArm = true; } });
+      cmds.push({ icon: '✋', label: 'Stop (X)', cls: 'cmd-act', fn: () => units.forEach(u => u.stop()) });
     }
     if (workers.length && !this.buildMenuOpen) {
       cmds.push({ icon: '🏗', label: 'Build… (B)', cls: 'cmd-act', fn: () => { this.buildMenuOpen = true; this.refreshPanel(); } });
