@@ -286,6 +286,12 @@ export class Controls {
     const sun = this.game.sun;
     sun.position.set(this.focus.x + 40, 70, this.focus.z + 25);
     sun.target.position.set(this.focus.x, 0, this.focus.z);
+    // cool rim light from the opposite side, low angle, for hero pop
+    const rim = this.game.rim;
+    if (rim) {
+      rim.position.set(this.focus.x - 50, 26, this.focus.z - 38);
+      rim.target.position.set(this.focus.x, 0, this.focus.z);
+    }
 
     // selection rings
     this.syncSelectionRings();

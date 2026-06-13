@@ -77,6 +77,38 @@ export class GameMap {
   tileOf(wx, wz) { return { x: Math.max(0, Math.min(GRID - 1, Math.floor(wx / TILE))), y: Math.max(0, Math.min(GRID - 1, Math.floor(wz / TILE))) }; }
   isWalkable(x, y) { return this.inBounds(x, y) && !this.blocked[this.idx(x, y)]; }
 
+  // A tile is "clear" for a unit needing `clearance` tiles of margin only if
+  // every tile within that margin is walkable. Used so large units don't get
+  // routed through gaps too narrow to physically fit.
+  isWalkableClear(x, y, clearance = 0) {
+    if (!this.isWalkable(x, y)) return false;
+    if (clearance <= 0) return true;
+    for (let dy = -clearance; dy <= clearance; dy++)
+      for (let dx = -clearance; dx <= clearance; dx++)
+        if (!this.isWalkable(x + dx, y + dy)) return false;
+    return true;
+  }
+
+  // True if a unit-circle of world-radius r centred at (wx,wz) overlaps any
+  // blocked tile. Cheap AABB-vs-circle test over the few tiles it could touch.
+  circleBlocked(wx, wz, r) {
+    if (wx < r || wz < r || wx > WORLD - r || wz > WORLD - r) return true;
+    const minTx = Math.floor((wx - r) / TILE), maxTx = Math.floor((wx + r) / TILE);
+    const minTy = Math.floor((wz - r) / TILE), maxTy = Math.floor((wz + r) / TILE);
+    for (let ty = minTy; ty <= maxTy; ty++) {
+      for (let tx = minTx; tx <= maxTx; tx++) {
+        if (!this.inBounds(tx, ty)) return true;
+        if (!this.blocked[this.idx(tx, ty)]) continue;
+        // closest point on the tile rect to the circle centre
+        const rx = Math.max(tx * TILE, Math.min(wx, (tx + 1) * TILE));
+        const rz = Math.max(ty * TILE, Math.min(wz, (ty + 1) * TILE));
+        const ddx = wx - rx, ddz = wz - rz;
+        if (ddx * ddx + ddz * ddz < r * r) return true;
+      }
+    }
+    return false;
+  }
+
   heightAt(wx, wz) {
     const fx = Math.max(0, Math.min(GRID - 1.001, wx / TILE - 0.5));
     const fy = Math.max(0, Math.min(GRID - 1.001, wz / TILE - 0.5));

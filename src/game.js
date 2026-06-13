@@ -3,9 +3,10 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GameMap, GRID, TILE, WORLD } from './terrain.js';
-import { findPath, findNearestWalkable } from './pathfinding.js';
+import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
 import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP } from './data.js';
 import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats } from './models.js';
 import { waterNormalMap } from './textures.js';
@@ -52,6 +53,10 @@ export class Unit extends Entity {
     this.animT = Math.random() * 10;
     this.facing = Math.random() * Math.PI * 2;
     this.facingTarget = this.facing;
+    this.clearance = clearanceFor(def.radius || 0.6);
+    this.stuckT = 0;           // time spent making no progress while moving
+    this.repathT = 0;          // cooldown so we don't re-path every frame
+    this.curSpeed = 0;         // eased speed for smooth accel/decel
     this.leash = null;         // neutral guard post
     const f = owner === 2 ? { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW } : game.players[owner].faction;
     this.mesh = buildUnitMesh(def.model, f.color, f.glow);
@@ -65,9 +70,12 @@ export class Unit extends Entity {
 
   orderMove(x, z, attackMove = false) {
     this.target = null; this.gatherNode = null; this.buildSite = null; this.carryReturn = false;
-    this.path = findPath(this.game.map, this.pos, { x, z });
+    this.path = findPath(this.game.map, this.pos, { x, z }, this.clearance);
     this.pathI = 0; this.dest = { x, z }; this.pathGoal = { x, z };
-    this.state = this.path ? (attackMove ? 'attackMove' : 'move') : 'idle';
+    this.stuckT = 0;
+    // even with no tile path (e.g. destination deep in a wall) still head there;
+    // the collision resolver will slide along barriers rather than freeze.
+    this.state = attackMove ? 'attackMove' : 'move';
   }
   orderAttack(target) {
     this.target = target; this.gatherNode = null; this.buildSite = null;
@@ -86,30 +94,71 @@ export class Unit extends Entity {
   }
   stop() { this.state = 'idle'; this.path = null; this.target = null; this.gatherNode = null; this.buildSite = null; }
 
-  // move toward world point; returns true when within `near`
-  seek(x, z, near, dt) {
-    const dx = x - this.pos.x, dz = z - this.pos.z;
-    const d = Math.hypot(dx, dz);
-    if (d <= near) return true;
-    // follow / recompute path
-    if (!this.path || this.pathGoal?.x !== x || this.pathGoal?.z !== z) {
-      this.path = findPath(this.game.map, this.pos, { x, z });
-      this.pathGoal = { x, z }; this.pathI = 0;
-      if (!this.path) return d <= near + 1.5;
+  // Collision-aware move with wall sliding (LoL-style barrier glide). Attempts
+  // the full step; if blocked, slides along whichever axis is clear. Returns the
+  // distance actually travelled.
+  moveBy(dx, dz) {
+    const map = this.game.map, r = this.radius;
+    const fromX = this.pos.x, fromZ = this.pos.z;
+    if (!map.circleBlocked(fromX + dx, fromZ + dz, r)) {
+      this.pos.x += dx; this.pos.z += dz;
+    } else {
+      // try each axis independently so we graze walls instead of stopping dead
+      if (dx && !map.circleBlocked(fromX + dx, fromZ, r)) this.pos.x += dx;
+      if (dz && !map.circleBlocked(this.pos.x, fromZ + dz, r)) this.pos.z += dz;
     }
-    let wp = this.path[this.pathI];
-    while (wp && Math.hypot(wp.x - this.pos.x, wp.z - this.pos.z) < 0.6) {
+    return Math.hypot(this.pos.x - fromX, this.pos.z - fromZ);
+  }
+
+  // Steer toward world point along the current path; returns true when within
+  // `near`. Self-heals stale/blocked paths and gives up gracefully when crowded.
+  seek(x, z, near, dt) {
+    const dist = Math.hypot(x - this.pos.x, z - this.pos.z);
+    if (dist <= near) { this.moving = false; return true; }
+
+    this.repathT -= dt;
+    const goalMoved = !this.pathGoal || Math.hypot(this.pathGoal.x - x, this.pathGoal.z - z) > TILE;
+    if (!this.path || goalMoved) {
+      this.path = findPath(this.game.map, this.pos, { x, z }, this.clearance);
+      this.pathGoal = { x, z }; this.pathI = 0; this.stuckT = 0; this.repathT = 0.4;
+    }
+
+    // advance past waypoints we've effectively reached
+    let wp = this.path && this.path[this.pathI];
+    while (wp && Math.hypot(wp.x - this.pos.x, wp.z - this.pos.z) < Math.max(0.5, this.radius)) {
       this.pathI++; wp = this.path[this.pathI];
     }
     const tx = wp ? wp.x : x, tz = wp ? wp.z : z;
     const mx = tx - this.pos.x, mz = tz - this.pos.z;
     const md = Math.hypot(mx, mz) || 1;
-    const sp = this.def.speed * dt;
-    this.pos.x += (mx / md) * sp;
-    this.pos.z += (mz / md) * sp;
+
+    // ease speed for smooth start/stop; slow slightly on the final approach
+    const target = this.def.speed * (dist < 2.5 ? Math.max(0.35, dist / 2.5) : 1);
+    this.curSpeed += (target - this.curSpeed) * Math.min(1, dt * 8);
+    const step = this.curSpeed * dt;
+    const moved = this.moveBy((mx / md) * step, (mz / md) * step);
     this.facingTarget = Math.atan2(mx, mz);
     this.moving = true;
-    if (!wp && md < 0.5) { this.path = null; }
+
+    // stuck detection: barely moved despite wanting to → re-route, then nudge,
+    // then give up if we're close enough that crowding is the likely cause.
+    if (moved < step * 0.35) {
+      this.stuckT += dt;
+      if (this.stuckT > 0.3 && this.repathT <= 0) {
+        this.path = findPath(this.game.map, this.pos, { x, z }, this.clearance);
+        this.pathGoal = { x, z }; this.pathI = 0; this.repathT = 0.5;
+      }
+      if (this.stuckT > 0.55) {
+        // perpendicular slip to escape a corner or a clump
+        const px = -(mz / md), pz = (mx / md);
+        const side = ((this.id & 1) ? 1 : -1);
+        this.moveBy(px * step * side, pz * step * side);
+      }
+      if (this.stuckT > 1.1 && dist <= near + this.radius * 2 + 1.4) { this.moving = false; return true; }
+      if (this.stuckT > 2.2) { this.moving = false; return true; } // never freeze forever
+    } else {
+      this.stuckT = Math.max(0, this.stuckT - dt * 2);
+    }
     return Math.hypot(x - this.pos.x, z - this.pos.z) <= near;
   }
 
@@ -229,31 +278,37 @@ export class Unit extends Entity {
       }
     }
 
-    // soft separation from nearby units
+    // soft separation — resolved through the collision mover so units are never
+    // shoved into walls (which was the old freeze cause). Moving units push less
+    // so they can flow through a crowd instead of jamming.
     {
-      const near = this.game.unitsNear(this.pos, 1.8, this);
+      const near = this.game.unitsNear(this.pos, 2.0, this);
+      let sx = 0, sz = 0;
       for (const o of near) {
         const dx = this.pos.x - o.pos.x, dz = this.pos.z - o.pos.z;
         const d = Math.hypot(dx, dz) || 0.01;
-        const overlap = this.radius + o.radius + 0.15 - d;
+        const overlap = this.radius + o.radius + 0.12 - d;
         if (overlap > 0) {
-          const push = overlap * 0.5 * dt * 8;
-          this.pos.x += (dx / d) * push; this.pos.z += (dz / d) * push;
+          // settled units hold ground; movers yield — keeps clumps from churning
+          const mine = this.moving ? 0.35 : 0.55;
+          sx += (dx / d) * overlap * mine;
+          sz += (dz / d) * overlap * mine;
         }
       }
+      if (sx || sz) this.moveBy(sx * Math.min(1, dt * 9), sz * Math.min(1, dt * 9));
     }
-    // clamp into world & out of blocked tiles
-    this.pos.x = Math.max(1, Math.min(WORLD - 1, this.pos.x));
-    this.pos.z = Math.max(1, Math.min(WORLD - 1, this.pos.z));
-    const t = this.game.map.tileOf(this.pos.x, this.pos.z);
-    if (!this.game.map.isWalkable(t.x, t.y)) {
-      const w = findNearestWalkable(this.game.map, t.x, t.y, 4);
+    // safety net: if anything still left us inside a blocked tile, ease out
+    if (this.game.map.circleBlocked(this.pos.x, this.pos.z, this.radius)) {
+      const t = this.game.map.tileOf(this.pos.x, this.pos.z);
+      const w = findNearestWalkable(this.game.map, t.x, t.y, 5, this.clearance);
       if (w) {
         const wx = (w.x + 0.5) * TILE, wz = (w.y + 0.5) * TILE;
-        this.pos.x += (wx - this.pos.x) * Math.min(1, dt * 6);
-        this.pos.z += (wz - this.pos.z) * Math.min(1, dt * 6);
+        this.pos.x += (wx - this.pos.x) * Math.min(1, dt * 5);
+        this.pos.z += (wz - this.pos.z) * Math.min(1, dt * 5);
       }
     }
+    this.pos.x = Math.max(1, Math.min(WORLD - 1, this.pos.x));
+    this.pos.z = Math.max(1, Math.min(WORLD - 1, this.pos.z));
 
     // visuals — smooth turn toward facing target (shortest arc)
     const dA = ((this.facingTarget - this.facing + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
@@ -459,21 +514,32 @@ export class Game {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0b0b10);
-    this.scene.fog = new THREE.FogExp2(0x0b0b10, 0.0055);
+    this.scene.fog = new THREE.FogExp2(0x090910, 0.0052);
+
+    // Image-based lighting from a procedural dusk sky — gives every surface
+    // soft ambient gradient and lets bronze/star-metal actually reflect.
+    this.scene.environment = this.buildEnvironment();
+    this.scene.environmentIntensity = 0.55;
 
     this.camera = new THREE.PerspectiveCamera(48, this.container.clientWidth / this.container.clientHeight, 1, 600);
 
-    const hemi = new THREE.HemisphereLight(0x55608a, 0x241e18, 1.5);
+    const hemi = new THREE.HemisphereLight(0x5a6694, 0x2a2018, 1.1);
     this.scene.add(hemi);
-    this.sun = new THREE.DirectionalLight(0xd9ad72, 2.6);
+    // warm key sun
+    this.sun = new THREE.DirectionalLight(0xe6b878, 2.7);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.camera.near = 10; this.sun.shadow.camera.far = 260;
-    const ext = 65;
+    this.sun.shadow.mapSize.set(3072, 3072);
+    this.sun.shadow.camera.near = 10; this.sun.shadow.camera.far = 280;
+    const ext = 70;
     this.sun.shadow.camera.left = -ext; this.sun.shadow.camera.right = ext;
     this.sun.shadow.camera.top = ext; this.sun.shadow.camera.bottom = -ext;
-    this.sun.shadow.bias = -0.0008;
+    this.sun.shadow.bias = -0.0006;
+    this.sun.shadow.normalBias = 0.025;
+    this.sun.shadow.radius = 3;
     this.scene.add(this.sun); this.scene.add(this.sun.target);
+    // cool rim/back light makes units and buildings pop off the dark ground (LoL look)
+    this.rim = new THREE.DirectionalLight(0x6f8cff, 1.05);
+    this.scene.add(this.rim); this.scene.add(this.rim.target);
 
     // doomed red star on the horizon (pure mood)
     const star = new THREE.Mesh(new THREE.SphereGeometry(6, 16, 12), glowMat(0xff3a22, 1.2));
@@ -485,9 +551,27 @@ export class Game {
     const rt = new THREE.WebGLRenderTarget(w, h, { samples: 4, type: THREE.HalfFloatType });
     this.composer = new EffectComposer(this.renderer, rt);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.45, 0.55, 0.62);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.62, 0.6, 0.6);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+    // cinematic grade: gentle vignette, lifted contrast, a touch more saturation
+    this.gradePass = new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, vignette: { value: 1.12 }, sat: { value: 1.14 }, contrast: { value: 1.06 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: `
+        varying vec2 vUv; uniform sampler2D tDiffuse; uniform float vignette, sat, contrast;
+        void main(){
+          vec3 c = texture2D(tDiffuse, vUv).rgb;
+          float l = dot(c, vec3(0.299,0.587,0.114));
+          c = mix(vec3(l), c, sat);                 // saturation
+          c = (c - 0.5) * contrast + 0.5;           // contrast
+          vec2 d = vUv - 0.5;
+          float v = smoothstep(0.85, 0.35, dot(d,d) * vignette * 2.0);
+          c *= mix(0.72, 1.0, v);                    // vignette
+          gl_FragColor = vec4(clamp(c,0.0,1.0), 1.0);
+        }`,
+    });
+    this.composer.addPass(this.gradePass);
 
     window.addEventListener('resize', this.onResize = () => {
       const cw = this.container.clientWidth, ch = this.container.clientHeight;
@@ -496,6 +580,31 @@ export class Game {
       this.renderer.setSize(cw, ch);
       this.composer.setSize(cw, ch);
     });
+  }
+
+  // Procedural dusk-sky environment map for image-based lighting.
+  buildEnvironment() {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 256;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0.0, '#1a2038');   // zenith
+    g.addColorStop(0.45, '#2a2740');
+    g.addColorStop(0.6, '#6a3a2e');   // ember horizon (the doomed star's glow)
+    g.addColorStop(0.7, '#3a2820');
+    g.addColorStop(1.0, '#0c0a0e');   // ground
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 512, 256);
+    // faint warm bloom near the horizon on one side
+    const rg = ctx.createRadialGradient(380, 150, 10, 380, 150, 150);
+    rg.addColorStop(0, 'rgba(255,90,40,0.55)'); rg.addColorStop(1, 'rgba(255,90,40,0)');
+    ctx.fillStyle = rg; ctx.fillRect(0, 0, 512, 256);
+    const tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const env = pmrem.fromEquirectangular(tex).texture;
+    pmrem.dispose(); tex.dispose();
+    return env;
   }
 
   initAtmosphere() {
