@@ -268,7 +268,7 @@ export class Unit extends Entity {
         this.facingTarget = Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
         if (this.cooldown <= 0) {
           this.cooldown = atk.cooldown;
-          this.lungeT = 0.18;
+          this.lungeDur = 0.3; this.lungeT = this.lungeDur;
           this.game.performAttack(this, t, atk);
         }
         break;
@@ -350,14 +350,20 @@ export class Unit extends Entity {
     this.facing += dA * Math.min(1, dt * 11);
     this.animT += dt * (this.moving ? 10 : 2);
     const h = this.game.map.heightAt(this.pos.x, this.pos.z);
-    this.mesh.position.set(this.pos.x, h + (this.moving ? Math.abs(Math.sin(this.animT)) * 0.12 : 0), this.pos.z);
+    // idle breathing keeps standing units alive; running bob while moving
+    const bob = this.moving ? Math.abs(Math.sin(this.animT)) * 0.12 : Math.sin(this.animT) * 0.03;
+    this.mesh.position.set(this.pos.x, h + bob, this.pos.z);
     this.mesh.rotation.y = this.facing;
     this.mesh.rotation.z = this.moving ? Math.sin(this.animT) * 0.06 : 0;
     this.mesh.rotation.x = this.moving ? 0.05 : 0; // slight lean into the run
+    // attack: anticipation (pull back) then a snap strike forward, settling home
     if (this.lungeT > 0) {
       this.lungeT -= dt;
-      this.mesh.position.x += Math.sin(this.facing) * 0.25 * (this.lungeT / 0.18);
-      this.mesh.position.z += Math.cos(this.facing) * 0.25 * (this.lungeT / 0.18);
+      const p = this.lungeT / this.lungeDur;          // 1 → 0
+      const f = p > 0.65 ? -(p - 0.65) / 0.35 * 0.4    // wind-up: ease backward
+                         : Math.sin((0.65 - p) / 0.65 * Math.PI) * 0.55; // strike forward & return
+      this.mesh.position.x += Math.sin(this.facing) * f;
+      this.mesh.position.z += Math.cos(this.facing) * f;
     }
     // kicked-up dust while moving — heavier and shakier for the great ones
     if (this.moving) {
@@ -1223,8 +1229,8 @@ export class Game {
     this.recalcSupply();
     this.emit('selection');
     if (!this.over) {
-      if (b === this.playerMain) this.endGame(1);
-      else if (b === this.enemyMain) this.endGame(0);
+      if (b === this.playerMain) this.endGame(1, b.pos);
+      else if (b === this.enemyMain) this.endGame(0, b.pos);
     }
   }
 
@@ -1234,9 +1240,15 @@ export class Game {
     this.resources = this.resources.filter(x => x !== n);
   }
 
-  endGame(winner) {
+  endGame(winner, focusPos) {
     this.over = true;
     this.winner = winner;
+    if (focusPos) this.endFocus = { x: focusPos.x, z: focusPos.z };
+    // defeat foreshadows the Flood: deepen the fog and darken toward the storm
+    if (winner === 1 && this.scene.fog) {
+      this.defeatFade = 0;
+      this.scene.fog.density = Math.max(this.scene.fog.density, 0.006);
+    }
     if (winner === 0) Sound.win(); else Sound.lose();
     this.emit('gameover', winner);
   }
@@ -1307,6 +1319,14 @@ export class Game {
     if (this.over) dt *= 0.3; // slow-mo end
     this.time += dt;
     this._combat = null;
+    // defeat: the world slowly darkens toward the gathering Flood
+    if (this.over && this.winner === 1 && this.defeatFade !== undefined) {
+      this.defeatFade = Math.min(1, this.defeatFade + dt * 0.25);
+      const f = this.defeatFade;
+      if (this.scene.fog) this.scene.fog.density = this.preset.fogD + f * 0.01;
+      this.scene.background.lerpColors(new THREE.Color(this.preset.bg), new THREE.Color(0x05060a), f);
+      this.renderer.toneMappingExposure = this.preset.exposure * (1 - f * 0.4);
+    }
 
     for (const u of this.units) u.update(dt);
     for (const b of this.buildings) b.update(dt);

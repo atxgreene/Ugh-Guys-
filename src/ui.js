@@ -316,14 +316,39 @@ export class UI {
   }
 
   showGameOver(winner) {
-    const div = document.getElementById('gameover');
-    div.style.display = 'flex';
-    div.querySelector('h1').textContent = winner === 0 ? 'VICTORY' : 'DEFEAT';
-    div.querySelector('h1').style.color = winner === 0 ? '#ffd56e' : '#e05540';
-    div.querySelector('p').textContent = winner === 0
-      ? 'The enemy\'s seat of power lies in ruin. The age endures — for now.'
-      : 'Your hall has fallen. The waters will remember your name.';
-    document.getElementById('btn-restart').onclick = () => this.onRestart();
+    this.hideIntroCard();
+    // let the end-game camera breathe before the verdict screen lands
+    setTimeout(() => {
+      const div = document.getElementById('gameover');
+      div.style.display = 'flex';
+      div.querySelector('h1').textContent = winner === 0 ? 'VICTORY' : 'DEFEAT';
+      div.querySelector('h1').style.color = winner === 0 ? '#ffd56e' : '#e05540';
+      div.querySelector('p').textContent = winner === 0
+        ? 'The enemy\'s seat of power lies in ruin. The age endures — for now.'
+        : 'Your hall has fallen. The waters will remember your name.';
+      document.getElementById('btn-restart').onclick = () => this.onRestart();
+    }, 2200);
+  }
+
+  // opening faction card over the flyover
+  showIntroCard(faction) {
+    const taglines = {
+      covenant: 'Bronze and grain and the favor of heaven hold the walls of the faithful.',
+      watchers: 'They taught us the names of the stars, and the price was our souls.',
+      nephilim: 'The giants do not build walls. They break them.',
+    };
+    const el = document.getElementById('introcard');
+    document.getElementById('ic-name').textContent = faction.name;
+    document.getElementById('ic-name').style.color = faction.colorCss;
+    document.getElementById('ic-sub').textContent = taglines[faction.key] || faction.desc;
+    el.style.display = 'flex';
+    requestAnimationFrame(() => el.classList.add('show'));
+  }
+  hideIntroCard() {
+    const el = document.getElementById('introcard');
+    if (!el || el.style.display === 'none') return;
+    el.classList.remove('show');
+    setTimeout(() => { el.style.display = 'none'; }, 1100);
   }
 
   // ---------- per-frame ----------

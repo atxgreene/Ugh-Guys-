@@ -59,6 +59,7 @@ function startGameNow(playerFactionKey) {
   game.ai = new AI(game);
   window.__game = game; window.__controls = controls;
 
+  ui.showIntroCard(FACTIONS[playerFactionKey]);
   ui.toast(`The ${FACTIONS[enemyKey].name} stir beyond the ridge…`);
 
   let last = performance.now();
@@ -96,6 +97,7 @@ function returnToMenu() {
   document.getElementById('minimap-wrap').style.display = 'none';
   document.getElementById('panel').style.display = 'none';
   document.getElementById('gameover').style.display = 'none';
+  const ic = document.getElementById('introcard'); ic.style.display = 'none'; ic.classList.remove('show');
   document.getElementById('toasts').innerHTML = '';
   const ov = document.getElementById('overlay');
   ov.getContext('2d').clearRect(0, 0, ov.width, ov.height);

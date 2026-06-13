@@ -30,6 +30,14 @@ export class Controls {
 
     this.selRings = [];
 
+    // opening flyover: start high, far and rotated, then settle onto the city.
+    const m = game.playerMain;
+    this.focus.set(m.pos.x, 0, m.pos.z + 6);
+    this.focusT.copy(this.focus);
+    this.dist = 96; this.distT = 42;
+    this.yaw = Math.PI * 0.25 + 0.85; this.yawT = Math.PI * 0.25;
+    this.intro = 3.6;          // seconds of scripted intro (skippable)
+
     this.bind();
     this.updateCamera(0);
   }
@@ -50,10 +58,13 @@ export class Controls {
     document.addEventListener('mouseenter', () => { this.mouse.inside = true; });
   }
 
+  skipIntro() { if (this.intro > 0) { this.intro = 0; this.ui?.hideIntroCard?.(); } }
+
   onKeyDown(e) {
     const k = e.key.toLowerCase();
     this.keys[k] = true;
     if (e.target.tagName === 'INPUT') return;
+    this.skipIntro();
     if (k === 'a' && !this.placement) { if (this.selectedUnits().length) this.attackMoveArm = true; }
     if (k === 's') { this.selectedUnits().forEach(u => u.stop()); this.attackMoveArm = false; }
     if (k === 'escape') { this.cancelPlacement(); this.attackMoveArm = false; this.ui.buildMenuOpen = false; this.ui.refreshPanel(); }
@@ -99,6 +110,7 @@ export class Controls {
 
   onMouseDown(e) {
     if (e.target !== this.dom) return;
+    if (this.intro > 0) { this.skipIntro(); return; }
     if (e.button === 0) {
       if (this.placement) { this.tryPlace(e); return; }
       if (this.attackMoveArm) {
@@ -245,23 +257,40 @@ export class Controls {
   }
 
   updateCamera(dt) {
+    // ---- end-game cinematic: slow orbit over the decisive ruin ----
+    if (this.game.over && this.game.endFocus) {
+      if (this.intro > 0) { this.intro = 0; this.ui?.hideIntroCard?.(); }
+      this.focusT.set(this.game.endFocus.x, 0, this.game.endFocus.z);
+      this.distT = 30;
+      this.yawT += dt * 0.18;            // slow drift around the scene
+    }
+    // ---- opening flyover: scripted, input-locked, skippable ----
+    const inputLocked = this.intro > 0;
+    if (inputLocked) {
+      this.intro -= dt;
+      this.yawT -= dt * 0.12;            // gentle sweep as we descend
+      if (this.intro <= 0) this.ui?.hideIntroCard?.();
+    }
+
     const speed = (30 + this.dist * 0.6) * dt;
     let mx = 0, mz = 0;
-    // arrow keys pan (WASD letters are reserved for command hotkeys)
-    if (this.keys['arrowup']) mz -= 1;
-    if (this.keys['arrowdown']) mz += 1;
-    if (this.keys['arrowleft']) mx -= 1;
-    if (this.keys['arrowright']) mx += 1;
-    // edge scroll
-    if (this.mouse.inside && !this.dragStart) {
-      const m = 14;
-      if (this.mouse.x < m) mx = -1;
-      if (this.mouse.x > window.innerWidth - m) mx = 1;
-      if (this.mouse.y < m) mz = -1;
-      if (this.mouse.y > window.innerHeight - m) mz = 1;
+    if (!inputLocked && !this.game.over) {
+      // arrow keys pan (WASD letters are reserved for command hotkeys)
+      if (this.keys['arrowup']) mz -= 1;
+      if (this.keys['arrowdown']) mz += 1;
+      if (this.keys['arrowleft']) mx -= 1;
+      if (this.keys['arrowright']) mx += 1;
+      // edge scroll
+      if (this.mouse.inside && !this.dragStart) {
+        const m = 14;
+        if (this.mouse.x < m) mx = -1;
+        if (this.mouse.x > window.innerWidth - m) mx = 1;
+        if (this.mouse.y < m) mz = -1;
+        if (this.mouse.y > window.innerHeight - m) mz = 1;
+      }
+      if (this.keys['q']) this.yawT += dt * 1.8;
+      if (this.keys['e']) this.yawT -= dt * 1.8;
     }
-    if (this.keys['q']) this.yawT += dt * 1.8;
-    if (this.keys['e']) this.yawT -= dt * 1.8;
     if (mx || mz) {
       const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw);
       this.focusT.x += (mx * cos - mz * sin) * speed;
@@ -269,11 +298,12 @@ export class Controls {
       this.focusT.x = Math.max(4, Math.min(WORLD - 4, this.focusT.x));
       this.focusT.z = Math.max(4, Math.min(WORLD - 4, this.focusT.z));
     }
-    // ease toward targets — exponential smoothing keeps motion fluid at any fps
-    const ease = 1 - Math.exp(-dt * 9);
+    // ease toward targets — gentler during the cinematic intro for a slow descent
+    const k = inputLocked ? 2.2 : 9;
+    const ease = 1 - Math.exp(-dt * k);
     this.focus.lerp(this.focusT, ease);
-    this.dist += (this.distT - this.dist) * (1 - Math.exp(-dt * 7));
-    this.yaw += (this.yawT - this.yaw) * (1 - Math.exp(-dt * 10));
+    this.dist += (this.distT - this.dist) * (1 - Math.exp(-dt * (inputLocked ? 1.8 : 7)));
+    this.yaw += (this.yawT - this.yaw) * (1 - Math.exp(-dt * (inputLocked ? 2.0 : 10)));
     const cam = this.game.camera;
     const pitch = 0.9 + (this.dist - 16) / 64 * 0.25; // steeper when zoomed out
     const fy = this.game.map.heightAt(this.focus.x, this.focus.z);
