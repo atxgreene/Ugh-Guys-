@@ -42,15 +42,16 @@ Pooled GPU particles (`fx.js`, one draw call each): **marching/footstep dust**,
 debris already present. **[planned]** bronze weapon glints, ritual light pulses on
 ability use, river shimmer, arrow fletching trails.
 
-## 6. Terrain & biomes
-**[done]** seeded heightmap with mountain borders + two ridge passes, PBR basalt/ash
-ground (albedo+normal+roughness), flood-water basins, fog of war, buildable-slope test.
-Environmental-storytelling props scattered with the world's history: **fallen obelisks,
-abandoned altars, half-buried Nephilim ribcages, colossal broken blades, inscribed
-boundary stones, dead sacred trees, shattered tablets** (`buildDoodad`).
-**[planned]** distinct biome presets (cedar forest, basalt highland, Nephilim wasteland,
-sacred foothills) each pairing a mood preset with clutter + resource-placement rules;
-rivers with fords; ancient roads between sites.
+## 6. Terrain & biomes  **[done]**
+Seeded heightmap with mountain borders + two ridge passes, PBR basalt/ash ground
+(albedo+normal+roughness), flood-water basins with sky-tinted sheen, fog of war,
+buildable-slope test. **Six biome presets** (`BIOMES` in `terrain.js`) — Fertile River
+Valley, Ancient Cedar Stands, Basalt Highlands, Nephilim Wasteland, The Watcher Ruins,
+Sacred Mountain Foothills — each recolors the ground ramp, weights its own clutter table,
+and pairs with a fitting sky mood. Environmental-storytelling props scattered as the
+world's history: fallen obelisks, altars, half-buried Nephilim ribcages, colossal broken
+blades, boundary stones, dead sacred trees, shattered tablets.
+**[planned]** carved rivers with fords + ancient roads (held back to protect base access/balance); cliff faces.
 
 ## 7. Buildings
 **[done]** faction-specific silhouettes (Covenant ziggurat/temple, Watcher spire/gate/pit,
@@ -96,10 +97,12 @@ quality fallback** (drops bloom/shadows/pixel-ratio under sustained slow frames)
 2. ✅ Lighting + mood presets + sky (biggest "not a prototype" lever)
 3. ✅ Living VFX (smoke/dust/sparks/shake) + env storytelling props
 4. ✅ Bronze/stone HUD reskin
-5. ⏳ Biome presets & richer terrain (rivers, roads, cliffs)
-6. ⏳ Building construction/damage stages + prop dressing
-7. ⏳ Cinematic intro flyover & end-game camera
-8. ⏳ Instancing/LOD pass for scale
+5. ✅ Biome presets (6 lands, each with palette + clutter + paired mood)
+6. ✅ Cinematic intro flyover, faction cards & end-game camera
+7. ✅ Resource-gather particles + worker harvest animation
+8. ⏳ Building construction/damage stages + prop dressing
+9. ⏳ Carved rivers/roads/cliffs (balance-careful)
+10. ⏳ Instancing/LOD pass for scale
 
 ## 15. Code map
 `game.js` engine + atmosphere/lighting/sky/FX • `fx.js` particle pools • `models.js`

@@ -60,7 +60,7 @@ function startGameNow(playerFactionKey) {
   window.__game = game; window.__controls = controls;
 
   ui.showIntroCard(FACTIONS[playerFactionKey]);
-  ui.toast(`The ${FACTIONS[enemyKey].name} stir beyond the ridge…`);
+  ui.toast(`${game.map.biome.name} — the ${FACTIONS[enemyKey].name} stir beyond the ridge…`);
 
   let last = performance.now();
   let slowFrames = 0, totalFrames = 0;

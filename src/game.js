@@ -5,7 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { GameMap, GRID, TILE, WORLD } from './terrain.js';
+import { GameMap, BIOMES, GRID, TILE, WORLD } from './terrain.js';
 import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
 import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP } from './data.js';
 import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats } from './models.js';
@@ -215,6 +215,7 @@ export class Unit extends Entity {
   update(dt) {
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.moving = false;
+    this.harvesting = false;
     const atk = this.def.attack;
 
     switch (this.state) {
@@ -279,6 +280,8 @@ export class Unit extends Entity {
         if (this.seek(n.pos.x, n.pos.z, n.radius + this.radius + 0.5, dt)) {
           this.gatherT = (this.gatherT ?? 0) + dt;
           this.facingTarget = Math.atan2(n.pos.x - this.pos.x, n.pos.z - this.pos.z);
+          this.harvesting = true;          // drives the chop/swing + gather particles
+          this.game.gatherFx(n);
           const info = RESOURCE_NODES[n.type];
           if (this.gatherT >= info.gatherTime) {
             this.gatherT = 0;
@@ -348,14 +351,16 @@ export class Unit extends Entity {
     // visuals — smooth turn toward facing target (shortest arc)
     const dA = ((this.facingTarget - this.facing + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     this.facing += dA * Math.min(1, dt * 11);
-    this.animT += dt * (this.moving ? 10 : 2);
+    this.animT += dt * (this.moving ? 10 : this.harvesting ? 9 : 2);
     const h = this.game.map.heightAt(this.pos.x, this.pos.z);
     // idle breathing keeps standing units alive; running bob while moving
     const bob = this.moving ? Math.abs(Math.sin(this.animT)) * 0.12 : Math.sin(this.animT) * 0.03;
     this.mesh.position.set(this.pos.x, h + bob, this.pos.z);
     this.mesh.rotation.y = this.facing;
     this.mesh.rotation.z = this.moving ? Math.sin(this.animT) * 0.06 : 0;
-    this.mesh.rotation.x = this.moving ? 0.05 : 0; // slight lean into the run
+    // bend/swing while harvesting: a rhythmic chop forward, else lean into the run
+    this.mesh.rotation.x = this.harvesting ? Math.max(0, Math.sin(this.animT)) * 0.5
+      : this.moving ? 0.05 : 0;
     // attack: anticipation (pull back) then a snap strike forward, settling home
     if (this.lungeT > 0) {
       this.lungeT -= dt;
@@ -562,9 +567,10 @@ export class Game {
     this.speed = 1;
     this.over = false;
     this.fogTimer = 0;
-    // weighted toward the moodier presets; the doomed age favours dusk and storm
-    const moods = opts.timeOfDay ? [opts.timeOfDay]
-      : ['dusk', 'dusk', 'storm', 'storm', 'night', 'dawn', 'noon'];
+    // choose the land first, then a sky mood that suits it
+    const bkeys = Object.keys(BIOMES);
+    this.biomeKey = opts.biome && BIOMES[opts.biome] ? opts.biome : bkeys[Math.floor(Math.random() * bkeys.length)];
+    const moods = opts.timeOfDay ? [opts.timeOfDay] : BIOMES[this.biomeKey].moods;
     this.timeOfDay = moods[Math.floor(Math.random() * moods.length)];
     this.preset = TIME_PRESETS[this.timeOfDay];
     this.units = []; this.buildings = []; this.resources = [];
@@ -579,7 +585,7 @@ export class Game {
     ];
 
     this.initRenderer();
-    this.map = new GameMap(opts.seed);
+    this.map = new GameMap(opts.seed, this.biomeKey);
     this.scene.add(this.map.buildMesh());
     this.map.scatterDoodads(this.scene);
     this.initAtmosphere();
@@ -775,11 +781,14 @@ export class Game {
     // black water in the lowland basins, with slow drifting ripples
     this.waterNormal = waterNormalMap();
     this.waterNormal.repeat.set(36, 36);
+    // faint sky-tinted sheen so dark-mood water reads as a surface, not a void
+    const wc = new THREE.Color(this.preset.skyHorizon).lerp(new THREE.Color(0x0d1118), 0.7);
     const water = new THREE.Mesh(
       new THREE.PlaneGeometry(WORLD, WORLD),
       new THREE.MeshStandardMaterial({
-        color: 0x0d1118, metalness: 0.85, roughness: 0.22,
-        normalMap: this.waterNormal, normalScale: new THREE.Vector2(0.35, 0.35),
+        color: wc, metalness: 0.6, roughness: 0.32,
+        emissive: new THREE.Color(this.preset.skyHorizon).multiplyScalar(0.06),
+        normalMap: this.waterNormal, normalScale: new THREE.Vector2(0.5, 0.5),
       })
     );
     water.rotation.x = -Math.PI / 2;
@@ -830,6 +839,25 @@ export class Game {
   }
 
   addShake(amount) { this.shake = Math.min(1.2, this.shake + amount); }
+
+  // themed particles where a worker is harvesting a node (chaff / chips / ore sparks)
+  gatherFx(node) {
+    if (this.map.fogStateAt(node.pos.x, node.pos.z) !== 2) return;
+    node._gfx = (node._gfx || 0) - 0.016;
+    if (node._gfx > 0) return;
+    node._gfx = 0.22;
+    const y = this.map.heightAt(node.pos.x, node.pos.z) + 0.8;
+    const jx = (Math.random() - 0.5) * node.radius * 1.4, jz = (Math.random() - 0.5) * node.radius * 1.4;
+    if (node.type === 'bronze') {
+      this.fxSpark.spawn(node.pos.x + jx, y, node.pos.z + jz,
+        (Math.random() - 0.5) * 2, 1.5 + Math.random() * 1.5, (Math.random() - 0.5) * 2, 0.45, 0.15, 1.0);
+    } else {
+      // grain chaff drifts up, timber chips arc out — both read as tan motes
+      this.fxDust.spawn(node.pos.x + jx, y, node.pos.z + jz,
+        (Math.random() - 0.5) * 1.5, (node.type === 'grain' ? 1.2 : 0.4) + Math.random(),
+        (Math.random() - 0.5) * 1.5, 0.7, 0.32, 0.55, 2.0);
+    }
+  }
 
   // spawn a small dust kick at a unit's feet (only where the player can see it)
   dustAt(x, z, scale = 1) {

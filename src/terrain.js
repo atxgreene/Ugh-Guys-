@@ -24,9 +24,53 @@ function makeNoise(seed) {
   };
 }
 
+// Biomes give each map a distinct land identity: ground palette, what litters it,
+// and the sky moods it pairs with. Layout/movement are unchanged for fairness.
+export const BIOMES = {
+  river_valley: {
+    name: 'Fertile River Valley',
+    base: 0x4c5240, ash: 0x6a6b4a, rock: 0x3a3a33, sand: 0x7a6c4e, moss: 0x4e6a48,
+    clutter: { rock: 0.3, ruin: 0.2, dead_tree: 0.15, monolith: 0.1, boundary_stone: 0.15, crystal: 0.1 },
+    moods: ['dawn', 'noon', 'dusk'],
+  },
+  cedar_forest: {
+    name: 'Ancient Cedar Stands',
+    base: 0x36402f, ash: 0x4a4a38, rock: 0x2c2e28, sand: 0x55503a, moss: 0x3a4e34,
+    clutter: { rock: 0.25, dead_tree: 0.35, ruin: 0.15, monolith: 0.1, tablet: 0.15 },
+    moods: ['dusk', 'dawn', 'night'],
+  },
+  basalt_highland: {
+    name: 'Basalt Highlands',
+    base: 0x33333c, ash: 0x44444e, rock: 0x1f1f26, sand: 0x4a4640, moss: 0x32403a,
+    clutter: { rock: 0.45, monolith: 0.2, ruin: 0.15, fallen_obelisk: 0.1, crystal: 0.1 },
+    moods: ['storm', 'dusk', 'night'],
+  },
+  nephilim_waste: {
+    name: 'Nephilim Wasteland',
+    base: 0x46403a, ash: 0x564a42, rock: 0x2e2824, sand: 0x6a5a48, moss: 0x4a4030, tint: 0x3a2420,
+    clutter: { rock: 0.3, giant_bones: 0.25, giant_weapon: 0.15, ruin: 0.15, altar: 0.15 },
+    moods: ['storm', 'night', 'dusk'],
+  },
+  watcher_ruins: {
+    name: 'The Watcher Ruins',
+    base: 0x2c2e3a, ash: 0x3a3c4c, rock: 0x1c1e28, sand: 0x44465a, moss: 0x2e3848,
+    clutter: { fallen_obelisk: 0.3, monolith: 0.2, crystal: 0.2, tablet: 0.15, ruin: 0.15 },
+    moods: ['night', 'storm', 'dusk'],
+  },
+  sacred_foothills: {
+    name: 'Sacred Mountain Foothills',
+    base: 0x52543e, ash: 0x6e6a4c, rock: 0x40403a, sand: 0x80714e, moss: 0x566a4a,
+    clutter: { rock: 0.3, altar: 0.2, dead_tree: 0.2, boundary_stone: 0.2, tablet: 0.1 },
+    moods: ['dawn', 'noon', 'dusk'],
+  },
+};
+
 export class GameMap {
-  constructor(seed = Math.floor(Math.random() * 1e9)) {
+  constructor(seed = Math.floor(Math.random() * 1e9), biomeKey) {
     this.seed = seed;
+    const bkeys = Object.keys(BIOMES);
+    this.biomeKey = biomeKey && BIOMES[biomeKey] ? biomeKey : bkeys[Math.floor(Math.random() * bkeys.length)];
+    this.biome = BIOMES[this.biomeKey];
     const noise = makeNoise(seed);
     this.height = new Float32Array(GRID * GRID);
     this.mountain = new Uint8Array(GRID * GRID);
@@ -128,9 +172,10 @@ export class GameMap {
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
     const noise = makeNoise(this.seed + 7);
-    const cBase = new THREE.Color(0x42424e), cAsh = new THREE.Color(0x595449),
-          cRock = new THREE.Color(0x2a2a33), cSand = new THREE.Color(0x6b5e4c),
-          cMoss = new THREE.Color(0x44524a);
+    const B = this.biome;
+    const cBase = new THREE.Color(B.base), cAsh = new THREE.Color(B.ash),
+          cRock = new THREE.Color(B.rock), cSand = new THREE.Color(B.sand),
+          cMoss = new THREE.Color(B.moss);
     for (let i = 0; i < pos.count; i++) {
       const wx = pos.getX(i), wz = pos.getZ(i);
       const h = this.heightAt(wx, wz);
@@ -174,48 +219,36 @@ export class GameMap {
   }
 
   scatterDoodads(scene) {
-    const noise = makeNoise(this.seed + 13);
     this.doodads = [];
     const sites = [this.basePlayer, this.baseEnemy, ...this.expansions];
-    // common natural clutter
-    for (let i = 0; i < 130; i++) {
-      const x = 4 + Math.random() * (GRID - 8), y = 4 + Math.random() * (GRID - 8);
-      if (!this.isWalkable(Math.floor(x), Math.floor(y))) continue;
-      if (sites.some(s => Math.hypot(x - s.x, y - s.y) < 14)) continue;
-      const r = noise(x * 0.5, y * 0.5);
-      const type = r < 0.5 ? 'rock' : r < 0.72 ? 'ruin' : r < 0.9 ? 'monolith' : 'crystal';
-      const d = buildDoodad(type);
-      const wx = x * TILE, wz = y * TILE;
-      d.position.set(wx, this.heightAt(wx, wz), wz);
-      d.rotation.y = Math.random() * Math.PI * 2;
-      scene.add(d);
-      this.doodads.push(d);
-      if (type === 'monolith' || type === 'ruin') {
-        const t = this.tileOf(wx, wz);
-        this.blocked[this.idx(t.x, t.y)] = 1;
+    // weighted clutter table from the biome — defines this land's character
+    const weights = Object.entries(this.biome.clutter);
+    const total = weights.reduce((s, [, w]) => s + w, 0);
+    const pick = () => {
+      let r = Math.random() * total;
+      for (const [type, w] of weights) { if ((r -= w) <= 0) return type; }
+      return weights[0][0];
+    };
+    const BLOCKS = new Set(['monolith', 'ruin', 'fallen_obelisk', 'giant_weapon']);
+    const place = (count, minSite, yOffset) => {
+      let made = 0;
+      for (let attempt = 0; attempt < count * 3 && made < count; attempt++) {
+        const x = 5 + Math.random() * (GRID - 10), y = 5 + Math.random() * (GRID - 10);
+        if (!this.isWalkable(Math.floor(x), Math.floor(y))) continue;
+        if (sites.some(s => Math.hypot(x - s.x, y - s.y) < minSite)) continue;
+        const type = pick();
+        const d = buildDoodad(type);
+        const wx = x * TILE, wz = y * TILE;
+        d.position.set(wx, this.heightAt(wx, wz) + yOffset, wz);
+        d.rotation.y = Math.random() * Math.PI * 2;
+        scene.add(d);
+        this.doodads.push(d);
+        made++;
+        if (BLOCKS.has(type)) { const t = this.tileOf(wx, wz); this.blocked[this.idx(t.x, t.y)] = 1; }
       }
-    }
-    // rarer environmental-storytelling landmarks — the world's history
-    const story = ['fallen_obelisk', 'altar', 'giant_bones', 'giant_weapon', 'boundary_stone', 'dead_tree', 'tablet'];
-    let placed = 0;
-    for (let attempt = 0; attempt < 140 && placed < 26; attempt++) {
-      const x = 6 + Math.random() * (GRID - 12), y = 6 + Math.random() * (GRID - 12);
-      if (!this.isWalkable(Math.floor(x), Math.floor(y))) continue;
-      if (sites.some(s => Math.hypot(x - s.x, y - s.y) < 12)) continue;
-      const type = story[Math.floor(noise(x * 0.9 + 5, y * 0.9) * story.length) % story.length];
-      const d = buildDoodad(type);
-      const wx = x * TILE, wz = y * TILE;
-      d.position.set(wx, this.heightAt(wx, wz) - 0.05, wz);
-      d.rotation.y = Math.random() * Math.PI * 2;
-      scene.add(d);
-      this.doodads.push(d);
-      placed++;
-      // only large landmarks block; bones/tablets/altars stay passable for readability
-      if (type === 'fallen_obelisk' || type === 'giant_weapon') {
-        const t = this.tileOf(wx, wz);
-        this.blocked[this.idx(t.x, t.y)] = 1;
-      }
-    }
+    };
+    place(150, 13, 0);     // dense ground cover keeps clear of bases
+    place(20, 11, -0.05);  // a few extra landmarks closer in
   }
 
   // Resource node placement plan: [{type, tx, ty}]
