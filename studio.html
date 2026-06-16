@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>model studio</title>
+<style>html,body{margin:0;height:100%;background:#9aa0aa;overflow:hidden}</style>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+import { buildUnitMesh } from './src/models.js';
+const W = 720, H = 720;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W, H); renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x9aa0aa);
+const cam = new THREE.PerspectiveCamera(34, 1, 0.05, 200);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x55606e, 1.5));
+const key = new THREE.DirectionalLight(0xfff2e0, 2.4); key.position.set(5, 9, 6); scene.add(key);
+const fill = new THREE.DirectionalLight(0x9fb4ff, 0.9); fill.position.set(-6, 4, -3); scene.add(fill);
+// ground disc for grounding/shadow read
+const disc = new THREE.Mesh(new THREE.CircleGeometry(2.4, 40), new THREE.MeshStandardMaterial({ color: 0x6f757e, roughness: 1 }));
+disc.rotation.x = -Math.PI / 2; scene.add(disc);
+const modelKey = new URLSearchParams(location.search).get('model') || 'parker';
+const m = buildUnitMesh(modelKey, 0x808078, 0xc2b89a, 0xb8b4c9, 0xffd56e);
+m.scale.setScalar(1.35); scene.add(m);
+const box = new THREE.Box3().setFromObject(m);
+const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+const rad = Math.max(size.x, size.y, size.z);
+window.__view = (azDeg, elDeg, zoom = 2.2) => {
+  const az = azDeg * Math.PI / 180, el = elDeg * Math.PI / 180, r = rad * zoom;
+  cam.position.set(ctr.x + Math.sin(az) * Math.cos(el) * r, ctr.y + Math.sin(el) * r, ctr.z + Math.cos(az) * Math.cos(el) * r);
+  cam.lookAt(ctr.x, ctr.y, ctr.z);
+  renderer.render(scene, cam);
+};
+window.__meta = { children: m.children.length, size: [size.x, size.y, size.z].map(v => +v.toFixed(2)) };
+window.__view(18, 14, 2.2);
+window.__ready = true;
+</script>
+</body>
+</html>
