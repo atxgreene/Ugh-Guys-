@@ -41,22 +41,26 @@ const PARKER_LINES = [
 
 // Cinematic time-of-day moods. Each match picks one — sky, sun, fog and ambient
 // shift together so the world reads as the last age before the Flood.
+// Cinematic moods, tuned so the playfield stays readable in every one — the
+// world is meant to feel like the last age before the Flood, not to be unlit.
+// Hemisphere (sky/ground) carries most of the top-down terrain read, so its
+// intensity + ground colour are kept up even at night.
 const TIME_PRESETS = {
-  dawn:  { name: 'Dawn of the Last Age', sun: 0xffd9a0, sunI: 2.4, hemiSky: 0x6a78a8, hemiGround: 0x33281c, hemiI: 1.2,
-           rim: 0x8fa6ff, rimI: 0.9, fog: 0x2a2e3e, fogD: 0.0045, bg: 0x222a3c, env: 0.65,
-           skyTop: '#1c2750', skyHorizon: '#c98a5a', skyGround: '#241a16', exposure: 1.5, storm: 0.2 },
-  noon:  { name: 'High Sun', sun: 0xfff0d0, sunI: 3.0, hemiSky: 0x8aa0c8, hemiGround: 0x3a3024, hemiI: 1.5,
-           rim: 0x9fb4ff, rimI: 0.7, fog: 0x9aa2b0, fogD: 0.003, bg: 0x6a7892, env: 0.85,
+  dawn:  { name: 'Dawn of the Last Age', sun: 0xffd9a0, sunI: 2.7, hemiSky: 0x7a88b6, hemiGround: 0x46382a, hemiI: 1.55,
+           rim: 0x8fa6ff, rimI: 0.9, fog: 0x2e3346, fogD: 0.0040, bg: 0x283044, env: 0.8,
+           skyTop: '#1c2750', skyHorizon: '#c98a5a', skyGround: '#241a16', exposure: 1.55, storm: 0.2 },
+  noon:  { name: 'High Sun', sun: 0xfff0d0, sunI: 3.1, hemiSky: 0x9ab0d8, hemiGround: 0x46402e, hemiI: 1.7,
+           rim: 0x9fb4ff, rimI: 0.7, fog: 0x9aa2b0, fogD: 0.0028, bg: 0x6a7892, env: 0.9,
            skyTop: '#3a5a9a', skyHorizon: '#b9c2cf', skyGround: '#4a4030', exposure: 1.5, storm: 0.15 },
-  dusk:  { name: 'Red Dusk', sun: 0xff8a4a, sunI: 2.7, hemiSky: 0x5a4a6a, hemiGround: 0x2a1c14, hemiI: 1.1,
-           rim: 0x7a6cff, rimI: 1.1, fog: 0x3a2230, fogD: 0.0052, bg: 0x2e1c28, env: 0.6,
+  dusk:  { name: 'Red Dusk', sun: 0xff9a5a, sunI: 2.85, hemiSky: 0x6e5c82, hemiGround: 0x3c2c1e, hemiI: 1.5,
+           rim: 0x7a6cff, rimI: 1.1, fog: 0x402636, fogD: 0.0046, bg: 0x36222e, env: 0.74,
            skyTop: '#1a1430', skyHorizon: '#d9622e', skyGround: '#1a1012', exposure: 1.6, storm: 0.4 },
-  night: { name: 'The Watch of Night', sun: 0x9fb0e0, sunI: 1.0, hemiSky: 0x2a3450, hemiGround: 0x14110e, hemiI: 0.8,
-           rim: 0x6f8cff, rimI: 1.3, fog: 0x0c1020, fogD: 0.006, bg: 0x080a14, env: 0.4,
+  night: { name: 'The Watch of Night', sun: 0xaebfe8, sunI: 1.9, hemiSky: 0x46587e, hemiGround: 0x282420, hemiI: 1.6,
+           rim: 0x6f8cff, rimI: 1.3, fog: 0x141b2e, fogD: 0.0044, bg: 0x10131f, env: 0.72,
            skyTop: '#05060f', skyHorizon: '#2a3358', skyGround: '#06060a', exposure: 1.7, storm: 0.45, night: true },
-  storm: { name: 'The Gathering Flood', sun: 0x8a90a0, sunI: 1.4, hemiSky: 0x3a4256, hemiGround: 0x1a1a20, hemiI: 1.0,
-           rim: 0x6a7cc0, rimI: 1.0, fog: 0x222834, fogD: 0.0072, bg: 0x1a1e28, env: 0.5,
-           skyTop: '#10141e', skyHorizon: '#3a4150', skyGround: '#0c0e14', exposure: 1.45, storm: 1.0, lightning: true },
+  storm: { name: 'The Gathering Flood', sun: 0x9aa0b2, sunI: 2.1, hemiSky: 0x4c586e, hemiGround: 0x2c2c36, hemiI: 1.6,
+           rim: 0x6a7cc0, rimI: 1.0, fog: 0x2a313f, fogD: 0.0052, bg: 0x232836, env: 0.74,
+           skyTop: '#10141e', skyHorizon: '#3a4150', skyGround: '#0c0e14', exposure: 1.5, storm: 1.0, lightning: true },
 };
 
 export class Entity {
