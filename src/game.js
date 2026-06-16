@@ -7,7 +7,8 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GameMap, BIOMES, GRID, TILE, WORLD } from './terrain.js';
 import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
-import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP } from './data.js';
+import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP,
+  FIELDS_OF_EVIL, NEUTRAL_UNIT_DEFS, NEUTRAL_BUILDING_DEFS } from './data.js';
 import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats, buildScaffold, buildFireCluster } from './models.js';
 import { waterNormalMap } from './textures.js';
 import { ParticlePool } from './fx.js';
@@ -609,7 +610,7 @@ export class Building extends Entity {
     this.removeScaffold();
     if (this.fire) { this.game.scene.remove(this.fire); this.fire = null; }
     if (this.scorch) { this.game.scene.remove(this.scorch); this.scorch = null; }
-    this.game.removeBuilding(this);
+    this.game.removeBuilding(this, attacker);
     Sound.buildingDie();
   }
 }
@@ -636,10 +637,15 @@ export class ResourceNode extends Entity {
 export class Game {
   constructor(container, playerFactionKey, enemyFactionKey, opts = {}) {
     this.container = container;
+    this.pfKey = playerFactionKey; this.efKey = enemyFactionKey;
     this.time = 0;
     this.speed = 1;
     this.over = false;
+    this.paused = false;
     this.fogTimer = 0;
+    // a saved game pins the exact map (seed/biome/mood) so it reloads identically
+    const load = opts.load || null;
+    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay }; }
     // choose the land first, then a sky mood that suits it
     const bkeys = Object.keys(BIOMES);
     this.biomeKey = opts.biome && BIOMES[opts.biome] ? opts.biome : bkeys[Math.floor(Math.random() * bkeys.length)];
@@ -662,7 +668,8 @@ export class Game {
     this.scene.add(this.map.buildMesh());
     this.map.scatterDoodads(this.scene);
     this.initAtmosphere();
-    this.spawnInitial();
+    if (load) this.deserialize(load);
+    else this.spawnInitial();
     this.map.updateFog(this.playerViewers());
     this.applyFogVisibility();
   }
@@ -993,6 +1000,103 @@ export class Game {
       }
     }
     this.recalcSupply();
+    // Easter egg: a rare hidden encampment, deterministic per seed (also summonable
+    // any match by typing the secret code, or via window.__game.spawnFieldsOfEvil()).
+    if (this.map.seed % 100 < 18) this.spawnFieldsOfEvil(Math.floor(GRID * 0.5), Math.floor(GRID * 0.12));
+  }
+
+  // The Fields of Evil: the House of Greene ringed by feuding Landonian & Boydonian
+  // clans, all hostile to everyone. Razing the House drops a knowledge trove.
+  spawnFieldsOfEvil(tx, ty) {
+    if (this.fieldsOfEvil) return false;
+    const w = findNearestWalkable(this.map, tx, ty, 16, 1);
+    if (!w) return false;
+    const def = NEUTRAL_BUILDING_DEFS.house_of_greene, size = def.size;
+    if (!this.map.isWalkableClear(w.x, w.y, 1)) { /* still try */ }
+    const b = new Building(this, 2, { ...def }, 'house_of_greene', w.x - (size / 2 | 0), w.y - (size / 2 | 0));
+    b.complete = true; b.progress = 1; b.hp = b.maxHp; b.mesh.scale.y = 1; b.removeScaffold();
+    this.buildings.push(b);
+    const clans = ['landonian', 'boydonian'];
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2, key = clans[i % 2];
+      const ux = b.pos.x + Math.cos(a) * (b.radius + 3), uz = b.pos.z + Math.sin(a) * (b.radius + 3);
+      const d = NEUTRAL_UNIT_DEFS[key];
+      const u = new Unit(this, 2, { ...d, hp: d.hp }, key, ux, uz);
+      u.leash = { x: ux, z: uz };
+      this.units.push(u);
+    }
+    this._combat = null;
+    this.recalcSupply();
+    this.fieldsOfEvil = { x: b.pos.x, z: b.pos.z, seen: false };
+    return true;
+  }
+
+  defFor(owner, kind, key) {
+    if (owner === 2) return kind === 'building' ? NEUTRAL_BUILDING_DEFS[key] : NEUTRAL_UNIT_DEFS[key];
+    const f = this.players[owner].faction;
+    return kind === 'building' ? f.buildings[key] : f.units[key];
+  }
+
+  // ---------- save / load ----------
+  serialize() {
+    let fogStr = '';
+    for (let i = 0; i < this.map.fog.length; i++) fogStr += String.fromCharCode(this.map.fog[i]);
+    return {
+      v: 1, t: this.time, timeOfDay: this.timeOfDay, biomeKey: this.biomeKey, seed: this.map.seed,
+      pf: this.pfKey, ef: this.efKey,
+      players: [0, 1].map(o => { const p = this.players[o]; return {
+        res: { ...p.resources }, up: [...p.upgrades], dmgMult: p.dmgMult, armorAdd: p.armorAdd, hpMult: p.hpMult }; }),
+      units: this.units.filter(u => !u.dead).map(u => ({ o: u.owner, k: u.key,
+        x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), hp: Math.round(u.hp),
+        cy: u.carry || 0, ct: u.carryType || null, leash: u.leash || null })),
+      buildings: this.buildings.filter(b => !b.dead).map(b => ({ o: b.owner, k: b.key, tx: b.tx, ty: b.ty,
+        hp: Math.round(b.hp), c: b.complete, p: +(b.progress || 0).toFixed(3),
+        q: b.trainQueue.map(j => ({ key: j.key, t: +j.t.toFixed(2), total: j.total, up: !!j.upgrade })),
+        rally: b.rally ? { x: +b.rally.x.toFixed(1), z: +b.rally.z.toFixed(1) } : null })),
+      resources: this.resources.filter(n => n.amount > 0).map(n => ({ t: n.type, tx: n.tx, ty: n.ty, amount: Math.round(n.amount) })),
+      fog: btoa(fogStr),
+      foe: this.fieldsOfEvil ? { x: this.fieldsOfEvil.x, z: this.fieldsOfEvil.z, seen: this.fieldsOfEvil.seen } : null,
+      ai: this.ai ? { buildIndex: this.ai.buildIndex, wave: this.ai.wave, nextWaveTime: this.ai.nextWaveTime, workerTarget: this.ai.workerTarget } : null,
+    };
+  }
+
+  deserialize(d) {
+    this.time = d.t || 0;
+    (d.players || []).forEach((ps, o) => { const p = this.players[o];
+      p.resources = { ...ps.res }; p.upgrades = new Set(ps.up || []);
+      p.dmgMult = ps.dmgMult ?? 1; p.armorAdd = ps.armorAdd ?? 0; p.hpMult = ps.hpMult ?? 1; });
+    for (const r of d.resources || []) { const n = new ResourceNode(this, r.t, r.tx, r.ty); n.amount = r.amount; this.resources.push(n); }
+    for (const bs of d.buildings || []) {
+      const def = this.defFor(bs.o, 'building', bs.k); if (!def) continue;
+      const b = new Building(this, bs.o, { ...def }, bs.k, bs.tx, bs.ty);
+      if (bs.c) { b.complete = true; b.progress = 1; b.mesh.scale.y = 1; b.removeScaffold(); }
+      else { b.progress = bs.p || 0; b.mesh.scale.y = 0.08 + 0.92 * Math.min(1, b.progress); }
+      b.hp = Math.min(b.maxHp, bs.hp);
+      b.trainQueue = (bs.q || []).map(j => ({ key: j.key, t: j.t, total: j.total, upgrade: j.up }));
+      b.rally = bs.rally || null;
+      this.buildings.push(b);
+      if (def.main) { if (bs.o === 0) this.playerMain = b; else if (bs.o === 1) this.enemyMain = b; }
+    }
+    for (const us of d.units || []) {
+      const def = this.defFor(us.o, 'unit', us.k); if (!def) continue;
+      const hpMult = this.players[us.o]?.hpMult || 1;   // honor researched HP upgrades
+      const u = new Unit(this, us.o, { ...def, hp: Math.round(def.hp * hpMult) }, us.k, us.x, us.z);
+      u.hp = Math.min(u.maxHp, us.hp);
+      u.leash = us.leash || null;
+      if (us.cy) { u.carry = us.cy; u.carryType = us.ct; }
+      this.units.push(u);
+    }
+    this._combat = null;
+    this.recalcSupply();
+    // re-task: workers resume gathering / return their load; soldiers idle (re-aggro naturally)
+    for (const u of this.units) {
+      if (u.owner > 1 || !u.def.worker) continue;
+      if (u.carry > 0) u.state = 'return';
+      else { const n = this.resources.filter(r => r.amount > 0).sort((a, b) => u.distTo(a) - u.distTo(b))[0]; if (n) u.orderGather(n); }
+    }
+    if (d.fog) { const raw = atob(d.fog); for (let i = 0; i < this.map.fog.length && i < raw.length; i++) this.map.fog[i] = raw.charCodeAt(i); }
+    if (d.foe) this.fieldsOfEvil = { ...d.foe };
+    this._aiState = d.ai || null;   // applied by main.js after the AI is created
   }
 
   spawnUnit(owner, key, x, z) {
@@ -1307,7 +1411,7 @@ export class Game {
     this.emit('selection');
   }
 
-  removeBuilding(b) {
+  removeBuilding(b, attacker) {
     for (let y = 0; y < b.size; y++) for (let x = 0; x < b.size; x++)
       this.map.blocked[this.map.idx(b.tx + x, b.ty + y)] = 0;
     if (b.disc) this.scene.remove(b.disc);
@@ -1330,6 +1434,13 @@ export class Game {
     this._combat = null;
     this.recalcSupply();
     this.emit('selection');
+    // Easter egg: razing the House of Greene spills a trove of forbidden knowledge
+    if (b.key === 'house_of_greene') {
+      const owner = attacker && attacker.owner <= 1 ? attacker.owner : 0;
+      const r = this.players[owner].resources;
+      for (const [k, v] of Object.entries(FIELDS_OF_EVIL.reward)) r[k] = (r[k] || 0) + v;
+      if (owner === 0) { Sound.win(); this.emit('toast', '☩ The House of Greene has fallen. Their hoard of forbidden knowledge is yours.'); }
+    }
     if (!this.over) {
       if (b === this.playerMain) this.endGame(1, b.pos);
       else if (b === this.enemyMain) this.endGame(0, b.pos);
@@ -1465,6 +1576,13 @@ export class Game {
       this.fogTimer = 0.18;
       this.map.updateFog(this.playerViewers());
       this.applyFogVisibility();
+      // Easter egg discovery cue
+      if (this.fieldsOfEvil && !this.fieldsOfEvil.seen &&
+          this.map.fogStateAt(this.fieldsOfEvil.x, this.fieldsOfEvil.z) === 2) {
+        this.fieldsOfEvil.seen = true;
+        Sound.alert();
+        this.emit('toast', '☩ You have found the Fields of Evil — the House of Greene stands defiant.');
+      }
     }
 
     tickGlowMats(this.time);

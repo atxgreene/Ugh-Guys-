@@ -68,6 +68,15 @@ export class Controls {
     // WASD pan the camera, so unit commands live on F (attack-move) and X (stop)
     if (k === 'f' && !this.placement) { if (this.selectedUnits().length) this.attackMoveArm = true; }
     if (k === 'x') { this.selectedUnits().forEach(u => u.stop()); this.attackMoveArm = false; }
+    if (k === 'p') { this.onPause?.(); }
+    // secret code: type "greene" to summon the Fields of Evil near your city
+    this._code = ((this._code || '') + k).slice(-6);
+    if (this._code === 'greene') {
+      this._code = '';
+      const bp = this.game.map.basePlayer;
+      if (this.game.spawnFieldsOfEvil(bp.x + 12, bp.y - 12))
+        this.ui.toast('The Fields of Evil rise nearby. The House of Greene awaits.');
+    }
     if (k === 'escape') { this.cancelPlacement(); this.attackMoveArm = false; this.ui.buildMenuOpen = false; this.ui.refreshPanel(); }
     if (k === 'h') { const m = this.game.playerMain; if (m) { this.focusT.x = m.pos.x; this.focusT.z = m.pos.z; } }
     if (k === 'b' && this.selectedUnits().some(u => u.def.worker)) { this.ui.buildMenuOpen = true; this.ui.refreshPanel(); }

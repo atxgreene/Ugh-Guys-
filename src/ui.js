@@ -50,7 +50,28 @@ export class UI {
     game.on('ground-click', (x, z, kind) => this.groundMarker(x, z, kind));
 
     document.getElementById('btn-menu').onclick = () => onRestart();
+    const bp = document.getElementById('btn-pause');
+    if (bp) bp.onclick = () => this.onPause?.();
+    // pause-menu buttons
+    const pm = document.getElementById('pausemenu');
+    if (pm) {
+      pm.querySelector('#pm-resume').onclick = () => this.onResume?.();
+      pm.querySelector('#pm-save').onclick = () => this.onSave?.();
+      pm.querySelector('#pm-load').onclick = () => this.onLoad?.();
+      pm.querySelector('#pm-quit').onclick = () => onRestart();
+    }
     this.refreshPanel();
+  }
+
+  setPaused(on, saveExists) {
+    const pm = document.getElementById('pausemenu');
+    if (pm) {
+      pm.style.display = on ? 'flex' : 'none';
+      const load = pm.querySelector('#pm-load');
+      if (load) load.style.display = saveExists ? 'inline-block' : 'none';
+    }
+    const bp = document.getElementById('btn-pause');
+    if (bp) bp.textContent = on ? 'Resume' : 'Pause';
   }
 
   // ---------- minimap ----------
