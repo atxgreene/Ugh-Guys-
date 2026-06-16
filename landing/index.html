@@ -331,7 +331,7 @@
     background:linear-gradient(180deg,#16131c,#0b0a10); box-shadow:0 0 60px rgba(232,179,58,0.25);
     animation:secretIn .5s ease; }
   @keyframes secretIn { from{opacity:0; transform:translateY(14px) scale(.97)} to{opacity:1; transform:none} }
-  #secret img { width:100%; display:block; }
+  #secret img { width:100%; display:block; image-rendering:pixelated; }
   #secret .cap { padding:16px 20px 20px; }
   #secret .cap .who { font-family:'Cinzel',serif; font-size:22px; letter-spacing:4px; color:#e6c074; text-transform:uppercase; }
   #secret .cap .line { font-style:italic; color:#cdbf9a; margin-top:8px; font-size:17px; }
@@ -342,9 +342,9 @@
 <div id="secret" role="dialog" aria-label="Hidden gem">
   <div class="card">
     <span class="x" id="secret-x">✕</span>
-    <img id="secret-img" src="img/landonian.jpg" alt="hidden gem" />
+    <img id="secret-img" src="img/card-landon.png" alt="hidden gem" />
     <div class="cap">
-      <div class="who" id="secret-who">The Landonian</div>
+      <div class="who" id="secret-who">King of the Landonians</div>
       <div class="line" id="secret-line"></div>
       <div class="tag">◈ hidden gem · build · reveal · conquer</div>
     </div>
@@ -359,14 +359,20 @@
   // ===== hidden gems: type a name (or click the faint ◈) to summon a champion =====
   (function () {
     const GEMS = {
-      landon: { img: 'img/landonian.jpg', who: 'The Landonian',
+      landon: { img: 'img/card-landon.png', who: 'King of the Landonians',
         line: 'He brought a war-wagon to the age before the Flood. No one asked. No one could stop him.' },
-      boyd:   { img: 'img/boydonian.jpg', who: 'The Boydonian',
+      boyd:   { img: 'img/card-boydonian.png', who: 'King of the Boydonians',
         line: 'Swing true. Fear nothing. The Fourteenth of Paragon does not flinch.' },
-      greene: { img: 'img/greene-hounds.jpg', who: 'Mr Greene & His Hounds',
-        line: 'Master of the House at the heart of the Fields of Evil — and the two hounds who answer to no one else.' },
+      greene: { img: 'img/card-greene.png', who: 'Mr Greene',
+        line: 'Master of the House at the heart of the Fields of Evil — and the hounds answer to no one else.' },
+      tucker: { img: 'img/card-tucker.png', who: 'Tucker',
+        line: 'Mr Greene’s right hand and the warmest soul in the Fields of Evil. Catches your scent a mile off.' },
+      gatsby: { img: 'img/card-gatsby.png', who: 'Gatsby',
+        line: 'Small, stout, and utterly unbothered. The House of Greene’s second hound holds the line.' },
+      parker: { img: 'img/card-parker.png', who: 'Parker',
+        line: 'The Shepherd of the Fields. Harms no one, asks how you’re doing, and keeps the flock from spooking — yet even shepherds defend the fold.' },
     };
-    const order = ['landon', 'boyd', 'greene'];
+    const order = ['landon', 'boyd', 'greene', 'tucker', 'gatsby', 'parker'];
     const modal = document.getElementById('secret');
     const img = document.getElementById('secret-img');
     const who = document.getElementById('secret-who');
@@ -381,10 +387,13 @@
     let code = '';
     addEventListener('keydown', e => {
       if (modal.classList.contains('show') && e.key === 'Escape') return close();
-      code = (code + e.key.toLowerCase()).slice(-7);
-      if (code.endsWith('greene') || code.endsWith('austin') || code.endsWith('hounds')) open('greene');
+      code = (code + e.key.toLowerCase()).slice(-8);
+      if (code.endsWith('greene') || code.endsWith('austin')) open('greene');
       else if (code.endsWith('landon')) open('landon');
       else if (code.endsWith('boyd') || code.endsWith('connor')) open('boyd');
+      else if (code.endsWith('tucker')) open('tucker');
+      else if (code.endsWith('gatsby') || code.endsWith('hounds')) open('gatsby');
+      else if (code.endsWith('parker') || code.endsWith('shepherd')) open('parker');
     });
     document.getElementById('secret-spot')?.addEventListener('click', () => open(order[cyc++ % order.length]));
     document.getElementById('secret-x')?.addEventListener('click', close);

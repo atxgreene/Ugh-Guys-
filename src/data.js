@@ -341,6 +341,13 @@ export const FIELDS_OF_EVIL = {
       speed: 12, supply: 0, model: 'warwagon', tags: ['heavy', 'mounted'], radius: 0.95, aggroRange: 15, sight: 16,
       desc: 'A white war-chariot of impossible make, grille agleam, its lord reclined in the bed with a drink. The Landonians do not explain it. They simply arrive.',
     }),
+    parker: U({
+      name: 'Parker, Shepherd of the Fields', hp: 240, armor: 2,
+      attack: { dmg: 12, range: 1.8, cooldown: 1.3 },
+      speed: 5.5, model: 'parker', tags: ['light'], radius: 0.62,
+      peaceful: true, aggroRange: 0, sight: 16,
+      desc: 'The Shepherd of the Fields. He means no one harm — he only wants to know how you are doing, and to keep his flock from spooking. Raise a hand against him and even shepherds defend the fold.',
+    }),
   },
   building: B({
     name: 'The House of Greene', hp: 1700, buildTime: 1, size: 3, model: 'house_of_greene', sight: 15,
@@ -355,6 +362,7 @@ export const NEUTRAL_UNIT_DEFS = {
   landonian: FIELDS_OF_EVIL.units.landonian,
   boydonian: FIELDS_OF_EVIL.units.boydonian,
   warwagon: FIELDS_OF_EVIL.units.warwagon,
+  parker: FIELDS_OF_EVIL.units.parker,
 };
 export const NEUTRAL_BUILDING_DEFS = { house_of_greene: FIELDS_OF_EVIL.building };
 

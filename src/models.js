@@ -384,6 +384,34 @@ const unitBuilders = {
     grp.add(box(0.18, 0.22, 0.05, amberG, -0.36, 1.62, -0.09));
     return grp;
   },
+  parker(b, g) {                                                   // Easter egg: Parker, the peaceful Shepherd of the Fields
+    const grp = new THREE.Group();
+    const robe = mat(LINEN), cloak = mat(0x47566e), hair = mat(0xb8924c), crystal = glowMat(0x49b4ff, 1.9);
+    grp.add(cyl(0.2, 0.28, 0.78, robe, 7, 0, 0.5, 0));             // linen robe
+    grp.add(cone(0.3, 0.5, robe, 7, 0, 0.32, 0));                  // robe skirt
+    grp.add(cone(0.32, 0.66, cloak, 7, 0, 0.62, -0.1));            // cloak draped behind
+    grp.add(box(0.42, 0.12, 0.3, cloak, 0, 0.96, -0.04));          // cloak over shoulders
+    grp.add(box(0.16, 0.18, 0.04, bronzeMat(), 0, 0.64, 0.2));     // gold clasp / sash
+    grp.add(sph(0.05, crystal, 0, 0.74, 0.21));                    // blue pendant gem
+    grp.add(sph(0.145, mat(SKIN), 0, 1.0, 0.02));                  // head
+    grp.add(sph(0.165, hair, 0, 1.07, -0.03));                     // curly blond mop
+    grp.add(sph(0.075, hair, -0.11, 1.04, 0.06)); grp.add(sph(0.075, hair, 0.11, 1.04, 0.06)); // curls
+    limb(grp, robe, 0.22, 0.74, 0.04, 0.44, 0.06, -0.18);          // arms
+    limb(grp, robe, -0.2, 0.74, 0.05, 0.42, 0.06, 0.3);
+    limb(grp, mat(SKIN), 0.1, 0.3, 0.05, 0.3, 0.07, -0.1);         // legs
+    limb(grp, mat(SKIN), -0.1, 0.3, -0.05, 0.3, 0.07, 0.1);
+    grp.add(cyl(0.03, 0.035, 1.9, mat(WOOD), 5, 0.31, 0.95, 0.14)); // shepherd's crook
+    grp.add(torus(0.12, 0.03, mat(WOOD), 0.31, 1.92, 0.14, Math.PI / 2, 0, 0)); // crook curl
+    grp.add(prim(new THREE.OctahedronGeometry(0.12), crystal, 0.31, 2.06, 0.14)); // glowing crystal head
+    const lamb = mat(0xe8e4da);                                    // a little lamb at his feet
+    grp.add(box(0.22, 0.16, 0.34, lamb, -0.44, 0.18, 0.28));       // body
+    grp.add(sph(0.1, lamb, -0.44, 0.24, 0.49));                    // head
+    [0.11, -0.11].forEach(zz => {
+      grp.add(cyl(0.025, 0.025, 0.18, mat(DARKER), 4, -0.36, 0.07, 0.34 + zz));
+      grp.add(cyl(0.025, 0.025, 0.18, mat(DARKER), 4, -0.52, 0.07, 0.34 + zz));
+    });
+    return grp;
+  },
   champion(b, g, a) {                                              // bone-club bruiser
     const grp = new THREE.Group();
     grp.add(box(0.5, 0.66, 0.36, mat(HIDE), 0, 0.78, 0));         // massive chest
