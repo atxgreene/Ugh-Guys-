@@ -28,6 +28,10 @@ const CLAN_DIALOGUE = {
     line: '“Welcome to my Fields, stranger. The hounds caught your scent a mile off. Stay a while — few leave.”' },
   parker: { portrait: 'portraits/parker.png', name: 'Parker · Shepherd of the Fields',
     line: '“Oh — hello there! Didn’t expect company in the Fields. Parker’s the name. How are you holding up?”' },
+  tucker: { portrait: 'portraits/tucker.png', name: 'Tucker · the Goldendoodle',
+    line: '(He sniffs you thoroughly, wags once, and trots back to the house. Seems you passed.)' },
+  gatsby: { portrait: 'portraits/gatsby.png', name: 'Gatsby · the French Bulldog',
+    line: '(He stares at you. Deeply. With the absolute confidence of a dog who has never doubted himself.)' },
 };
 
 // Parker wanders the Fields and checks in on you — friendly, unbidden, harmless.
@@ -1060,6 +1064,15 @@ export class Game {
       const a = i / roster.length * Math.PI * 2, key = roster[i];
       const ring = key === 'warwagon' ? b.radius + 4.5 : b.radius + 3;
       const ux = b.pos.x + Math.cos(a) * ring, uz = b.pos.z + Math.sin(a) * ring;
+      const d = NEUTRAL_UNIT_DEFS[key];
+      const u = new Unit(this, 2, { ...d, hp: d.hp }, key, ux, uz);
+      u.leash = { x: ux, z: uz };
+      this.units.push(u);
+    }
+    // The hounds — Tucker and Gatsby lounge close to the house entrance
+    for (const [key, angle] of [['tucker', 0.4], ['gatsby', -0.4]]) {
+      const ring = b.radius + 1.4;
+      const ux = b.pos.x + Math.cos(angle) * ring, uz = b.pos.z + Math.sin(angle) * ring;
       const d = NEUTRAL_UNIT_DEFS[key];
       const u = new Unit(this, 2, { ...d, hp: d.hp }, key, ux, uz);
       u.leash = { x: ux, z: uz };

@@ -348,6 +348,20 @@ export const FIELDS_OF_EVIL = {
       peaceful: true, aggroRange: 0, sight: 16,
       desc: 'The Shepherd of the Fields. He means no one harm — he only wants to know how you are doing, and to keep his flock from spooking. Raise a hand against him and even shepherds defend the fold.',
     }),
+    tucker: U({
+      name: 'Tucker, the Goldendoodle', hp: 90, armor: 0,
+      attack: { dmg: 0, range: 0, cooldown: 99 },
+      speed: 6.8, model: 'tucker', tags: ['light'], radius: 0.35,
+      peaceful: true, aggroRange: 0, sight: 12,
+      desc: "Mr Greene's right-hand hound and the warmest soul in the Fields of Evil. Catches your scent a mile off.",
+    }),
+    gatsby: U({
+      name: 'Gatsby, the French Bulldog', hp: 70, armor: 0,
+      attack: { dmg: 0, range: 0, cooldown: 99 },
+      speed: 5.4, model: 'gatsby', tags: ['light'], radius: 0.3,
+      peaceful: true, aggroRange: 0, sight: 10,
+      desc: "Small, stout, and utterly unbothered. The House of Greene's second hound holds the line with supreme indifference.",
+    }),
   },
   building: B({
     name: 'The House of Greene', hp: 1700, buildTime: 1, size: 3, model: 'house_of_greene', sight: 15,
@@ -363,6 +377,8 @@ export const NEUTRAL_UNIT_DEFS = {
   boydonian: FIELDS_OF_EVIL.units.boydonian,
   warwagon: FIELDS_OF_EVIL.units.warwagon,
   parker: FIELDS_OF_EVIL.units.parker,
+  tucker: FIELDS_OF_EVIL.units.tucker,
+  gatsby: FIELDS_OF_EVIL.units.gatsby,
 };
 export const NEUTRAL_BUILDING_DEFS = { house_of_greene: FIELDS_OF_EVIL.building };
 
