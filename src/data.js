@@ -318,6 +318,40 @@ export const NEUTRALS = {
   }),
 };
 
+// ---- Easter egg: the Fields of Evil ----
+// A blighted meadow where two ancient clans feud forever around a stubborn manor.
+// Topple the House of Greene for a trove of Forbidden Knowledge. (Hostile to all.)
+export const FIELDS_OF_EVIL = {
+  units: {
+    landonian: U({
+      name: 'Landonian Marauder', hp: 170, armor: 1,
+      attack: { dmg: 14, range: 1.6, cooldown: 1.1 },
+      speed: 7.6, model: 'raider', tags: ['heavy'], radius: 0.6, aggroRange: 13, sight: 14,
+      desc: 'A clan that insists the Fields were theirs first. Loud, relentless, weirdly organized.',
+    }),
+    boydonian: U({
+      name: 'Boydonian Zealot', hp: 210, armor: 2,
+      attack: { dmg: 18, range: 1.7, cooldown: 1.2 },
+      speed: 6.9, model: 'champion', tags: ['heavy'], radius: 0.72, aggroRange: 13, sight: 14,
+      desc: 'Sworn rivals of the Landonians over a boundary no one else can see. They will not be moved.',
+    }),
+  },
+  building: B({
+    name: 'The House of Greene', hp: 1700, buildTime: 1, size: 3, model: 'lodge', sight: 15,
+    desc: 'A stubborn pre-flood manor at the heart of the Fields of Evil. It stood before the quarrel and means to outlast it. Topple it for a trove of forbidden knowledge.',
+  }),
+  reward: { knowledge: 500, favor: 200 },
+};
+
+// owner-2 (neutral) lookup tables used when reconstructing a saved game
+export const NEUTRAL_UNIT_DEFS = {
+  devourer: NEUTRALS.devourer,
+  landonian: FIELDS_OF_EVIL.units.landonian,
+  boydonian: FIELDS_OF_EVIL.units.boydonian,
+};
+export const NEUTRAL_BUILDING_DEFS = { house_of_greene: FIELDS_OF_EVIL.building };
+
+
 export const RESOURCE_NODES = {
   grain:     { name: 'Wild Grain Field', amount: 1500, model: 'field',   carry: 10, gatherTime: 2.2 },
   timber:    { name: 'Cedar Stand',      amount: 1200, model: 'tree',    carry: 10, gatherTime: 2.4 },

@@ -110,6 +110,29 @@
       font-size: 17px; cursor: pointer; font-family: inherit; letter-spacing: 2px; border-radius: 3px; }
     #btn-restart:hover { background: #322b42; border-color: #d8c89a; }
 
+    /* pause menu */
+    #pausemenu { position: absolute; inset: 0; z-index: 45; display: none; flex-direction: column;
+      align-items: center; justify-content: center; gap: 22px;
+      background: radial-gradient(ellipse at 50% 40%, rgba(20,16,30,0.82), rgba(5,5,8,0.92)); }
+    #pausemenu h1 { font-size: 52px; letter-spacing: 16px; font-weight: normal; color: #e6c074;
+      text-shadow: 0 0 36px rgba(230,192,116,0.4); }
+    .pm-buttons { display: flex; flex-direction: column; gap: 12px; width: 280px; }
+    .pm-btn { background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6c074;
+      border: 1px solid #7a5a2c; padding: 13px 20px; font-size: 16px; cursor: pointer; font-family: inherit;
+      letter-spacing: 2px; border-radius: 4px; box-shadow: inset 0 1px 0 rgba(230,192,116,0.18); transition: .15s; }
+    .pm-btn:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); border-color: #e6c074; transform: translateY(-1px); }
+    .pm-ghost { background: #1c1926; color: #b8aa88; border-color: #3a3544; box-shadow: none; }
+    .pm-ghost:hover { background: #262134; border-color: #d8c89a; }
+    .pm-hint { color: #6a6478; font-size: 12px; font-style: italic; letter-spacing: 1px; }
+    #btn-pause { background: #241f30; color: #b8aa88; border: 1px solid #3a3544; padding: 4px 12px;
+      cursor: pointer; font-family: inherit; border-radius: 3px; }
+    #btn-pause:hover { background: #322b42; }
+    #btn-pause + #btn-menu { margin-left: 8px; }
+    #btn-continue { margin-top: 4px; background: linear-gradient(180deg, #3a2e1c, #221a10); color: #ffd56e;
+      border: 1px solid #b88a3e; padding: 12px 30px; font-size: 16px; cursor: pointer; font-family: inherit;
+      letter-spacing: 2px; border-radius: 4px; box-shadow: 0 0 20px rgba(232,179,58,0.25); }
+    #btn-continue:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); }
+
     #help { right: 10px; top: 46px; width: 230px; padding: 10px 12px; font-size: 11px; color: #7a7488;
       background: rgba(10,10,16,0.75); border: 1px solid #2e2a3a; border-radius: 4px; display: none;
       line-height: 1.7; }
@@ -144,6 +167,7 @@
       <div class="subtitle">an RTS of the age before the flood</div>
       <div class="choose">— choose your people —</div>
       <div class="factions" id="faction-cards"></div>
+      <button id="btn-continue" style="display:none">Continue Campaign</button>
       <div class="hint">
         <b>WASD / arrows / screen edge</b> pan · <b>Q/E or middle-drag</b> rotate · <b>Wheel</b> zoom ·
         <b>Left-click / drag</b> select · <b>Right-click</b> move, gather, attack ·
@@ -155,6 +179,7 @@
     <div class="hud" id="topbar">
       <div id="resources"></div>
       <div id="clock">0:00</div>
+      <button id="btn-pause">Pause</button>
       <button id="btn-menu">Surrender</button>
     </div>
     <div class="hud" id="minimap-wrap"><canvas id="minimap" width="208" height="208"></canvas></div>
@@ -166,6 +191,16 @@
     <div class="hud" id="help"></div>
     <div id="selbox"></div>
     <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button></div>
+    <div id="pausemenu">
+      <h1>PAUSED</h1>
+      <div class="pm-buttons">
+        <button id="pm-resume" class="pm-btn">Resume</button>
+        <button id="pm-save" class="pm-btn">Save Campaign</button>
+        <button id="pm-load" class="pm-btn">Load Last Save</button>
+        <button id="pm-quit" class="pm-btn pm-ghost">Abandon to Menu</button>
+      </div>
+      <div class="pm-hint">P resumes · the flood waits while you deliberate</div>
+    </div>
     <div id="introcard"><div class="ic-rule"></div><h2 id="ic-name"></h2><div class="ic-sub" id="ic-sub"></div><div class="ic-rule"></div></div>
     <div id="loading"><div class="load-glyph">✦</div><div>Shaping the world before the flood…</div></div>
   </div>

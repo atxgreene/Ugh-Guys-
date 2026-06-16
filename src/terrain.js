@@ -221,11 +221,15 @@ export class GameMap {
   scatterDoodads(scene) {
     this.doodads = [];
     const sites = [this.basePlayer, this.baseEnemy, ...this.expansions];
-    // weighted clutter table from the biome — defines this land's character
+    // seeded RNG so the doodad layout (and thus the static blocked grid) is identical
+    // every time this seed is generated — essential for save/load to reload the map.
+    let s = (this.seed ^ 0x9e3779b9) >>> 0;
+    const rng = () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     const weights = Object.entries(this.biome.clutter);
     const total = weights.reduce((s, [, w]) => s + w, 0);
     const pick = () => {
-      let r = Math.random() * total;
+      let r = rng() * total;
       for (const [type, w] of weights) { if ((r -= w) <= 0) return type; }
       return weights[0][0];
     };
@@ -233,14 +237,14 @@ export class GameMap {
     const place = (count, minSite, yOffset) => {
       let made = 0;
       for (let attempt = 0; attempt < count * 3 && made < count; attempt++) {
-        const x = 5 + Math.random() * (GRID - 10), y = 5 + Math.random() * (GRID - 10);
+        const x = 5 + rng() * (GRID - 10), y = 5 + rng() * (GRID - 10);
         if (!this.isWalkable(Math.floor(x), Math.floor(y))) continue;
         if (sites.some(s => Math.hypot(x - s.x, y - s.y) < minSite)) continue;
         const type = pick();
         const d = buildDoodad(type);
         const wx = x * TILE, wz = y * TILE;
         d.position.set(wx, this.heightAt(wx, wz) + yOffset, wz);
-        d.rotation.y = Math.random() * Math.PI * 2;
+        d.rotation.y = rng() * Math.PI * 2;
         scene.add(d);
         this.doodads.push(d);
         made++;
