@@ -168,6 +168,7 @@ function returnToMenu() {
   document.getElementById('panel').style.display = 'none';
   document.getElementById('gameover').style.display = 'none';
   const pm = document.getElementById('pausemenu'); if (pm) pm.style.display = 'none';
+  const dlg = document.getElementById('dialogue'); if (dlg) dlg.classList.remove('show');
   const ic = document.getElementById('introcard'); ic.style.display = 'none'; ic.classList.remove('show');
   document.getElementById('toasts').innerHTML = '';
   const ov = document.getElementById('overlay');

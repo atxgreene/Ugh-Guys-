@@ -342,10 +342,10 @@
 <div id="secret" role="dialog" aria-label="Hidden gem">
   <div class="card">
     <span class="x" id="secret-x">✕</span>
-    <img src="img/landonian.jpg" alt="The Landonian" />
+    <img id="secret-img" src="img/landonian.jpg" alt="hidden gem" />
     <div class="cap">
-      <div class="who">The Landonian</div>
-      <div class="line">He brought a war-wagon to the age before the Flood. No one asked. No one could stop him.</div>
+      <div class="who" id="secret-who">The Landonian</div>
+      <div class="line" id="secret-line"></div>
       <div class="tag">◈ hidden gem · build · reveal · conquer</div>
     </div>
   </div>
@@ -356,18 +356,37 @@
   const PLAY_URL = "https://aethercraft.vercel.app";
   for (const a of document.querySelectorAll('.js-play')) a.href = PLAY_URL;
 
-  // ===== hidden gem: type "greene" (or click the faint ◈) to summon the Landonian =====
+  // ===== hidden gems: type a name (or click the faint ◈) to summon a champion =====
   (function () {
+    const GEMS = {
+      landon: { img: 'img/landonian.jpg', who: 'The Landonian',
+        line: 'He brought a war-wagon to the age before the Flood. No one asked. No one could stop him.' },
+      boyd:   { img: 'img/boydonian.jpg', who: 'The Boydonian',
+        line: 'Swing true. Fear nothing. The Fourteenth of Paragon does not flinch.' },
+      greene: { img: 'img/greene-hounds.jpg', who: 'Mr Greene & His Hounds',
+        line: 'Master of the House at the heart of the Fields of Evil — and the two hounds who answer to no one else.' },
+    };
+    const order = ['landon', 'boyd', 'greene'];
     const modal = document.getElementById('secret');
-    const open = () => modal.classList.add('show');
+    const img = document.getElementById('secret-img');
+    const who = document.getElementById('secret-who');
+    const line = document.getElementById('secret-line');
+    let cyc = 0;
+    const open = (key) => {
+      const g = GEMS[key] || GEMS.landon;
+      img.src = g.img; img.alt = g.who; who.textContent = g.who; line.textContent = g.line;
+      modal.classList.add('show');
+    };
     const close = () => modal.classList.remove('show');
     let code = '';
     addEventListener('keydown', e => {
       if (modal.classList.contains('show') && e.key === 'Escape') return close();
-      code = (code + e.key.toLowerCase()).slice(-6);
-      if (code === 'greene' || code === 'landon') open();
+      code = (code + e.key.toLowerCase()).slice(-7);
+      if (code.endsWith('greene') || code.endsWith('austin') || code.endsWith('hounds')) open('greene');
+      else if (code.endsWith('landon')) open('landon');
+      else if (code.endsWith('boyd') || code.endsWith('connor')) open('boyd');
     });
-    document.getElementById('secret-spot')?.addEventListener('click', open);
+    document.getElementById('secret-spot')?.addEventListener('click', () => open(order[cyc++ % order.length]));
     document.getElementById('secret-x')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if (e.target === modal) close(); });
   })();

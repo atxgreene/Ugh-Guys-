@@ -48,6 +48,9 @@ export class UI {
     game.on('ping', (x, z) => this.pings.push({ x, z, t: 6 }));
     game.on('gameover', (winner) => this.showGameOver(winner));
     game.on('ground-click', (x, z, kind) => this.groundMarker(x, z, kind));
+    game.on('dialogue', (portrait, name, line) => this.showDialogue(portrait, name, line));
+    const dlg = document.getElementById('dialogue');
+    if (dlg) dlg.onclick = () => this.hideDialogue();
 
     document.getElementById('btn-menu').onclick = () => onRestart();
     const bp = document.getElementById('btn-pause');
@@ -324,6 +327,31 @@ export class UI {
     };
     for (const u of this.game.units) draw(u, 2.2);
     for (const b of this.game.buildings) draw(b, b.size * 1.6 + 2);
+  }
+
+  // ---------- first-contact dialogue (queued so several play in sequence) ----------
+  showDialogue(portrait, name, line) {
+    (this._dlgQueue ||= []).push({ portrait, name, line });
+    if (!this._dlgActive) this._nextDialogue();
+  }
+  _nextDialogue() {
+    const dlg = document.getElementById('dialogue');
+    const d = (this._dlgQueue || []).shift();
+    if (!dlg || !d) { this._dlgActive = false; dlg?.classList.remove('show'); return; }
+    this._dlgActive = true;
+    document.getElementById('dlg-portrait').src = d.portrait;
+    document.getElementById('dlg-name').textContent = d.name;
+    document.getElementById('dlg-line').textContent = d.line;
+    dlg.classList.add('show');
+    Sound.alert();
+    clearTimeout(this._dlgT);
+    this._dlgT = setTimeout(() => this._nextDialogue(), 8000);
+  }
+  hideDialogue() {
+    clearTimeout(this._dlgT);
+    if (this._dlgQueue && this._dlgQueue.length) return this._nextDialogue();
+    this._dlgActive = false;
+    document.getElementById('dialogue')?.classList.remove('show');
   }
 
   // ---------- toasts / game over ----------

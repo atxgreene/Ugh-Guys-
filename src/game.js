@@ -18,6 +18,16 @@ let nextId = 1;
 
 const NEUTRAL_COLOR = 0x808078, NEUTRAL_GLOW = 0xc2b89a;
 
+// Easter-egg first-contact dialogue (pixel portraits live in public/portraits/)
+const CLAN_DIALOGUE = {
+  landonian: { portrait: 'portraits/landon.png', name: 'Landon · Lord of the Landonians',
+    line: '“You’re standing in my Fields. Bold move — I respect it. Won’t change what happens next.”' },
+  boydonian: { portrait: 'portraits/boydonian.png', name: 'Connor · the Boydonian',
+    line: '“Swing true, fear nothing. This is Boydonian ground, friend. Always has been.”' },
+  greene: { portrait: 'portraits/greene.png', name: 'Mr Greene · Master of the House',
+    line: '“Welcome to my Fields, stranger. The hounds caught your scent a mile off. Stay a while — few leave.”' },
+};
+
 // Cinematic time-of-day moods. Each match picks one — sky, sun, fog and ambient
 // shift together so the world reads as the last age before the Flood.
 const TIME_PRESETS = {
@@ -643,6 +653,7 @@ export class Game {
     this.over = false;
     this.paused = false;
     this.fogTimer = 0;
+    this.metClans = {};   // first-contact dialogue fired per clan
     // a saved game pins the exact map (seed/biome/mood) so it reloads identically
     const load = opts.load || null;
     if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay }; }
@@ -1057,6 +1068,7 @@ export class Game {
       resources: this.resources.filter(n => n.amount > 0).map(n => ({ t: n.type, tx: n.tx, ty: n.ty, amount: Math.round(n.amount) })),
       fog: btoa(fogStr),
       foe: this.fieldsOfEvil ? { x: this.fieldsOfEvil.x, z: this.fieldsOfEvil.z, seen: this.fieldsOfEvil.seen } : null,
+      met: this.metClans,
       ai: this.ai ? { buildIndex: this.ai.buildIndex, wave: this.ai.wave, nextWaveTime: this.ai.nextWaveTime, workerTarget: this.ai.workerTarget } : null,
     };
   }
@@ -1097,6 +1109,7 @@ export class Game {
     }
     if (d.fog) { const raw = atob(d.fog); for (let i = 0; i < this.map.fog.length && i < raw.length; i++) this.map.fog[i] = raw.charCodeAt(i); }
     if (d.foe) this.fieldsOfEvil = { ...d.foe };
+    this.metClans = d.met || {};
     this._aiState = d.ai || null;   // applied by main.js after the AI is created
   }
 
@@ -1583,6 +1596,20 @@ export class Game {
         this.fieldsOfEvil.seen = true;
         Sound.alert();
         this.emit('toast', '☩ You have found the Fields of Evil — the House of Greene stands defiant.');
+        if (!this.metClans.greene) {
+          this.metClans.greene = true;
+          const g = CLAN_DIALOGUE.greene;
+          this.emit('dialogue', g.portrait, g.name, g.line);
+        }
+      }
+      // first-contact dialogue when a clansman is first laid eyes upon
+      for (const u of this.units) {
+        const d = CLAN_DIALOGUE[u.key];
+        if (!d || u.dead || this.metClans[u.key]) continue;
+        if (this.map.fogStateAt(u.pos.x, u.pos.z) === 2) {
+          this.metClans[u.key] = true;
+          this.emit('dialogue', d.portrait, d.name, d.line);
+        }
       }
     }
 
