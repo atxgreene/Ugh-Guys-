@@ -14,21 +14,25 @@ const TRAITS = {
 
 let current = null; // { game, ai, controls, ui, raf }
 const SAVE_KEY = 'sotw_save_v1';
+const AUTOSAVE_SECONDS = 45;
 
 function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch { return false; } }
 
-function saveGame() {
+function saveGame(silent) {
   if (!current || current.game.over) return false;
   try {
     const g = current.game;
     const payload = { data: g.serialize(), meta: { faction: g.pfKey, enemy: g.efKey,
       biome: g.map.biome.name, time: Math.floor(g.time), at: Date.now() } };
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
-    current.ui.toast('⌖ Campaign saved.');
+    if (!silent) current.ui.toast('⌖ Campaign saved.');
     refreshContinue();
     return true;
-  } catch (e) { current?.ui.toast('Save failed — storage may be full.'); return false; }
+  } catch (e) { if (!silent) current?.ui.toast('Save failed — storage may be full.'); return false; }
 }
+
+// never lose progress to a closed/refreshed tab
+window.addEventListener('beforeunload', () => { try { saveGame(true); } catch {} });
 
 function loadSavedGame() {
   let raw; try { raw = localStorage.getItem(SAVE_KEY); } catch { return; }
@@ -123,7 +127,7 @@ function startGameNow(playerFactionKey, enemyKey, loadData) {
   }
 
   let last = performance.now();
-  let slowFrames = 0, totalFrames = 0;
+  let slowFrames = 0, totalFrames = 0, autosaveT = AUTOSAVE_SECONDS;
   const loop = (now) => {
     current.raf = requestAnimationFrame(loop);
     const rawDt = (now - last) / 1000;
@@ -134,6 +138,11 @@ function startGameNow(playerFactionKey, enemyKey, loadData) {
     if (totalFrames > 40 && !game.lowQuality) {
       slowFrames = rawDt > 0.045 ? slowFrames + 1 : Math.max(0, slowFrames - 2);
       if (slowFrames > 25) game.setLowQuality();
+    }
+    // silent autosave on a steady cadence so Continue always resumes the latest
+    if (!game.paused && !game.over) {
+      autosaveT -= dt;
+      if (autosaveT <= 0) { autosaveT = AUTOSAVE_SECONDS; saveGame(true); }
     }
     if (!game.paused) game.update(dt);   // pause freezes the simulation only
     controls.updateCamera(dt);           // camera + HUD stay responsive while paused
@@ -151,6 +160,7 @@ function stopGame() {
 }
 
 function returnToMenu() {
+  saveGame(true);   // autosave on abandon (no-op if the match is already over)
   stopGame();
   document.getElementById('menu').style.display = 'flex';
   document.getElementById('topbar').style.display = 'none';
