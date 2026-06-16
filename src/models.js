@@ -345,6 +345,45 @@ const unitBuilders = {
     grp.add(cyl(0.05, 0.06, 0.12, mat(0xd8c89a), 6, -0.34, 1.26, -0.62));        // the drink
     return grp;
   },
+  landonian(b, g) {                                               // Easter egg clan: lean teal marauder + standard
+    const grp = new THREE.Group();
+    const teal = mat(0x1f8f8a), tealG = glowMat(0x39d6c6, 1.2);
+    grp.add(cyl(0.18, 0.24, 0.7, mat(HIDE), 6, 0, 0.5, 0));       // torso
+    grp.add(box(0.36, 0.1, 0.26, teal, 0, 0.86, 0));            // teal sash
+    grp.add(box(0.1, 0.46, 0.04, teal, -0.12, 0.62, 0.12));     // war-stripe
+    grp.add(sph(0.14, mat(SKIN), 0, 0.98, 0.02));
+    grp.add(box(0.3, 0.06, 0.3, teal, 0, 1.08, 0));            // teal headband
+    grp.add(cyl(0.04, 0.02, 0.3, mat(DARK), 4, 0, 1.28, -0.05)); // topknot
+    limb(grp, mat(SKIN), 0.22, 0.7, 0.06, 0.44, 0.06, -0.5);
+    limb(grp, mat(SKIN), -0.2, 0.7, 0.04, 0.4, 0.06, 0.4);
+    limb(grp, mat(SKIN), 0.1, 0.3, 0.05, 0.34, 0.07, -0.15);
+    limb(grp, mat(SKIN), -0.1, 0.3, -0.05, 0.34, 0.07, 0.15);
+    grp.add(box(0.06, 0.62, 0.04, mat(0x9aa0aa, { metal: 0.5, rough: 0.4 }), 0.36, 0.98, 0.12, 0, 0, -0.3)); // sword
+    grp.add(cyl(0.03, 0.03, 1.7, mat(WOOD), 4, -0.32, 0.9, -0.12)); // clan standard
+    grp.add(box(0.4, 0.52, 0.04, teal, -0.32, 1.55, -0.12));
+    grp.add(box(0.18, 0.22, 0.05, tealG, -0.32, 1.55, -0.09));
+    return grp;
+  },
+  boydonian(b, g) {                                               // Easter egg clan: heavy amber zealot + maul
+    const grp = new THREE.Group();
+    const amber = mat(0xc8842a), amberG = glowMat(0xff9a3c, 1.2);
+    grp.add(cyl(0.26, 0.34, 0.92, mat(HIDE), 6, 0, 0.6, 0));      // bulky torso
+    grp.add(cone(0.32, 0.44, amber, 8, 0, 0.34, 0));            // amber tabard
+    grp.add(box(0.56, 0.16, 0.34, mat(DARKER), 0, 1.02, 0));    // heavy shoulders
+    grp.add(box(0.2, 0.36, 0.04, amber, 0, 0.7, 0.18));        // amber stole
+    grp.add(sph(0.17, mat(SKIN), 0, 1.16, 0.02));
+    grp.add(cone(0.2, 0.26, amber, 6, 0, 1.36, 0));           // hood / cowl
+    limb(grp, mat(SKIN), 0.3, 0.88, 0.05, 0.5, 0.08, -0.55);
+    limb(grp, mat(SKIN), -0.27, 0.86, 0.04, 0.46, 0.08, 0.4);
+    limb(grp, mat(DARK), 0.15, 0.36, 0, 0.4, 0.09);
+    limb(grp, mat(DARK), -0.15, 0.36, 0, 0.4, 0.09);
+    grp.add(cyl(0.04, 0.04, 1.15, mat(WOOD), 4, 0.44, 0.95, 0.06, 0, 0, -0.3)); // maul haft
+    grp.add(box(0.32, 0.28, 0.32, mat(0x55504a), 0.7, 1.34, 0.06, 0, 0, -0.3)); // maul head
+    grp.add(cyl(0.03, 0.03, 1.75, mat(WOOD), 4, -0.36, 0.98, -0.12)); // clan standard
+    grp.add(box(0.42, 0.54, 0.04, amber, -0.36, 1.62, -0.12));
+    grp.add(box(0.18, 0.22, 0.05, amberG, -0.36, 1.62, -0.09));
+    return grp;
+  },
   champion(b, g, a) {                                              // bone-club bruiser
     const grp = new THREE.Group();
     grp.add(box(0.5, 0.66, 0.36, mat(HIDE), 0, 0.78, 0));         // massive chest
@@ -594,6 +633,37 @@ const buildingBuilders = {
     grp.add(cone(0.4, 2.2, mat(BONE), 4, -2.3, 1.6, 1.4, 0, 0, 0.3)); // tusks at door
     grp.add(cone(0.4, 2.2, mat(BONE), 4, 2.3, 1.6, 1.4, 0, 0, -0.3));
     grp.add(box(0.8, 1.2, 0.1, g, 0, 0.9, 1.73)); // firelight door
+    return grp;
+  },
+  house_of_greene(b, g) {                                         // Easter egg: a stately pre-flood manor
+    const grp = new THREE.Group();
+    const stone = mat(0x3a3a40);                                  // dressed masonry (textured)
+    const pale = mat(0x6a6658);                                   // pale columns / trim
+    const roof = mat(0x2a2620);
+    const greenG = glowMat(0x49c46a, 1.4);                        // House-of-Greene green
+    const green = mat(0x2f6f3a);
+    grp.add(box(5.2, 0.4, 4.2, stone, 0, 0.2, 0));               // platform
+    grp.add(box(4.2, 0.24, 0.9, pale, 0, 0.46, 1.75));          // entry steps
+    grp.add(box(4.0, 2.5, 2.8, stone, 0, 1.65, -0.4));          // main hall
+    grp.add(cone(3.1, 1.4, roof, 4, 0, 3.5, -0.4, 0, Math.PI / 4)); // hip roof
+    grp.add(box(0.7, 0.7, 0.7, pale, 0, 4.05, -0.4));           // cupola
+    grp.add(cone(0.55, 0.7, roof, 4, 0, 4.7, -0.4, 0, Math.PI / 4));
+    grp.add(sph(0.18, greenG, 0, 5.15, -0.4));                  // green finial
+    for (const x of [-1.5, -0.5, 0.5, 1.5]) {                    // portico columns
+      grp.add(cyl(0.18, 0.22, 2.0, pale, 8, x, 1.1, 1.5));
+      grp.add(box(0.36, 0.16, 0.36, pale, x, 2.18, 1.5));        // capital
+      grp.add(box(0.34, 0.16, 0.34, stone, x, 0.2, 1.5));        // base
+    }
+    grp.add(box(3.7, 0.3, 0.55, pale, 0, 2.32, 1.5));           // entablature
+    grp.add(cone(2.1, 0.8, roof, 4, 0, 2.75, 1.35, 0, Math.PI / 4)); // porch roof
+    grp.add(box(1.0, 1.5, 0.12, mat(DARKER), 0, 1.0, 0.98));    // doorway
+    grp.add(box(0.8, 1.3, 0.06, greenG, 0, 1.0, 1.05));         // glowing green doors
+    for (const x of [-1.35, 1.35]) grp.add(box(0.5, 0.72, 0.06, greenG, x, 1.6, 1.0)); // windows
+    for (const x of [-2.3, 2.3]) {                               // green clan banners
+      grp.add(cyl(0.06, 0.06, 3.0, mat(WOOD), 5, x, 1.5, 1.7));
+      grp.add(box(0.52, 1.1, 0.05, green, x, 2.45, 1.72));
+      grp.add(box(0.24, 0.5, 0.06, greenG, x, 2.55, 1.75));
+    }
     return grp;
   },
   den(b, g) {

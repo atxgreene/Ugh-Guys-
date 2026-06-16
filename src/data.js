@@ -326,13 +326,13 @@ export const FIELDS_OF_EVIL = {
     landonian: U({
       name: 'Landonian Marauder', hp: 170, armor: 1,
       attack: { dmg: 14, range: 1.6, cooldown: 1.1 },
-      speed: 7.6, model: 'raider', tags: ['heavy'], radius: 0.6, aggroRange: 13, sight: 14,
+      speed: 7.6, model: 'landonian', tags: ['heavy'], radius: 0.6, aggroRange: 13, sight: 14,
       desc: 'A clan that insists the Fields were theirs first. Loud, relentless, weirdly organized.',
     }),
     boydonian: U({
       name: 'Boydonian Zealot', hp: 210, armor: 2,
       attack: { dmg: 18, range: 1.7, cooldown: 1.2 },
-      speed: 6.9, model: 'champion', tags: ['heavy'], radius: 0.72, aggroRange: 13, sight: 14,
+      speed: 6.9, model: 'boydonian', tags: ['heavy'], radius: 0.72, aggroRange: 13, sight: 14,
       desc: 'Sworn rivals of the Landonians over a boundary no one else can see. They will not be moved.',
     }),
     warwagon: U({
@@ -343,7 +343,7 @@ export const FIELDS_OF_EVIL = {
     }),
   },
   building: B({
-    name: 'The House of Greene', hp: 1700, buildTime: 1, size: 3, model: 'lodge', sight: 15,
+    name: 'The House of Greene', hp: 1700, buildTime: 1, size: 3, model: 'house_of_greene', sight: 15,
     desc: 'A stubborn pre-flood manor at the heart of the Fields of Evil. It stood before the quarrel and means to outlast it. Topple it for a trove of forbidden knowledge.',
   }),
   reward: { knowledge: 500, favor: 200 },
