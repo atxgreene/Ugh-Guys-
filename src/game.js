@@ -22,7 +22,7 @@ const NEUTRAL_COLOR = 0x808078, NEUTRAL_GLOW = 0xc2b89a;
 const CLAN_DIALOGUE = {
   landonian: { portrait: 'portraits/landon.png', name: 'Landry · Lord of the Landonians',
     line: '“You’re standing in my Fields. Bold move — I respect it. Won’t change what happens next.”' },
-  boydonian: { portrait: 'portraits/boydonian.png', name: 'Connor · the Boydonian',
+  boydonian: { portrait: 'portraits/boydonian.png', name: 'Connor · King of the Boydonians',
     line: '“Swing true, fear nothing. This is Boydonian ground, friend. Always has been.”' },
   greene: { portrait: 'portraits/greene.png', name: 'Mr Greene · Master of the House',
     line: '“Welcome to my Fields, stranger. The hounds caught your scent a mile off. Stay a while — few leave.”' },
