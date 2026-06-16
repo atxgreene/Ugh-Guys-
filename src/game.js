@@ -1659,8 +1659,9 @@ export class Game {
       }
       // Parker checks in on you while he ambles — visible, in view, and only
       // when your forces are near enough that he can holler a friendly word.
+      // (Only Parker chatters; the hounds get a one-time reveal and stay quiet.)
       for (const u of this.units) {
-        if (!u.def.peaceful || u.dead || u.state === 'attack') continue;
+        if (u.key !== 'parker' || u.dead || u.state === 'attack') continue;
         if (this.map.fogStateAt(u.pos.x, u.pos.z) !== 2 || !this.metClans[u.key]) continue;
         u.chatterT = (u.chatterT ?? 45 + Math.random() * 35) - 0.18;
         if (u.chatterT > 0) continue;
