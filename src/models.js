@@ -279,6 +279,72 @@ const unitBuilders = {
     grp.add(box(0.04, 0.26, 0.18, mat(DARKER), 0.62, 1.05, 0.1, 0, 0, -0.4));  // axe blade
     return grp;
   },
+  warwagon(b, g) {                                                 // Easter egg: the Landonian Warwagon — a white GMC
+    const grp = new THREE.Group();
+    // light-grey body (not pure white) with low metalness + a tiny emissive floor:
+    // reads clean white in dark moods, holds its panel detail under bright sun
+    const white  = mat(0xc8ccd6, { rough: 0.62, metal: 0.08, emissive: 0x17181f, ei: 0.12 });
+    const wlow   = mat(0xb2b6c0, { rough: 0.66, metal: 0.08, emissive: 0x121217, ei: 0.1 });
+    const blk    = mat(0x141418);
+    const tire   = mat(0x0e0e12, { rough: 0.96 });
+    const glass  = mat(0x1c2838, { rough: 0.15, metal: 0.6 });
+    const red    = mat(0xc8181c, { emissive: 0xc8181c, ei: 0.35 });
+    const chrome = mat(0xc2c6cc, { rough: 0.2, metal: 0.85 });
+    const maroon = mat(0x6e2230);
+    // chassis + body
+    grp.add(box(1.04, 0.34, 2.18, wlow, 0, 0.46, 0));            // lower body
+    grp.add(box(1.0, 0.26, 1.5, white, 0, 0.70, 0.18));         // upper body
+    grp.add(box(0.94, 0.16, 0.64, white, 0, 0.80, 0.78, -0.06)); // hood (slight rake)
+    grp.add(box(0.5, 0.03, 0.5, wlow, 0, 0.89, 0.78, -0.06));   // hood crease
+    grp.add(box(1.06, 0.03, 0.95, red, 0, 0.62, 0.1));          // belt-line racing accent
+    // cab + roof + glass
+    grp.add(box(0.98, 0.46, 0.86, white, 0, 0.98, 0.06));       // cab
+    grp.add(box(0.9, 0.1, 0.78, white, 0, 1.22, 0.04));         // roof
+    grp.add(box(0.84, 0.34, 0.05, glass, 0, 1.02, 0.5, -0.5));  // raked windshield
+    grp.add(box(0.05, 0.28, 0.6, glass, 0.47, 1.0, 0.02));      // side window R
+    grp.add(box(0.05, 0.28, 0.6, glass, -0.47, 1.0, 0.02));     // side window L
+    grp.add(box(0.78, 0.24, 0.04, glass, 0, 1.0, -0.36));       // rear window
+    grp.add(box(0.06, 0.1, 0.04, blk, 0.56, 1.04, 0.44));       // mirror R
+    grp.add(box(0.06, 0.1, 0.04, blk, -0.56, 1.04, 0.44));      // mirror L
+    // bed: floor, side rails, tailgate
+    grp.add(box(1.0, 0.12, 0.88, wlow, 0, 0.64, -0.68));
+    grp.add(box(0.08, 0.26, 0.88, white, 0.48, 0.80, -0.68));
+    grp.add(box(0.08, 0.26, 0.88, white, -0.48, 0.80, -0.68));
+    grp.add(box(1.0, 0.26, 0.08, white, 0, 0.80, -1.10));       // tailgate
+    // front grille (GMC red slats in a chrome surround) + headlights + bumper
+    grp.add(box(0.8, 0.32, 0.06, chrome, 0, 0.72, 1.08));
+    grp.add(box(0.66, 0.24, 0.05, blk, 0, 0.72, 1.10));
+    for (let i = -2; i <= 2; i++) grp.add(box(0.6, 0.025, 0.045, red, 0, 0.64 + i * 0.05, 1.12));
+    grp.add(box(0.2, 0.12, 0.05, glowMat(0xfff3d0, 1.7), -0.36, 0.76, 1.10));
+    grp.add(box(0.2, 0.12, 0.05, glowMat(0xfff3d0, 1.7), 0.36, 0.76, 1.10));
+    grp.add(box(1.0, 0.1, 0.08, chrome, 0, 0.5, 1.13));         // front bumper
+    // rear bumper + taillights + exhaust
+    grp.add(box(1.0, 0.1, 0.08, chrome, 0, 0.5, -1.13));
+    grp.add(box(0.16, 0.12, 0.04, glowMat(0xd81818, 1.3), -0.36, 0.78, -1.12));
+    grp.add(box(0.16, 0.12, 0.04, glowMat(0xd81818, 1.3), 0.36, 0.78, -1.12));
+    grp.add(cyl(0.04, 0.04, 0.2, chrome, 6, 0.32, 0.36, -1.1, Math.PI / 2));
+    // roof light bar
+    grp.add(box(0.74, 0.07, 0.14, blk, 0, 1.31, 0.05));
+    for (let i = -2; i <= 2; i++) grp.add(box(0.1, 0.05, 0.1, glowMat(0xbfe0ff, 1.4), i * 0.15, 1.35, 0.06));
+    // wheels: tire + chrome hubcap + black fender flare
+    const wheel = (x, z) => {
+      grp.add(cyl(0.28, 0.28, 0.22, tire, 12, x, 0.28, z, 0, 0, Math.PI / 2));
+      grp.add(cyl(0.17, 0.17, 0.23, chrome, 8, x, 0.28, z, 0, 0, Math.PI / 2));
+      grp.add(box(0.27, 0.16, 0.52, blk, x, 0.5, z));
+    };
+    wheel(-0.54, 0.72); wheel(0.54, 0.72); wheel(-0.54, -0.66); wheel(0.54, -0.66);
+    // the Landonian — maroon blazer, shades, drink, one arm slung over the cab
+    grp.add(cyl(0.15, 0.18, 0.5, maroon, 7, 0, 1.02, -0.6));
+    grp.add(box(0.38, 0.16, 0.26, maroon, 0, 1.13, -0.6));       // shoulders / lapels
+    grp.add(box(0.12, 0.22, 0.1, mat(0xece4d0), 0, 1.06, -0.48)); // open collar
+    grp.add(sph(0.13, mat(SKIN), 0, 1.35, -0.6));               // head
+    grp.add(box(0.24, 0.06, 0.05, blk, 0, 1.38, -0.48));        // sunglasses
+    grp.add(box(0.22, 0.1, 0.2, mat(0x241712), 0, 1.45, -0.62)); // hair
+    grp.add(cyl(0.05, 0.05, 0.42, maroon, 5, 0.12, 1.16, -0.32, Math.PI / 2.3)); // arm on cab
+    grp.add(cyl(0.05, 0.05, 0.3, maroon, 5, -0.2, 1.12, -0.62, 0, 0, 0.7));      // raised arm
+    grp.add(cyl(0.05, 0.06, 0.12, mat(0xd8c89a), 6, -0.34, 1.26, -0.62));        // the drink
+    return grp;
+  },
   champion(b, g, a) {                                              // bone-club bruiser
     const grp = new THREE.Group();
     grp.add(box(0.5, 0.66, 0.36, mat(HIDE), 0, 0.78, 0));         // massive chest
