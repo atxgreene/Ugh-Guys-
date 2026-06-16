@@ -1016,10 +1016,11 @@ export class Game {
     const b = new Building(this, 2, { ...def }, 'house_of_greene', w.x - (size / 2 | 0), w.y - (size / 2 | 0));
     b.complete = true; b.progress = 1; b.hp = b.maxHp; b.mesh.scale.y = 1; b.removeScaffold();
     this.buildings.push(b);
-    const clans = ['landonian', 'boydonian'];
-    for (let i = 0; i < 6; i++) {
-      const a = i / 6 * Math.PI * 2, key = clans[i % 2];
-      const ux = b.pos.x + Math.cos(a) * (b.radius + 3), uz = b.pos.z + Math.sin(a) * (b.radius + 3);
+    const roster = ['landonian', 'boydonian', 'landonian', 'boydonian', 'landonian', 'boydonian', 'warwagon'];
+    for (let i = 0; i < roster.length; i++) {
+      const a = i / roster.length * Math.PI * 2, key = roster[i];
+      const ring = key === 'warwagon' ? b.radius + 4.5 : b.radius + 3;
+      const ux = b.pos.x + Math.cos(a) * ring, uz = b.pos.z + Math.sin(a) * ring;
       const d = NEUTRAL_UNIT_DEFS[key];
       const u = new Unit(this, 2, { ...d, hp: d.hp }, key, ux, uz);
       u.leash = { x: ux, z: uz };

@@ -335,6 +335,12 @@ export const FIELDS_OF_EVIL = {
       speed: 6.9, model: 'champion', tags: ['heavy'], radius: 0.72, aggroRange: 13, sight: 14,
       desc: 'Sworn rivals of the Landonians over a boundary no one else can see. They will not be moved.',
     }),
+    warwagon: U({
+      name: 'Landonian Warwagon', hp: 420, armor: 3,
+      attack: { dmg: 26, range: 2.0, cooldown: 1.0, bonus: { worker: 1.6, light: 1.4 } },
+      speed: 12, supply: 0, model: 'warwagon', tags: ['heavy', 'mounted'], radius: 0.95, aggroRange: 15, sight: 16,
+      desc: 'A white war-chariot of impossible make, grille agleam, its lord reclined in the bed with a drink. The Landonians do not explain it. They simply arrive.',
+    }),
   },
   building: B({
     name: 'The House of Greene', hp: 1700, buildTime: 1, size: 3, model: 'lodge', sight: 15,
@@ -348,6 +354,7 @@ export const NEUTRAL_UNIT_DEFS = {
   devourer: NEUTRALS.devourer,
   landonian: FIELDS_OF_EVIL.units.landonian,
   boydonian: FIELDS_OF_EVIL.units.boydonian,
+  warwagon: FIELDS_OF_EVIL.units.warwagon,
 };
 export const NEUTRAL_BUILDING_DEFS = { house_of_greene: FIELDS_OF_EVIL.building };
 
