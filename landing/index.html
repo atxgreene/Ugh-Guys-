@@ -359,7 +359,7 @@
   // ===== hidden gems: type a name (or click the faint ◈) to summon a champion =====
   (function () {
     const GEMS = {
-      landon: { img: 'img/card-landon.png', who: 'King of the Landonians',
+      landon: { img: 'img/card-landon.png', who: 'Landry · King of the Landonians',
         line: 'He brought a war-wagon to the age before the Flood. No one asked. No one could stop him.' },
       boyd:   { img: 'img/card-boydonian.png', who: 'King of the Boydonians',
         line: 'Swing true. Fear nothing. The Fourteenth of Paragon does not flinch.' },
@@ -389,7 +389,7 @@
       if (modal.classList.contains('show') && e.key === 'Escape') return close();
       code = (code + e.key.toLowerCase()).slice(-8);
       if (code.endsWith('greene') || code.endsWith('austin')) open('greene');
-      else if (code.endsWith('landon')) open('landon');
+      else if (code.endsWith('landon') || code.endsWith('landry')) open('landon');
       else if (code.endsWith('boyd') || code.endsWith('connor')) open('boyd');
       else if (code.endsWith('tucker')) open('tucker');
       else if (code.endsWith('gatsby') || code.endsWith('hounds')) open('gatsby');
