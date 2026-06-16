@@ -384,6 +384,60 @@ const unitBuilders = {
     grp.add(box(0.18, 0.22, 0.05, amberG, -0.36, 1.62, -0.09));
     return grp;
   },
+  parker(b, g) {                                                   // Easter egg: Parker, the peaceful Shepherd of the Fields
+    const grp = new THREE.Group();
+    const robe = mat(LINEN), under = mat(0xd8cdb6), cloak = mat(0x46587e), hair = mat(0xc79a52);
+    const skin = mat(SKIN), gold = bronzeMat(), crystal = glowMat(0x4ec1ff, 2.0);
+    // --- body: belted linen tunic over a flared skirt ---
+    grp.add(cone(0.34, 0.66, robe, 8, 0, 0.33, 0));                // robe skirt to the ground
+    grp.add(cyl(0.2, 0.25, 0.5, robe, 8, 0, 0.78, 0));            // torso
+    grp.add(box(0.12, 0.34, 0.05, under, 0, 0.82, 0.19));         // under-tunic V at the chest
+    grp.add(cyl(0.255, 0.255, 0.1, mat(LEATHER), 8, 0, 0.6, 0));  // leather belt
+    grp.add(box(0.1, 0.09, 0.05, gold, 0, 0.6, 0.24));           // belt buckle
+    // --- legs / boots peeking from the hem ---
+    grp.add(box(0.11, 0.12, 0.18, mat(LEATHER), 0.1, 0.07, 0.05));
+    grp.add(box(0.11, 0.12, 0.18, mat(LEATHER), -0.1, 0.07, 0.05));
+    // --- neck + open, friendly face framed by curls ---
+    grp.add(cyl(0.07, 0.085, 0.13, skin, 6, 0, 1.04, 0.015));
+    grp.add(sph(0.15, skin, 0, 1.19, 0.03));                      // head
+    grp.add(sph(0.028, skin, 0, 1.17, 0.16));                    // little nose
+    grp.add(sph(0.115, hair, 0, 1.31, -0.05));                    // crown of curls
+    [[-0.12, 1.27, 0.0], [0.12, 1.27, 0.0], [-0.1, 1.18, -0.09], [0.1, 1.18, -0.09],
+     [0, 1.37, -0.02], [-0.09, 1.32, 0.07], [0.09, 1.32, 0.07]]
+      .forEach(([x, y, z]) => grp.add(sph(0.063, hair, x, y, z)));  // curl clusters framing an open face
+    // --- cloak: collar + shoulder drape + back panel, gold-trimmed ---
+    grp.add(cone(0.3, 0.62, cloak, 7, 0, 0.66, -0.13, 0.12, 0, 0)); // back of the cloak
+    grp.add(box(0.2, 0.28, 0.07, cloak, 0.2, 0.86, 0.04, 0, 0, 0.55)); // right shoulder drape
+    grp.add(box(0.2, 0.28, 0.07, cloak, -0.2, 0.86, 0.04, 0, 0, -0.55)); // left shoulder drape
+    grp.add(torus(0.16, 0.035, cloak, 0, 0.96, 0.02, Math.PI / 2, 0, 0)); // rolled collar
+    grp.add(torus(0.165, 0.014, gold, 0, 0.965, 0.03, Math.PI / 2, 0, 0)); // gold collar trim
+    grp.add(cyl(0.06, 0.06, 0.03, gold, 8, 0, 0.9, 0.18));        // round clasp (the art's emblem)
+    grp.add(box(0.03, 0.04, 0.02, crystal, 0, 0.9, 0.2));        // tiny lit sigil on the clasp
+    // --- pendant: blue gem on a cord ---
+    grp.add(cyl(0.006, 0.006, 0.16, mat(DARK), 4, 0, 0.85, 0.18));
+    grp.add(prim(new THREE.OctahedronGeometry(0.05), crystal, 0, 0.76, 0.2));
+    // --- arms: right grips the crook, left rests ---
+    limb(grp, robe, 0.24, 0.9, 0.05, 0.5, 0.07, -0.32);
+    grp.add(sph(0.06, skin, 0.34, 0.66, 0.13));                  // right hand on the shaft
+    limb(grp, robe, -0.24, 0.88, 0.05, 0.5, 0.07, 0.26);
+    grp.add(sph(0.06, skin, -0.32, 0.5, 0.12));                  // left hand
+    // --- the shepherd's crook: wooden shaft, gold-capped, glowing crystal ---
+    grp.add(cyl(0.038, 0.045, 1.62, mat(WOOD), 6, 0.34, 0.82, 0.12));
+    grp.add(torus(0.07, 0.022, gold, 0.34, 1.55, 0.12, Math.PI / 2, 0, 0)); // gold ferrule
+    grp.add(cyl(0.05, 0.05, 0.08, gold, 6, 0.34, 1.64, 0.12));   // crystal socket
+    grp.add(prim(new THREE.OctahedronGeometry(0.12), crystal, 0.34, 1.79, 0.12)); // crystal (bloom gives it the glow)
+    // --- a little lamb at his feet ---
+    const wool = mat(0xece8de), face = mat(0x4a4540);
+    grp.add(box(0.24, 0.18, 0.34, wool, -0.46, 0.19, 0.24));      // fleece body
+    [[-0.34, 0.3, 0.32], [-0.58, 0.3, 0.18], [-0.46, 0.32, 0.08]].forEach(([x, y, z]) => grp.add(sph(0.1, wool, x, y, z))); // wool puffs
+    grp.add(sph(0.085, wool, -0.42, 0.24, 0.44));                // head fleece
+    grp.add(sph(0.062, face, -0.42, 0.21, 0.5));                 // face
+    grp.add(cone(0.04, 0.07, face, 4, -0.5, 0.31, 0.42, 0, 0, 0.5)); // ears
+    grp.add(cone(0.04, 0.07, face, 4, -0.34, 0.31, 0.42, 0, 0, -0.5));
+    [[-0.36, 0.36], [-0.56, 0.36], [-0.36, 0.14], [-0.56, 0.14]].forEach(([x, z]) =>
+      grp.add(cyl(0.022, 0.022, 0.2, face, 4, x, 0.08, z)));      // four legs
+    return grp;
+  },
   champion(b, g, a) {                                              // bone-club bruiser
     const grp = new THREE.Group();
     grp.add(box(0.5, 0.66, 0.36, mat(HIDE), 0, 0.78, 0));         // massive chest

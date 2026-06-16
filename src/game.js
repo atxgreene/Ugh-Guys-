@@ -18,6 +18,27 @@ let nextId = 1;
 
 const NEUTRAL_COLOR = 0x808078, NEUTRAL_GLOW = 0xc2b89a;
 
+// Easter-egg first-contact dialogue (pixel portraits live in public/portraits/)
+const CLAN_DIALOGUE = {
+  landonian: { portrait: 'portraits/landon.png', name: 'Landon · Lord of the Landonians',
+    line: '“You’re standing in my Fields. Bold move — I respect it. Won’t change what happens next.”' },
+  boydonian: { portrait: 'portraits/boydonian.png', name: 'Connor · the Boydonian',
+    line: '“Swing true, fear nothing. This is Boydonian ground, friend. Always has been.”' },
+  greene: { portrait: 'portraits/greene.png', name: 'Mr Greene · Master of the House',
+    line: '“Welcome to my Fields, stranger. The hounds caught your scent a mile off. Stay a while — few leave.”' },
+  parker: { portrait: 'portraits/parker.png', name: 'Parker · Shepherd of the Fields',
+    line: '“Oh — hello there! Didn’t expect company in the Fields. Parker’s the name. How are you holding up?”' },
+};
+
+// Parker wanders the Fields and checks in on you — friendly, unbidden, harmless.
+const PARKER_LINES = [
+  '“How are you doing out there, friend? Truly — it’s a strange age to be alive.”',
+  '“Mind the flock if you pass through. They spook easy, bless them.”',
+  '“Rough times before the Flood, eh? Still — the grass grows. That’s something.”',
+  '“You look weary. Rest if you need it. No quarrel here, never was.”',
+  '“If you’re hungry, the Fields are generous. You’ve only to ask.”',
+];
+
 // Cinematic time-of-day moods. Each match picks one — sky, sun, fog and ambient
 // shift together so the world reads as the last age before the Flood.
 const TIME_PRESETS = {
@@ -211,6 +232,18 @@ export class Unit extends Entity {
     return best;
   }
 
+  // Peaceful amble: pause a while, then drift to a random spot near home (the
+  // leash, or the spawn point). orderMove carries us off in 'move'; on arrival
+  // we fall back to 'idle' and amble again.
+  wander(dt) {
+    this.wanderT = (this.wanderT ?? Math.random() * 4) - dt;
+    if (this.wanderT > 0) return;
+    this.wanderT = 4 + Math.random() * 6;
+    const home = this.leash || (this.wanderHome ||= { x: this.pos.x, z: this.pos.z });
+    const a = Math.random() * Math.PI * 2, r = 2.5 + Math.random() * 6.5;
+    this.orderMove(home.x + Math.cos(a) * r, home.z + Math.sin(a) * r);
+  }
+
   attackRange(target) { return this.def.attack.range + this.radius + (target ? target.radius : 0); }
 
   update(dt) {
@@ -221,6 +254,7 @@ export class Unit extends Entity {
 
     switch (this.state) {
       case 'idle': {
+        if (this.def.peaceful) { this.wander(dt); break; }   // shepherds don't hunt — they amble
         this.scanT -= dt;
         if (this.scanT <= 0) {
           this.scanT = 0.3;
@@ -643,6 +677,7 @@ export class Game {
     this.over = false;
     this.paused = false;
     this.fogTimer = 0;
+    this.metClans = {};   // first-contact dialogue fired per clan
     // a saved game pins the exact map (seed/biome/mood) so it reloads identically
     const load = opts.load || null;
     if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay }; }
@@ -1016,7 +1051,7 @@ export class Game {
     const b = new Building(this, 2, { ...def }, 'house_of_greene', w.x - (size / 2 | 0), w.y - (size / 2 | 0));
     b.complete = true; b.progress = 1; b.hp = b.maxHp; b.mesh.scale.y = 1; b.removeScaffold();
     this.buildings.push(b);
-    const roster = ['landonian', 'boydonian', 'landonian', 'boydonian', 'landonian', 'boydonian', 'warwagon'];
+    const roster = ['landonian', 'boydonian', 'landonian', 'parker', 'boydonian', 'landonian', 'boydonian', 'warwagon'];
     for (let i = 0; i < roster.length; i++) {
       const a = i / roster.length * Math.PI * 2, key = roster[i];
       const ring = key === 'warwagon' ? b.radius + 4.5 : b.radius + 3;
@@ -1057,6 +1092,7 @@ export class Game {
       resources: this.resources.filter(n => n.amount > 0).map(n => ({ t: n.type, tx: n.tx, ty: n.ty, amount: Math.round(n.amount) })),
       fog: btoa(fogStr),
       foe: this.fieldsOfEvil ? { x: this.fieldsOfEvil.x, z: this.fieldsOfEvil.z, seen: this.fieldsOfEvil.seen } : null,
+      met: this.metClans,
       ai: this.ai ? { buildIndex: this.ai.buildIndex, wave: this.ai.wave, nextWaveTime: this.ai.nextWaveTime, workerTarget: this.ai.workerTarget } : null,
     };
   }
@@ -1097,6 +1133,7 @@ export class Game {
     }
     if (d.fog) { const raw = atob(d.fog); for (let i = 0; i < this.map.fog.length && i < raw.length; i++) this.map.fog[i] = raw.charCodeAt(i); }
     if (d.foe) this.fieldsOfEvil = { ...d.foe };
+    this.metClans = d.met || {};
     this._aiState = d.ai || null;   // applied by main.js after the AI is created
   }
 
@@ -1378,11 +1415,16 @@ export class Game {
       }
     }
     // worker flee / fight back
-    if (entity.isUnit && entity.state === 'idle' && attacker) {
-      if (entity.def.worker) {
-        entity.orderMove(entity.pos.x + (entity.pos.x - attacker.pos.x), entity.pos.z + (entity.pos.z - attacker.pos.z));
-      } else if (!entity.target) {
-        entity.orderAttack(attacker);
+    if (entity.isUnit && attacker) {
+      if (entity.def.peaceful) {
+        // even shepherds defend the fold — retaliate from the amble, once struck
+        if (entity.state !== 'attack') entity.orderAttack(attacker);
+      } else if (entity.state === 'idle') {
+        if (entity.def.worker) {
+          entity.orderMove(entity.pos.x + (entity.pos.x - attacker.pos.x), entity.pos.z + (entity.pos.z - attacker.pos.z));
+        } else if (!entity.target) {
+          entity.orderAttack(attacker);
+        }
       }
     }
     // gathering workers near attacker also keep working (classic RTS)
@@ -1583,6 +1625,31 @@ export class Game {
         this.fieldsOfEvil.seen = true;
         Sound.alert();
         this.emit('toast', '☩ You have found the Fields of Evil — the House of Greene stands defiant.');
+        if (!this.metClans.greene) {
+          this.metClans.greene = true;
+          const g = CLAN_DIALOGUE.greene;
+          this.emit('dialogue', g.portrait, g.name, g.line);
+        }
+      }
+      // first-contact dialogue when a clansman is first laid eyes upon
+      for (const u of this.units) {
+        const d = CLAN_DIALOGUE[u.key];
+        if (!d || u.dead || this.metClans[u.key]) continue;
+        if (this.map.fogStateAt(u.pos.x, u.pos.z) === 2) {
+          this.metClans[u.key] = true;
+          this.emit('dialogue', d.portrait, d.name, d.line);
+        }
+      }
+      // Parker checks in on you while he ambles — visible, in view, and only
+      // when your forces are near enough that he can holler a friendly word.
+      for (const u of this.units) {
+        if (!u.def.peaceful || u.dead || u.state === 'attack') continue;
+        if (this.map.fogStateAt(u.pos.x, u.pos.z) !== 2 || !this.metClans[u.key]) continue;
+        u.chatterT = (u.chatterT ?? 45 + Math.random() * 35) - 0.18;
+        if (u.chatterT > 0) continue;
+        u.chatterT = 55 + Math.random() * 45;
+        const near = this.units.some(p => p.owner === 0 && !p.dead && Math.hypot(p.pos.x - u.pos.x, p.pos.z - u.pos.z) < 24);
+        if (near) this.emit('dialogue', CLAN_DIALOGUE.parker.portrait, CLAN_DIALOGUE.parker.name, PARKER_LINES[(Math.random() * PARKER_LINES.length) | 0]);
       }
     }
 
