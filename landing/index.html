@@ -313,14 +313,64 @@
       <span class="badge">No External Assets</span>
       <span class="badge">CC0 · Public Domain</span>
     </div>
-    <p>Shadow of the Watchers — <a href="https://github.com/atxgreene/Ugh-Guys-" target="_blank" rel="noopener">source on GitHub</a></p>
+    <p>Shadow of the Watchers — <a href="https://github.com/atxgreene/Ugh-Guys-" target="_blank" rel="noopener">source on GitHub</a>
+      <span id="secret-spot" title="type a name…" aria-hidden="true">◈</span></p>
   </div>
 </footer>
+
+<!-- hidden gem: revealed by typing the secret word, or the faint ◈ in the footer -->
+<style>
+  #secret-spot { color:#2a2636; cursor:default; margin-left:8px; transition:color .3s; user-select:none; }
+  #secret-spot:hover { color:#7a5a2c; }
+  #secret { position:fixed; inset:0; z-index:90; display:none; align-items:center; justify-content:center;
+    background:rgba(4,4,8,0.86); backdrop-filter:blur(3px); padding:24px; }
+  #secret.show { display:flex; }
+  #secret .card { position:relative; max-width:420px; width:100%; text-align:center;
+    border:2px solid transparent; border-radius:8px; overflow:hidden;
+    border-image:linear-gradient(135deg,#7a5a2c,#e6c074,#7a5a2c) 1;
+    background:linear-gradient(180deg,#16131c,#0b0a10); box-shadow:0 0 60px rgba(232,179,58,0.25);
+    animation:secretIn .5s ease; }
+  @keyframes secretIn { from{opacity:0; transform:translateY(14px) scale(.97)} to{opacity:1; transform:none} }
+  #secret img { width:100%; display:block; }
+  #secret .cap { padding:16px 20px 20px; }
+  #secret .cap .who { font-family:'Cinzel',serif; font-size:22px; letter-spacing:4px; color:#e6c074; text-transform:uppercase; }
+  #secret .cap .line { font-style:italic; color:#cdbf9a; margin-top:8px; font-size:17px; }
+  #secret .cap .tag { margin-top:12px; font-size:11px; letter-spacing:3px; text-transform:uppercase; color:#6a6478; }
+  #secret .x { position:absolute; top:8px; right:12px; color:#cdbf9a; font-size:24px; cursor:pointer; opacity:.7; }
+  #secret .x:hover { opacity:1; }
+</style>
+<div id="secret" role="dialog" aria-label="Hidden gem">
+  <div class="card">
+    <span class="x" id="secret-x">✕</span>
+    <img src="img/landonian.jpg" alt="The Landonian" />
+    <div class="cap">
+      <div class="who">The Landonian</div>
+      <div class="line">He brought a war-wagon to the age before the Flood. No one asked. No one could stop him.</div>
+      <div class="tag">◈ hidden gem · build · reveal · conquer</div>
+    </div>
+  </div>
+</div>
 
 <script>
   // ===== Set the play link once — change PLAY_URL to your Vercel production URL =====
   const PLAY_URL = "https://aethercraft.vercel.app";
   for (const a of document.querySelectorAll('.js-play')) a.href = PLAY_URL;
+
+  // ===== hidden gem: type "greene" (or click the faint ◈) to summon the Landonian =====
+  (function () {
+    const modal = document.getElementById('secret');
+    const open = () => modal.classList.add('show');
+    const close = () => modal.classList.remove('show');
+    let code = '';
+    addEventListener('keydown', e => {
+      if (modal.classList.contains('show') && e.key === 'Escape') return close();
+      code = (code + e.key.toLowerCase()).slice(-6);
+      if (code === 'greene' || code === 'landon') open();
+    });
+    document.getElementById('secret-spot')?.addEventListener('click', open);
+    document.getElementById('secret-x')?.addEventListener('click', close);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  })();
 
   // ===== Optional key-art: the page's default state is the graceful baseline
   // (gradient backgrounds + inline SVG sigils). Each image only REVEALS itself
