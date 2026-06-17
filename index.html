@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Shadow of the Watchers — Ancient Apocalyptic RTS</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
@@ -256,6 +256,78 @@
     #touchnote.show { display: block; }
     #touchnote b { color: #e6c074; }
     #touchnote .tn-x { margin-left: 10px; color: #8a7a52; cursor: pointer; }
+
+    /* ===================== responsive: phones, tablets & touch ===================== */
+    /* The HUD is built for desktop; on small or short screens it would otherwise eat
+       most of the playfield. Shrink the minimap, command panel, top bar and dialogue,
+       and let the menu reflow. Touch targets stay >= ~44px where they matter. */
+    @media (max-width: 960px), (max-height: 540px) {
+      /* main menu reflow */
+      #menu { gap: 14px; padding: 18px 14px; justify-content: flex-start; overflow-y: auto; }
+      #menu h1 { font-size: clamp(26px, 7vw, 46px); letter-spacing: 6px; }
+      #menu .subtitle { font-size: 13px; margin-top: -8px; }
+      .factions { flex-wrap: wrap; gap: 10px; justify-content: center; }
+      .fcard { width: min(44vw, 230px); padding: 12px; }
+      .fcard h2 { font-size: 17px; margin-bottom: 6px; }
+      .fcard p { min-height: 0; font-size: 12px; line-height: 1.4; }
+      .fcard .traits { font-size: 10px; margin-top: 6px; }
+      .menu-setup { flex-direction: column; gap: 12px; }
+      #menu .hint { font-size: 11px; line-height: 1.5; }
+
+      /* top bar — compact, taller touch buttons */
+      #topbar { height: auto; min-height: 38px; padding: 4px 8px; gap: 7px; font-size: 12px; }
+      #resources { gap: 8px; }
+      .res { padding: 0; }
+      #clock { font-size: 12px; }
+      #btn-idle { padding: 4px 8px; }
+      #btn-pause, #btn-menu { padding: 5px 10px; font-size: 12px; }
+      #btn-help, #btn-settings { width: 28px; height: 28px; font-size: 13px; }
+
+      /* minimap — much smaller tablet */
+      #minimap-wrap { left: 8px; bottom: 8px; padding: 5px; }
+      #minimap { width: 128px; height: 128px; }
+
+      /* command panel follows the smaller minimap; drop the long description */
+      #panel { left: 146px; right: 8px; bottom: 8px; min-height: 0; max-width: none; padding: 8px 10px; gap: 8px; }
+      #selinfo { width: 38%; max-width: 180px; padding-right: 8px; }
+      .sel-name { font-size: 13px; }
+      .sel-hp { font-size: 11px; }
+      .sel-desc { display: none; }
+      .queue { font-size: 11px; }
+      #commands { gap: 5px; }
+      .cmd { width: 74px; height: 50px; }
+      .cmd-act { width: 58px; }
+      .cmd-icon { font-size: 16px; }
+      .cmd-label { font-size: 9px; }
+      .cmd-sub { font-size: 8.5px; }
+
+      /* first-contact dialogue sits above the panel and shrinks */
+      #dialogue { bottom: 116px; width: min(440px, 94vw); padding: 8px 12px; gap: 10px; }
+      #dlg-portrait { width: 60px; height: 60px; }
+      .dlg-name { font-size: 14px; }
+      .dlg-line { font-size: 12.5px; }
+      .dlg-hint { font-size: 10px; }
+      #toasts { top: 44px; }
+
+      /* overlays that can overflow short screens become scrollable */
+      #help { width: min(264px, 92vw); max-height: 78vh; overflow-y: auto; }
+      #settings .sx { max-height: 92vh; overflow-y: auto; padding: 16px 18px; }
+      #introcard { top: 22%; }
+      #introcard h2 { font-size: clamp(26px, 8vw, 46px); letter-spacing: 5px; }
+      #introcard .ic-sub { font-size: 13px; }
+    }
+
+    /* very narrow (portrait phones): resources get their own row, tighter still */
+    @media (max-width: 560px) {
+      #topbar { flex-wrap: wrap; gap: 5px; }
+      #resources { width: 100%; gap: 6px; font-size: 11px; }
+      #clock { margin-left: 0; }
+      #minimap { width: 104px; height: 104px; }
+      #panel { left: 120px; }
+      #selinfo { width: 36%; }
+      .cmd { width: 66px; height: 46px; }
+      .fcard { width: min(82vw, 280px); }
+    }
   </style>
 </head>
 <body>
