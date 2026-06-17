@@ -164,6 +164,7 @@ export class Controls {
         this.ui.refreshPanel?.();
       }
     }
+    if (k === 'q') { this.game.useSelectedAbility?.(); }
     if (k === 'p') { this.onPause?.(); }
     // secret code: type "greene" to summon the Fields of Evil near your city
     this._code = ((this._code || '') + k).slice(-6);

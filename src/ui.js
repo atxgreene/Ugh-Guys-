@@ -283,6 +283,19 @@ export class UI {
         }
       }
     }
+    // ability button — shown when exactly one own non-worker unit with an ability is selected
+    if (units.length === 1 && !units[0].def.worker && units[0].def.ability) {
+      const u = units[0];
+      const ab = u.def.ability;
+      const ready = u.abilityCd <= 0;
+      cmds.push({
+        icon: ab.icon, label: `${ab.name} (Q)`,
+        sub: ready ? '— Ready —' : `${u.abilityCd.toFixed(1)} s`,
+        cls: 'cmd-act cmd-ability' + (ready ? ' cmd-ability-ready' : ''),
+        tip: ab.desc,
+        fn: () => { this.game.useAbility(u); Sound.click(); this.refreshPanel(); },
+      });
+    }
     if (workers.length && !this.buildMenuOpen) {
       cmds.push({ icon: '🏗', label: 'Build… (B)', cls: 'cmd-act', fn: () => { this.buildMenuOpen = true; this.refreshPanel(); } });
     }
@@ -455,9 +468,10 @@ export class UI {
       this.refreshT = 0.25;
       this.drawResources();
       this.drawMinimap();
-      // live-refresh queue/progress text when a building is selected
+      // live-refresh queue/progress text when a building is selected,
+      // and cooldown countdown when a unit with an ability is selected
       const s = this.game.selection;
-      if (s.length === 1 && s[0].isBuilding) this.refreshPanel();
+      if (s.length === 1 && (s[0].isBuilding || (s[0].isUnit && s[0].def.ability))) this.refreshPanel();
     }
     this.drawHealthBars();
   }

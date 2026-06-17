@@ -118,6 +118,12 @@ export class Unit extends Entity {
     this.leash = null;         // neutral guard post
     this.stance = 'aggressive'; // 'aggressive' | 'defensive' | 'hold'
     this.anchor = null;         // hold/defensive return point
+    this.abilityCd = 0;         // seconds until ability is ready again
+    this.abilityActiveDur = 0;  // seconds remaining on an active self-buff
+    this.abilityBuff = null;    // { dmgMult?, armorAdd?, spdMult?, atkCdMult?, firstHit?, stunDur? }
+    this.abilityDebuffDur = 0;  // seconds remaining on an incoming damage debuff
+    this.abilityDebuffMult = 1; // incoming damage multiplier while debuffed
+    this.stunDur = 0;           // seconds remaining of stun (can't attack)
     const f = owner === 2 ? { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW } : game.players[owner].faction;
     this.mesh = buildUnitMesh(def.model, f.color, f.glow, f.accent, f.glow2);
     this.mesh.position.copy(this.pos);
@@ -125,8 +131,15 @@ export class Unit extends Entity {
     game.scene.add(this.mesh);
   }
 
-  effDmg(base) { return Math.round(base * (this.owner <= 1 ? this.player.dmgMult : 1)); }
-  effArmor() { return this.def.armor + (this.owner <= 1 ? this.player.armorAdd : 0); }
+  effDmg(base) {
+    let mult = this.owner <= 1 ? this.player.dmgMult : 1;
+    if (this.abilityBuff?.dmgMult) mult *= this.abilityBuff.dmgMult;
+    return Math.round(base * mult);
+  }
+  effArmor() {
+    return this.def.armor + (this.owner <= 1 ? this.player.armorAdd : 0) + (this.abilityBuff?.armorAdd || 0);
+  }
+  effSpeed() { return this.def.speed * (this.abilityBuff?.spdMult ?? 1); }
 
   orderMove(x, z, attackMove = false) {
     this.target = null; this.gatherNode = null; this.buildSite = null; this.carryReturn = false;
@@ -201,7 +214,7 @@ export class Unit extends Entity {
     const md = Math.hypot(mx, mz) || 1;
 
     // ease speed for smooth start/stop; slow slightly on the final approach
-    const target = this.def.speed * (dist < 2.5 ? Math.max(0.35, dist / 2.5) : 1);
+    const target = this.effSpeed() * (dist < 2.5 ? Math.max(0.35, dist / 2.5) : 1);
     this.curSpeed += (target - this.curSpeed) * Math.min(1, dt * 8);
     const step = this.curSpeed * dt;
     this.moveBy((mx / md) * step, (mz / md) * step);
@@ -291,6 +304,17 @@ export class Unit extends Entity {
     this.moving = false;
     this.harvesting = false;
     const atk = this.def.attack;
+    // ability cooldown + buff/debuff/stun ticks
+    if (this.abilityCd > 0) this.abilityCd = Math.max(0, this.abilityCd - dt);
+    if (this.abilityActiveDur > 0) {
+      this.abilityActiveDur -= dt;
+      if (this.abilityActiveDur <= 0) { this.abilityActiveDur = 0; this.abilityBuff = null; }
+    }
+    if (this.abilityDebuffDur > 0) {
+      this.abilityDebuffDur -= dt;
+      if (this.abilityDebuffDur <= 0) { this.abilityDebuffDur = 0; this.abilityDebuffMult = 1; }
+    }
+    if (this.stunDur > 0) this.stunDur = Math.max(0, this.stunDur - dt);
 
     // deferred melee blow: lands when the lunge reaches the target — but only if
     // we're still attacking that same target (orders/target may have changed).
@@ -375,8 +399,9 @@ export class Unit extends Entity {
           this.seek(t.pos.x, t.pos.z, this.attackRange(t) - 0.2, dt); break;
         }
         this.facingTarget = Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
+        if (this.stunDur > 0) break;   // stunned — cannot attack
         if (this.cooldown <= 0) {
-          this.cooldown = atk.cooldown;
+          this.cooldown = atk.cooldown * (this.abilityBuff?.atkCdMult ?? 1);
           this.lungeDur = 0.3; this.lungeT = this.lungeDur;
           // ranged fires now (the projectile carries the timing); melee lands on
           // contact — scheduled to the lunge's strike apex so the blow connects.
@@ -1108,6 +1133,111 @@ export class Game {
     }
   }
 
+  // ---------- active abilities ----------
+  useAbility(unit) {
+    const ab = unit.def.ability;
+    if (!ab || unit.abilityCd > 0 || unit.dead) return false;
+    unit.abilityCd = ab.cooldown;
+    const gy = this.map.heightAt(unit.pos.x, unit.pos.z);
+    const visible = this.map.fogStateAt(unit.pos.x, unit.pos.z) === 2;
+
+    switch (ab.type) {
+      case 'self_buff': {
+        unit.abilityBuff = { ...ab.buff };
+        unit.abilityActiveDur = ab.duration;
+        if (visible) {
+          for (let i = 0; i < 7; i++) {
+            const a = Math.random() * Math.PI * 2, r = 0.4 + Math.random() * 0.8;
+            this.fxSpark.spawn(unit.pos.x + Math.cos(a) * r, gy + 1.0, unit.pos.z + Math.sin(a) * r,
+              (Math.random() - 0.5) * 2, 2 + Math.random() * 2, (Math.random() - 0.5) * 2,
+              0.4, 0.13, 1.0);
+          }
+          Sound.abilityBuff();
+        }
+        break;
+      }
+      case 'target_debuff': {
+        const t = unit.target || unit.acquireTarget(unit.def.aggroRange);
+        if (!t) { unit.abilityCd = 0; return false; }
+        t.abilityDebuffDur = ab.duration;
+        t.abilityDebuffMult = ab.damageMult;
+        if (this.map.fogStateAt(t.pos.x, t.pos.z) === 2) {
+          const ty = this.map.heightAt(t.pos.x, t.pos.z);
+          for (let i = 0; i < 5; i++) {
+            const a = Math.random() * Math.PI * 2, r = 0.5 + Math.random() * 0.7;
+            this.fxSpark.spawn(t.pos.x + Math.cos(a) * r, ty + 1.0, t.pos.z + Math.sin(a) * r,
+              (Math.random() - 0.5), 1.5 + Math.random(), (Math.random() - 0.5),
+              0.55, 0.10, 0.8);
+          }
+          Sound.abilityDebuff();
+        }
+        break;
+      }
+      case 'aoe_strike': {
+        const rawDmg = unit.effDmg(unit.def.attack?.dmg || 10);
+        const dmgBase = rawDmg * (ab.dmgMult || 1);
+        const fxColor = unit.owner <= 1 ? this.players[unit.owner].faction.glow : 0xff7a4d;
+        this.addEffect(unit.pos.x, unit.pos.z, ab.radius, glowMat(fxColor, 2));
+        if (visible) {
+          for (let i = 0; i < 12; i++) {
+            const a = i / 12 * Math.PI * 2, r = ab.radius * (0.5 + Math.random() * 0.6);
+            this.fxSpark.spawn(unit.pos.x + Math.cos(a) * r, gy + 0.6, unit.pos.z + Math.sin(a) * r,
+              Math.cos(a) * 2, 1 + Math.random() * 2, Math.sin(a) * 2, 0.5, 0.14, 1.0);
+          }
+          this.addShake(0.2);
+          Sound.abilityAoe();
+        }
+        for (const e of this.allCombatants()) {
+          if (e.dead || e.owner === unit.owner || (unit.owner !== 2 && e.owner === 2)) continue;
+          if (unit.distTo(e) - e.radius <= ab.radius) {
+            this.applyHit(unit, e, unit.def.attack || {}, dmgBase);
+            if (ab.stunDur && e.isUnit) e.stunDur = Math.max(e.stunDur || 0, ab.stunDur);
+          }
+        }
+        break;
+      }
+      case 'aoe_friendly': {
+        const r = ab.radius || 8;
+        for (const u of this.units) {
+          if (u.dead || u.owner !== unit.owner) continue;
+          if (unit.distTo(u) <= r) {
+            u.abilityBuff = { ...ab.buff };
+            u.abilityActiveDur = ab.duration;
+          }
+        }
+        if (visible) {
+          for (let i = 0; i < 10; i++) {
+            const a = i / 10 * Math.PI * 2, fr = 1.5 + Math.random() * r * 0.4;
+            this.fxSpark.spawn(unit.pos.x + Math.cos(a) * fr, gy + 1.0, unit.pos.z + Math.sin(a) * fr,
+              Math.cos(a), 1.5 + Math.random(), Math.sin(a), 0.6, 0.11, 0.8);
+          }
+          Sound.abilityBuff();
+        }
+        break;
+      }
+      case 'multi_shot': {
+        const range = (unit.def.attack?.range || 12) + 3;
+        const enemies = [];
+        for (const e of this.allCombatants()) {
+          if (e.dead || e.owner === unit.owner) continue;
+          if (unit.distTo(e) <= range) enemies.push(e);
+        }
+        enemies.sort((a, b) => unit.distTo(a) - unit.distTo(b));
+        const atk = unit.def.attack;
+        for (let i = 0; i < Math.min(ab.count || 3, enemies.length); i++) {
+          this.performAttack(unit, enemies[i], atk);
+        }
+        if (visible) Sound.abilityAoe();
+        break;
+      }
+    }
+    return true;
+  }
+
+  useSelectedAbility() {
+    for (const u of this.selection) if (u.isUnit && u.owner === 0 && !u.dead) this.useAbility(u);
+  }
+
   updateEmbers(dt) {
     const a = this.embers.geometry.attributes.position;
     for (let i = 0; i < a.count; i++) {
@@ -1488,11 +1618,17 @@ export class Game {
 
   // ---------- combat ----------
   performAttack(attacker, target, atk) {
+    // consume a firstHit buff before computing damage (effDmg already applies dmgMult)
+    const firstHit = attacker.isUnit && attacker.abilityBuff?.firstHit;
+    const stunToApply = firstHit ? (attacker.abilityBuff.stunDur || 0) : 0;
     const dmgBase = attacker.isUnit ? attacker.effDmg(atk.dmg) : atk.dmg;
+    if (firstHit) { attacker.abilityBuff = null; attacker.abilityActiveDur = 0; }
     if (atk.projectile) {
       this.spawnProjectile(attacker, target, atk, dmgBase);
+      if (stunToApply && target.isUnit) target.stunDur = Math.max(target.stunDur || 0, stunToApply);
     } else {
       this.applyHit(attacker, target, atk, dmgBase);
+      if (stunToApply && target.isUnit) target.stunDur = Math.max(target.stunDur || 0, stunToApply);
       if (this.map.fogStateAt(target.pos.x, target.pos.z) === 2) Sound.meleeHit(dmgBase);
     }
   }
@@ -1500,7 +1636,8 @@ export class Game {
   applyHit(attacker, target, atk, dmgBase) {
     const mult = (target.def.tags || []).reduce((m, tag) => m * (atk.bonus?.[tag] || 1), 1);
     const armor = target.isUnit ? target.effArmor() : (target.def.armor || 0);
-    const dmg = Math.max(1, Math.round(dmgBase * mult) - armor);
+    let dmg = Math.max(1, Math.round(dmgBase * mult) - armor);
+    if (target.isUnit && target.abilityDebuffDur > 0) dmg = Math.ceil(dmg * target.abilityDebuffMult);
     target.takeDamage(dmg, attacker);
     this.hitImpact(attacker, target, dmg, mult > 1.05);
   }

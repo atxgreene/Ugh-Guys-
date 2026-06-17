@@ -89,6 +89,7 @@ export class AI {
     this.manageDefense(main);
     this.manageScouting(main);
     this.manageAttacks(main);
+    this.manageAbilities();
   }
 
   manageWorkers(main) {
@@ -285,6 +286,16 @@ export class AI {
     if (fast.length >= 2) {
       for (const u of fast) u._harassUntil = g.time + 22;   // leave them on the raid, don't reclaim
       g.formationMove(fast, t.pos.x, t.pos.z, true);
+    }
+  }
+
+  manageAbilities() {
+    const g = this.game;
+    for (const u of this.myArmy()) {
+      if (u.dead || !u.def.ability || u.abilityCd > 0) continue;
+      if (u.state !== 'attack' && u.state !== 'attackMove') continue;
+      if (Math.random() > 0.35) continue;   // 35% chance per AI think cycle to fire
+      g.useAbility(u);
     }
   }
 
