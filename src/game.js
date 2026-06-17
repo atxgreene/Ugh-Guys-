@@ -214,7 +214,8 @@ export class Unit extends Entity {
     const md = Math.hypot(mx, mz) || 1;
 
     // ease speed for smooth start/stop; slow slightly on the final approach
-    const target = this.effSpeed() * (dist < 2.5 ? Math.max(0.35, dist / 2.5) : 1);
+    const tileMult = this.game.map.tileSpeedMult(this.pos.x, this.pos.z);
+    const target = this.effSpeed() * tileMult * (dist < 2.5 ? Math.max(0.35, dist / 2.5) : 1);
     this.curSpeed += (target - this.curSpeed) * Math.min(1, dt * 8);
     const step = this.curSpeed * dt;
     this.moveBy((mx / md) * step, (mz / md) * step);
@@ -840,6 +841,8 @@ export class Game {
     this.initRenderer();
     this.map = new GameMap(opts.seed, this.biomeKey);
     this.scene.add(this.map.buildMesh());
+    const _wm = this.map.buildWaterMesh();
+    if (_wm) this.scene.add(_wm);
     this.map.scatterDoodads(this.scene);
     this.initAtmosphere();
     if (load) this.deserialize(load);

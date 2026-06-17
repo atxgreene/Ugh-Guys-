@@ -107,6 +107,13 @@ export class GameMap {
       if (this.height[i] > 4.0) { this.mountain[i] = 1; this.blocked[i] = 1; }
     }
 
+    // rivers, fords, ancient roads (carved before mesh is built)
+    this.riverTiles = new Set();
+    this.fordTiles = new Set();
+    this.roadTiles = new Set();
+    this._genRivers(makeNoise(seed + 31));
+    this._genRoads();
+
     this.fogCanvas = document.createElement('canvas');
     this.fogCanvas.width = GRID; this.fogCanvas.height = GRID;
     this.fogCtx = this.fogCanvas.getContext('2d', { willReadFrequently: true });
@@ -176,7 +183,8 @@ export class GameMap {
     const B = this.biome;
     const cBase = new THREE.Color(B.base), cAsh = new THREE.Color(B.ash),
           cRock = new THREE.Color(B.rock), cSand = new THREE.Color(B.sand),
-          cMoss = new THREE.Color(B.moss);
+          cMoss = new THREE.Color(B.moss),
+          cRiver = new THREE.Color(0x182840), cRoad = new THREE.Color(0x6b5c44);
     for (let i = 0; i < pos.count; i++) {
       const wx = pos.getX(i), wz = pos.getZ(i);
       const h = this.heightAt(wx, wz);
@@ -188,6 +196,11 @@ export class GameMap {
       if (n < 0.3) c.lerp(cMoss, (0.3 - n) * 1.2);
       if (h > 3.2) c.lerp(cRock, Math.min(1, (h - 3.2) / 2.5));
       if (h < 0.35) c.lerp(cRock, 0.4); // dark lowland basins
+      const rtx = Math.max(0, Math.min(GRID - 1, Math.floor(wx / TILE)));
+      const rty = Math.max(0, Math.min(GRID - 1, Math.floor(wz / TILE)));
+      const rti = rty * GRID + rtx;
+      if (this.riverTiles.has(rti)) c.lerp(cRiver, 0.9);
+      else if (this.roadTiles.has(rti)) c.lerp(cRoad, 0.5);
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -217,6 +230,102 @@ export class GameMap {
     mesh.receiveShadow = true;
     this.mesh = mesh;
     return mesh;
+  }
+
+  buildWaterMesh() {
+    if (!this.riverTiles || this.riverTiles.size === 0) return null;
+    const verts = [], idxs = [];
+    let vi = 0;
+    for (const tidx of this.riverTiles) {
+      const tx = tidx % GRID, ty = Math.floor(tidx / GRID);
+      const wx = tx * TILE, wz = ty * TILE;
+      const h = this.heightAt(wx + TILE * 0.5, wz + TILE * 0.5) + 0.14;
+      verts.push(wx, h, wz, wx + TILE, h, wz, wx + TILE, h, wz + TILE, wx, h, wz + TILE);
+      idxs.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+      vi += 4;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+    geo.setIndex(idxs);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x1e5080, transparent: true, opacity: 0.68,
+      roughness: 0.08, metalness: 0.35,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 1;
+    return mesh;
+  }
+
+  tileSpeedMult(wx, wz) {
+    const t = this.tileOf(wx, wz);
+    const i = this.idx(t.x, t.y);
+    if (this.fordTiles.has(i)) return 0.75;
+    if (this.riverTiles.has(i)) return 0.48;
+    if (this.roadTiles.has(i)) return 1.22;
+    return 1.0;
+  }
+
+  _genRivers(noiseFn) {
+    const sx = 2, sy = Math.floor(GRID * 0.37);
+    const ex = GRID - 3, ey = Math.floor(GRID * 0.57);
+    const path = [];
+    let cx = sx, cy = sy;
+    let angle = Math.atan2(ey - sy, ex - sx);
+    while (cx < ex - 0.5) {
+      path.push({ x: Math.round(cx), y: Math.round(cy) });
+      const wander = (noiseFn(cx * 0.09, cy * 0.09) - 0.5) * 0.65;
+      const toTarget = Math.atan2(ey - cy, ex - cx);
+      angle = angle * 0.6 + toTarget * 0.4 + wander * 0.35;
+      cx += Math.cos(angle) * 0.9;
+      cy += Math.sin(angle) * 0.9;
+      cx = Math.max(sx, Math.min(ex, cx));
+      cy = Math.max(2, Math.min(GRID - 3, cy));
+    }
+    path.push({ x: ex, y: ey });
+    // three evenly-spaced ford crossings
+    const fordAt = new Set([
+      Math.floor(path.length * 0.26),
+      Math.floor(path.length * 0.52),
+      Math.floor(path.length * 0.76),
+    ]);
+    const clearZones = [this.basePlayer, this.baseEnemy, ...this.expansions];
+    for (let pi = 0; pi < path.length; pi++) {
+      const { x, y } = path[pi];
+      const isFord = fordAt.has(pi);
+      const hw = isFord ? 0 : 1; // ford = 1 tile wide, river = 3 wide
+      for (let dy = -hw; dy <= hw; dy++) for (let dx = -hw; dx <= hw; dx++) {
+        const tx = x + dx, ty = y + dy;
+        if (!this.inBounds(tx, ty)) continue;
+        if (clearZones.some(z => Math.hypot(tx - z.x, ty - z.y) < 13)) continue;
+        const idx = this.idx(tx, ty);
+        if (this.mountain[idx]) continue;
+        this.riverTiles.add(idx);
+        if (isFord) this.fordTiles.add(idx);
+        this.height[idx] = Math.min(this.height[idx], 0.18); // carve channel
+      }
+    }
+  }
+
+  _genRoads() {
+    const passA = { x: Math.floor(GRID / 2 + 13), y: Math.floor(GRID / 2 - 13) };
+    const passB = { x: Math.floor(GRID / 2 - 13), y: Math.floor(GRID / 2 + 13) };
+    const pb = this.basePlayer, eb = this.baseEnemy;
+    const seg = (x1, y1, x2, y2) => {
+      const steps = Math.ceil(Math.hypot(x2 - x1, y2 - y1) * 1.3);
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const rx = Math.round(x1 + (x2 - x1) * t), ry = Math.round(y1 + (y2 - y1) * t);
+        if (!this.inBounds(rx, ry)) continue;
+        const idx = this.idx(rx, ry);
+        if (!this.mountain[idx] && !this.riverTiles.has(idx)) this.roadTiles.add(idx);
+      }
+    };
+    // two roads — each running through one of the two ridge passes
+    seg(pb.x, pb.y, passA.x, passA.y);
+    seg(passA.x, passA.y, eb.x, eb.y);
+    seg(pb.x, pb.y, passB.x, passB.y);
+    seg(passB.x, passB.y, eb.x, eb.y);
   }
 
   scatterDoodads(scene) {
