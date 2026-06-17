@@ -52,10 +52,13 @@ export class AI {
       for (const k of ['grain', 'timber', 'bronze']) r[k] = Math.round((r[k] || 0) * d.handicap);
     }
     game.on('damaged', (e, attacker) => {
-      if (e.owner === 1 && attacker && attacker.owner === 0) {
-        this.defendUntil = game.time + 18;
-        this.defendPoint = { x: attacker.pos.x, z: attacker.pos.z };
-      }
+      if (e.owner !== 1 || !attacker || attacker.owner !== 0) return;
+      // only treat it as a home threat if it's near our base — otherwise a single
+      // immortal harasser chipping a far outbuilding could lock us out of attacking
+      const m = this.main;
+      if (m && Math.hypot(e.pos.x - m.pos.x, e.pos.z - m.pos.z) > 34) return;
+      this.defendUntil = game.time + 14;
+      this.defendPoint = { x: attacker.pos.x, z: attacker.pos.z };
     });
   }
 
@@ -278,8 +281,11 @@ export class AI {
     const workers = g.units.filter(u => u.owner === 0 && !u.dead && u.def.worker);
     if (!workers.length) return;
     const t = workers[Math.floor(Math.random() * workers.length)];
-    const fast = this.myArmy().filter(u => !this.attackGroup.includes(u) && u.def.speed >= 9).slice(0, 4);
-    if (fast.length >= 2) g.formationMove(fast, t.pos.x, t.pos.z, true);
+    const fast = this.myArmy().filter(u => !this.attackGroup.includes(u) && !u._harassUntil && u.def.speed >= 9).slice(0, 4);
+    if (fast.length >= 2) {
+      for (const u of fast) u._harassUntil = g.time + 22;   // leave them on the raid, don't reclaim
+      g.formationMove(fast, t.pos.x, t.pos.z, true);
+    }
   }
 
   manageAttacks(main) {
@@ -308,24 +314,28 @@ export class AI {
       return;
     }
 
+    // expire harass tags so those raiders rejoin the main force afterward
+    for (const u of army) if (u._harassUntil && g.time > u._harassUntil) u._harassUntil = 0;
+    const available = army.filter(u => !u._harassUntil);   // not currently on a raid
+
     // massing → commit the wave as a single body when it's ready
-    if (g.time >= this.nextWaveTime && army.length >= want) {
+    if (g.time >= this.nextWaveTime && available.length >= want) {
       this.wave++;
       this.nextWaveTime = g.time + this.diff.cadence;
-      this.attackGroup = army.slice(0, Math.max(want, Math.floor(army.length * 0.85)));
+      this.attackGroup = available.slice(0, Math.max(want, Math.floor(available.length * 0.85)));
       this.launchSize = this.attackGroup.length;
       this.phase = 'attacking';
       const t = this.playerTarget();
       g.formationMove(this.attackGroup, t.x, t.z, true);
       if (this.diff.harass && this.wave % 2 === 1) this.harass();
-    } else if (g.time >= this.nextWaveTime && army.length >= 4) {
+    } else if (g.time >= this.nextWaveTime && available.length >= 4) {
       this.nextWaveTime = g.time + 25;          // not enough yet — check back soon
     }
 
     // reserves gather at the forward staging point, ready for the next push
     const stage = this.stagingPoint(main);
     for (const u of army) {
-      if (this.attackGroup.includes(u)) continue;
+      if (this.attackGroup.includes(u) || u._harassUntil) continue;
       if (u.state === 'idle' && Math.hypot(u.pos.x - stage.x, u.pos.z - stage.z) > 10) {
         u.orderMove(stage.x, stage.z, true);
       }

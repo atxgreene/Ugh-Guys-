@@ -159,7 +159,7 @@ export class Unit extends Entity {
     this.buildSite = site; this.target = null; this.gatherNode = null;
     this.state = 'build'; this.path = null;
   }
-  stop() { this.state = 'idle'; this.path = null; this.target = null; this.gatherNode = null; this.buildSite = null; }
+  stop() { this.state = 'idle'; this.path = null; this.target = null; this.gatherNode = null; this.buildSite = null; this.pendingStrike = null; }
 
   // Collision-aware move with wall sliding (LoL-style barrier glide). Attempts
   // the full step; if blocked, slides along whichever axis is clear. Returns the
@@ -292,13 +292,15 @@ export class Unit extends Entity {
     this.harvesting = false;
     const atk = this.def.attack;
 
-    // deferred melee blow: lands when the lunge reaches the target (if still valid)
+    // deferred melee blow: lands when the lunge reaches the target — but only if
+    // we're still attacking that same target (orders/target may have changed).
     if (this.pendingStrike) {
       this.pendingStrike.delay -= dt;
       if (this.pendingStrike.delay <= 0) {
         const ps = this.pendingStrike; this.pendingStrike = null;
         const t = ps.target;
-        if (t && !t.dead && this.distTo(t) <= this.attackRange(t) + 0.4) {
+        if (t && !t.dead && this.state === 'attack' && this.target === t &&
+            this.distTo(t) <= this.attackRange(t) + 0.4) {
           this.game.performAttack(this, t, ps.atk);
         }
       }
@@ -313,7 +315,7 @@ export class Unit extends Entity {
           if (atk && !this.def.worker) {
             // hold only notices what it can already hit; defensive only what it can
             // reach inside its leash; aggressive sweeps its full aggro range
-            const scanRange = this.stance === 'hold' ? atk.range + this.radius + 1.0
+            const scanRange = this.stance === 'hold' ? atk.range + this.radius + 1.2
               : this.stance === 'defensive' ? Math.min(this.def.aggroRange, 7 + atk.range)
               : this.def.aggroRange;
             const t = this.acquireTarget(scanRange);
@@ -358,10 +360,16 @@ export class Unit extends Entity {
         }
         const inRange = this.distTo(t) <= this.attackRange(t);
         if (!inRange) {
-          // hold stands its ground; defensive won't chase past its anchor leash
-          if (this.stance === 'hold') { this.target = null; this.state = 'idle'; break; }
+          // hold stands its ground — wait if the target is still within reach (same
+          // band the idle scan used, so no acquire/drop flicker), else release it
+          if (this.stance === 'hold') {
+            if (this.distTo(t) > atk.range + this.radius + 1.2) { this.target = null; this.state = 'idle'; }
+            break;
+          }
+          // defensive chases, but breaks home if pulled past the leash. The break
+          // radius is strictly beyond the defensive scan reach so it can't yo-yo.
           if (this.stance === 'defensive' && this.anchor &&
-              Math.hypot(this.pos.x - this.anchor.x, this.pos.z - this.anchor.z) > 7) {
+              Math.hypot(this.pos.x - this.anchor.x, this.pos.z - this.anchor.z) > 7 + atk.range + 2) {
             this.target = null; this.orderMove(this.anchor.x, this.anchor.z); break;
           }
           this.seek(t.pos.x, t.pos.z, this.attackRange(t) - 0.2, dt); break;
@@ -1561,6 +1569,7 @@ export class Game {
 
   removeUnit(u) {
     // death animation: topple + sink, plus a burst of debris
+    u.mesh.scale.setScalar(1);   // clear any mid-flash scale-pop before the corpse falls
     this.effects.push({ mesh: u.mesh, life: 1.0, max: 1.0, type: 'corpse' });
     if (this.map.fogStateAt(u.pos.x, u.pos.z) === 2) {
       const h = this.map.heightAt(u.pos.x, u.pos.z);
