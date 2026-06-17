@@ -525,6 +525,9 @@ export class Unit extends Entity {
 
   die(attacker) {
     this.dead = true;
+    const s = this.game.stats;
+    if (this.owner === 0) s.lost++;
+    else if (attacker && attacker.owner === 0) s.killed++;
     this.game.removeUnit(this);
     Sound.death();
   }
@@ -730,6 +733,7 @@ export class Building extends Entity {
 
   die(attacker) {
     this.dead = true;
+    if (this.owner === 1 && attacker && attacker.owner === 0) this.game.stats.razed++;
     this.removeScaffold();
     if (this.fire) { this.game.scene.remove(this.fire); this.fire = null; }
     if (this.scorch) { this.game.scene.remove(this.scorch); this.scorch = null; }
@@ -767,6 +771,7 @@ export class Game {
     this.paused = false;
     this.fogTimer = 0;
     this.combatHeat = 0;  // 0..1 battle intensity, drives the music's combat layer
+    this.stats = { trained: 0, lost: 0, killed: 0, razed: 0 };  // player (owner 0) match tally
     this.metClans = {};   // first-contact dialogue fired per clan
     // a saved game pins the exact map (seed/biome/mood) so it reloads identically
     const load = opts.load || null;
@@ -1275,6 +1280,7 @@ export class Game {
     const def = p.faction.units[key];
     const eff = { ...def, hp: Math.round(def.hp * p.hpMult) };
     const u = new Unit(this, owner, eff, key, x, z);
+    if (owner === 0) this.stats.trained++;
     this.units.push(u);
     this.recalcSupply();
     return u;

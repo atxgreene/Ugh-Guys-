@@ -414,6 +414,15 @@ export class UI {
       div.querySelector('p').textContent = winner === 0
         ? 'The enemy\'s seat of power lies in ruin. The age endures — for now.'
         : 'Your hall has fallen. The waters will remember your name.';
+      // post-match chronicle
+      const s = this.game.stats, t = Math.floor(this.game.time);
+      const dur = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+      let chron = div.querySelector('.go-stats');
+      if (!chron) { chron = document.createElement('div'); chron.className = 'go-stats'; div.querySelector('p').after(chron); }
+      chron.innerHTML =
+        `<span>⏱ <b>${dur}</b></span><span>⚔ slain <b>${s.killed}</b></span>` +
+        `<span>☩ razed <b>${s.razed}</b></span><span>🕯 lost <b>${s.lost}</b></span>` +
+        `<span>⛏ raised <b>${s.trained}</b></span>`;
       document.getElementById('btn-restart').onclick = () => this.onRestart();
     }, 2200);
   }
