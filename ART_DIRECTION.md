@@ -124,15 +124,19 @@ border-image, command panel as a stone slab, **minimap as a bronze-rimmed tablet
 command buttons, bronze toasts. **Settings panel** (brightness/exposure slider, graphics
 quality Auto/High/Low, music & SFX volume) and a **collapsible hotkey reference** (`?`),
 both reachable from the topbar. **First-match coach hints** nudge new players through
-gather → build → attack → win, shown once per player. **[planned]** parchment texture
+gather → build → attack → win, shown once per player. **Combat-stance buttons** (aggressive/
+defensive/hold, current one highlit) on the command panel; **idle-worker badge** (topbar
+count + `.` hotkey) snaps to the next idle laborer. **[planned]** parchment texture
 fills, carved glyph icons replacing emoji, tech-tree view, victory/defeat art.
 
-## 11b. Audio  **[done]** WebAudio synth — no asset files. SFX (UI blips, combat hits,
-construction, alerts, win/lose stings) with a master SFX volume. **Ambient music**: a low,
-evolving pre-Flood drone — a root/fifth/octave oscillator stack breathing through a slow
-lowpass sweep, each voice swelling on its own LFO, with a distant bell tolling on a long
-random interval. Master music volume + on/off, persisted. **[planned]** per-biome musical
-modes, combat intensity layer.
+## 11b. Audio  **[done]** WebAudio synth — no asset files. SFX (UI blips, weighty melee
+thud that deepens with damage, sharp ranged crack, construction, alerts, win/lose stings)
+with a master SFX volume. **Ambient music**: a low, evolving pre-Flood drone — a
+root/fifth/octave oscillator stack breathing through a slow lowpass sweep, each voice
+swelling on its own LFO, with a distant bell tolling on a long random interval.
+**Adaptive combat layer**: a tense minor-third + war-drum pulse swells in as `game.combatHeat`
+rises with battle and fades in the lulls. Master music volume + on/off, persisted.
+**[planned]** per-biome musical modes.
 
 ## 11c. Accessibility & reach  **[done]** persisted player **Settings** (`settings.js`):
 brightness lets each monitor tune the deliberately-dark mood; quality pin overrides the
@@ -141,10 +145,18 @@ controls** (`controls.js`): drag-to-pan, pinch-zoom, two-finger rotate, tap-to-s
 tap-to-command, plus a "best on desktop" notice on coarse-pointer devices. **[planned]**
 dedicated touch command palette, remappable keys, colour-blind selection cues.
 
-## 11d. Difficulty  **[done]** Easy/Normal/Hard scale the AI's worker target, attack-wave
-sizes and cadence, opening-stockpile handicap, and a passive economy trickle on Hard
-(`DIFFICULTY` in `ai.js`). Normal preserves the original tuning exactly. Persisted and
-saved with the campaign so a restored game keeps its setting.
+## 11d. Difficulty & skirmish setup  **[done]** Easy/Normal/Hard scale the AI's worker
+target, wave sizes/cadence, opening handicap, a Hard-only economy trickle, plus its
+retreat threshold and harassment (`DIFFICULTY` in `ai.js`). Normal preserves the original
+tuning. The menu also offers **opponent** (Random or a specific faction) and **land**
+(Random or a specific biome) selectors. All persisted; difficulty saves with the campaign.
+
+## 11e. AI opponent  **[done]** Beyond economy/build-order: trains **counters** to the
+player's army composition; reserves mass at a **forward staging point**; waves **commit as a
+body** and press the freshest target; **retreat-to-regroup** when a group is ground past the
+difficulty threshold; **harassment** peels fast units onto the player's workers; home
+defense aborts a push and recalls everyone. **[planned]** expansion to new resource sites,
+tech-timing builds, multi-front pressure.
 
 ## 12. Asset prompt library (for any future external art)
 > "Hyper-realistic ancient antediluvian RTS game asset — Mesopotamian / Levantine /
@@ -157,10 +169,11 @@ saved with the campaign so a restored game keeps its setting.
 & cached materials, procedural textures (no downloads), MSAA bloom target, **automatic
 quality fallback** (drops bloom/shadows/pixel-ratio under sustained slow frames) with a
 manual override. **Three.js split into its own bundle chunk** for first-paint + long-term
-caching. **Playwright smoke tests in CI** (`tests/smoke.spec.js`): boots the built game,
-asserts units/buildings spawn with no console errors, the simulation advances (no freeze),
-and the Fields of Evil easter egg fires — run on every PR alongside `npm run build`.
-**[planned]** InstancedMesh for trees/props & repeated units, LODs, building mesh merging.
+caching. **Playwright smoke tests in CI** (`tests/smoke.spec.js`): boot, unit/building spawn
+with no console errors, sim advances, a multi-second combat run stays error-free, the stance
+state machine, and the Fields of Evil easter egg — run on every PR alongside `npm run build`
+and the **balance audit** (`npm run audit`). **[planned]** InstancedMesh for trees/props &
+repeated units, LODs, building mesh merging.
 
 ## 14. Highest-impact upgrades, in order
 1. ✅ Movement smoothness (gameplay-breaking → fixed first)
@@ -171,7 +184,8 @@ and the Fields of Evil easter egg fires — run on every PR alongside `npm run b
 6. ✅ Cinematic intro flyover, faction cards & end-game camera
 7. ✅ Resource-gather particles + worker harvest animation
 8. ✅ Building construction scaffolds + damage/fire stages
-9. ⏳ Prop dressing (grain sacks, carts, waving banners)
+9. ✅ Prop dressing (sacks, carts, banners, braziers, amphorae, bones) — biome clutter +
+   building-adjacent dressing, with god-ray shafts on braziers
 10. ⏳ Carved rivers/roads/cliffs (balance-careful)
 11. ⏳ Instancing/LOD pass for scale
 
@@ -187,11 +201,26 @@ actually play and enjoy it:
 - ✅ Playwright smoke tests in CI
 - ✅ Three.js bundle split
 
+### Combat-foundation pass (this build)
+The deep pass on making the core fight incredible before scaling depth:
+- ✅ Tactical targeting (counter-prey, focus-fire, threat) — shared by player + AI
+- ✅ Weighted blows: contact-timed melee strike, impact FX, hit-flash/recoil, hit audio
+- ✅ Counter coverage + numeric balance audit (`npm run audit`, CI-gated)
+- ✅ Battle-line formations (oriented, role-ordered)
+- ✅ Combat stances (aggressive / defensive / hold)
+- ✅ AI overhaul (staging, group commit, retreat-to-regroup, harassment, counter-composition)
+- ✅ Adaptive combat music layer
+- ✅ Skirmish setup (opponent + land), idle-worker selector
+- ⏳ Next (needs playtest): god-rays/cloud-shadow atmosphere pass, ability/active-skill layer,
+   ranged kiting micro, AI expansion to new resource sites
+
 ## 15. Code map
-`game.js` engine + atmosphere/lighting/sky/FX + exposure/quality controls •
-`fx.js` particle pools • `models.js` meshes & doodads • `textures.js` procedural PBR •
-`terrain.js` map/biome/fog • `pathfinding.js` clearance A* •
-`controls.js` camera/shake + mouse/keyboard **& touch** input •
-`ui.js` HUD • `data.js` lore/stats • `ai.js` enemy AI **+ difficulty tiers** •
-`audio.js` SFX **+ ambient music** • `settings.js` persisted player settings •
-`main.js` lifecycle, menu, settings/help/coach wiring • `tests/smoke.spec.js` CI smoke tests.
+`game.js` engine + combat (targeting/stances/impact) + atmosphere/lighting/FX + exposure/
+quality + building dressing • `fx.js` particle pools • `models.js` meshes, doodads & props •
+`textures.js` procedural PBR • `terrain.js` map/biome/fog/clutter • `pathfinding.js`
+clearance A* • `controls.js` camera/shake + mouse/keyboard/touch input + stance & idle hotkeys •
+`ui.js` HUD + stance/idle controls • `data.js` lore/stats/counters • `ai.js` enemy AI
+(difficulty tiers, staging/retreat/harass, counter-composition) • `audio.js` SFX + adaptive
+music • `settings.js` persisted player settings • `main.js` lifecycle, menu/skirmish-setup,
+settings/help/coach wiring • `tests/smoke.spec.js` CI smoke tests • `tools/ttk-audit.mjs`
+balance audit.
