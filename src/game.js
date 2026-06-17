@@ -1426,7 +1426,7 @@ export class Game {
       this.spawnProjectile(attacker, target, atk, dmgBase);
     } else {
       this.applyHit(attacker, target, atk, dmgBase);
-      if (this.map.fogStateAt(target.pos.x, target.pos.z) === 2) Sound.hit();
+      if (this.map.fogStateAt(target.pos.x, target.pos.z) === 2) Sound.meleeHit(dmgBase);
     }
   }
 
@@ -1485,10 +1485,10 @@ export class Game {
               this.applyHit(p.attacker, e, p.atk, p.dmgBase);
             }
           }
-          if (visible) Sound.hit();
+          if (visible) Sound.rangedHit();
         } else if (!p.target.dead) {
           this.applyHit(p.attacker, p.target, p.atk, p.dmgBase);
-          if (visible) Sound.hit();
+          if (visible) Sound.rangedHit();
         }
       }
     }
@@ -1636,17 +1636,41 @@ export class Game {
     this.formationMove(units, wx, wz, false);
   }
 
+  // Move a group as a battle line: the block is oriented to the travel direction
+  // with a wide front, melee in the leading rows and ranged/casters/workers tucked
+  // behind them. Reads as an army and keeps fragile units out of the front line.
   formationMove(units, wx, wz, attackMove) {
     const n = units.length;
-    const cols = Math.ceil(Math.sqrt(n));
-    // space slots to the largest unit so big bodies aren't fighting for one tile
+    if (n === 0) return;
+    if (n === 1) { units[0].orderMove(wx, wz, attackMove); return; }
+
+    // travel direction from the group's centroid toward the destination
+    let cx = 0, cz = 0;
+    for (const u of units) { cx += u.pos.x; cz += u.pos.z; }
+    cx /= n; cz /= n;
+    let dx = wx - cx, dz = wz - cz;
+    const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+    const rx = -dz, rz = dx;                       // right vector (across the front)
+
     const maxR = units.reduce((m, u) => Math.max(m, u.radius), 0.5);
     const spacing = Math.max(1.7, maxR * 2.2);
+
+    // melee lead, then workers/support, then ranged at the back
+    const melee  = units.filter(u => u.def.attack && !u.def.attack.projectile && !u.def.worker);
+    const ranged = units.filter(u => u.def.attack && u.def.attack.projectile);
+    const rest   = units.filter(u => !melee.includes(u) && !ranged.includes(u));
+    const ordered = [...melee, ...rest, ...ranged];
+
+    // a touch wider than tall so it presents a front, not a square
+    const cols = Math.max(1, Math.round(Math.sqrt(n) * 1.4));
     const rows = Math.ceil(n / cols);
-    units.forEach((u, i) => {
+    ordered.forEach((u, i) => {
       const r = Math.floor(i / cols), c = i % cols;
-      const ox = (c - (cols - 1) / 2) * spacing, oz = (r - (rows - 1) / 2) * spacing;
-      u.orderMove(wx + ox, wz + oz, attackMove);
+      const across = (c - (cols - 1) / 2) * spacing;
+      const depth  = ((rows - 1) / 2 - r) * spacing;   // r=0 → front, toward the target
+      const sx = wx + rx * across + dx * depth;
+      const sz = wz + rz * across + dz * depth;
+      u.orderMove(sx, sz, attackMove);
     });
   }
 

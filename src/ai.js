@@ -175,16 +175,41 @@ export class AI {
     return null;
   }
 
+  // Tally the tags of the player's standing army so we can train answers to it.
+  playerArmyTags() {
+    const tags = {};
+    for (const u of this.game.units) {
+      if (u.owner !== 0 || u.dead || u.def.worker) continue;
+      for (const t of u.def.tags || []) tags[t] = (tags[t] || 0) + 1;
+    }
+    return tags;
+  }
+  // How well a unit counters the player's army: sum of its bonus margins weighted
+  // by how many enemy units carry each countered tag.
+  counterScore(unitKey, enemyTags) {
+    const bonus = this.faction.units[unitKey]?.attack?.bonus;
+    if (!bonus) return 0;
+    let s = 0;
+    for (const tag in bonus) s += (bonus[tag] - 1) * (enemyTags[tag] || 0);
+    return s;
+  }
+
   manageTraining() {
     const g = this.game;
     const mix = ARMY_MIX[this.faction.key];
+    const enemyTags = this.playerArmyTags();
     for (const b of this.myBuildings()) {
       if (!b.complete || !b.def.trains.length || b.trainQueue.length >= 2) continue;
       const options = b.def.trains.filter(k =>
         !g.players[1].faction.units[k].worker && g.unitAvailable(1, k) && g.canAfford(1, g.players[1].faction.units[k].cost));
       if (!options.length) continue;
-      // weight by mix
-      const weighted = options.flatMap(k => Array(Math.max(1, mix.filter(m => m === k).length * 2)).fill(k));
+      // weight by base composition + a bias toward whatever counters the player's army
+      const weighted = [];
+      for (const k of options) {
+        let w = 1 + 2 * mix.filter(m => m === k).length;
+        w += this.counterScore(k, enemyTags) * 1.5;
+        for (let j = 0; j < Math.max(1, Math.round(w)); j++) weighted.push(k);
+      }
       g.queueTrain(b, weighted[Math.floor(Math.random() * weighted.length)]);
     }
     // research upgrades opportunistically
