@@ -44,6 +44,13 @@ const LEATHER = 0x4a3526, CLOTH = 0x33304a, LINEN = 0xbfb49a, SKIN = 0x7a6450, H
 // bronze with a little metalness so it catches the env reflections
 const bronzeMat = () => mat(0x8a6a30, { metal: 0.55, rough: 0.45 });
 
+// shared additive material for soft fire light-shafts (god-rays); cached once
+let _godRayMat = null;
+const godRayMat = () => (_godRayMat ||= new THREE.MeshBasicMaterial({
+  color: 0xffa850, transparent: true, opacity: 0.1,
+  blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+}));
+
 function prim(geo, material, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
   const m = new THREE.Mesh(geo, material);
   m.position.set(x, y, z); m.rotation.set(rx, ry, rz);
@@ -1013,10 +1020,8 @@ export function buildDoodad(type) {
       grp.add(cyl(0.04, 0.05, 1.0, mat(0x2e2620), 4, Math.cos(a) * 0.32, 0.5, Math.sin(a) * 0.32, 0.18, a, 0));
     }
     grp.add(sph(0.12, glowMat(0xffb24a, 2.2), 0, 1.22, 0));               // flame core (bloom catches it)
-    // a soft god-ray light shaft rising from the flame (additive, no shadow)
-    const shaftMat = new THREE.MeshBasicMaterial({ color: 0xffa850, transparent: true, opacity: 0.1,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.12, 2.6, 10, 1, true), shaftMat);
+    // a soft god-ray light shaft rising from the flame (additive, no shadow; shared material)
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.12, 2.6, 10, 1, true), godRayMat());
     shaft.position.set(0, 2.5, 0); shaft.castShadow = false; shaft.receiveShadow = false;
     grp.add(shaft);
   } else if (type === 'weapon_rack') {

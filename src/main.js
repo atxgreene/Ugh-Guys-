@@ -111,9 +111,10 @@ function showLoading(then) {
 }
 
 function startGame(playerFactionKey) {
-  // resolve opponent + land from the skirmish-setup selectors (Random by default)
+  // resolve opponent + land from the skirmish-setup selectors (Random by default).
+  // Validate against the live roster so a stale/renamed persisted key can't crash start.
   const enemySel = Settings.get('enemy');
-  const enemyKey = enemySel && enemySel !== 'random' && enemySel !== playerFactionKey ? enemySel : null;
+  const enemyKey = enemySel && FACTIONS[enemySel] && enemySel !== playerFactionKey ? enemySel : null;
   const biomeSel = Settings.get('biome');
   const biome = biomeSel && biomeSel !== 'random' ? biomeSel : null;
   // world generation takes a moment — paint the loading screen first

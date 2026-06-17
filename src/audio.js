@@ -103,20 +103,24 @@ const Music = {
       voices.push(o, lfo, sweep);
     }
 
-    // combat layer: a tense minor-third drone + a low war-drum pulse, silent until
-    // battle heats up (driven by setIntensity). Its own gain so it can swell fast.
+    // combat layer: a tense minor-third drone + a low war-drum throb. `combat` is the
+    // intensity gain (driven by setIntensity), and EVERYTHING is downstream of it, so
+    // intensity 0 is truly silent. The throb is a positive-biased modulation on an
+    // inner gain, so the pulse can't phase-invert or leak through at rest.
     const combat = a.createGain();
     combat.gain.value = 0;
     combat.connect(master);
     for (const [freq, type] of [[87.3, 'sawtooth'], [110.0, 'square']]) {  // F2 minor third + A2
       const o = a.createOscillator(); o.type = type; o.frequency.value = freq;
-      const g = a.createGain(); g.gain.value = 0.18;
+      const g = a.createGain(); g.gain.value = 0.16;
       o.connect(g).connect(combat); o.start(); voices.push(o);
     }
-    const pulse = a.createOscillator(), pulseGain = a.createGain();   // ~120bpm war-drum throb
-    pulse.type = 'sine'; pulse.frequency.value = 2.0;
-    pulseGain.gain.value = 0.5;
-    pulse.connect(pulseGain).connect(combat.gain); pulse.start(); voices.push(pulse);
+    const drum = a.createOscillator(); drum.type = 'sine'; drum.frequency.value = 55;
+    const throb = a.createGain(); throb.gain.value = 0.12;            // DC base so it stays >= 0
+    drum.connect(throb).connect(combat); drum.start(); voices.push(drum);
+    const pulse = a.createOscillator(); pulse.type = 'sine'; pulse.frequency.value = 2.0;  // ~120bpm
+    const pulseGain = a.createGain(); pulseGain.gain.value = 0.1;     // AC swing < base → throb in [0.02,0.22]
+    pulse.connect(pulseGain).connect(throb.gain); pulse.start(); voices.push(pulse);
 
     this._nodes = { master, voices, combat };
 
