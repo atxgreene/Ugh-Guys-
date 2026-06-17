@@ -9,6 +9,7 @@ const UNIT_ICONS = {
   servitor: '⛏', starmetal: '⚔', adept: '✦', skyfire: '☄', hybrid: '👹',
   thrall: '⛏', raider: '🪓', champion: '🦴', warbeast: '🐺', giant: '🗿', shaman: '💀',
   devourer: '🐲',
+  hero_nimrod: '👑', hero_fallen: '🌌', hero_og: '⚡',
 };
 const BLD_ICONS = {
   city_center: '🏛', granary: '🌾', barracks: '⚔', foundry: '⚒', temple: '🔥', watchtower: '🗼',

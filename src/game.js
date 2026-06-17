@@ -398,6 +398,17 @@ export class Unit extends Entity {
           }
           this.seek(t.pos.x, t.pos.z, this.attackRange(t) - 0.2, dt); break;
         }
+        // ranged kiting: archers/casters back away from incoming melee threats while still firing.
+        // Only when the target is a melee unit (no projectile), in aggressive/defensive stance, and
+        // close enough to feel threatening (within 55% of full attack range).
+        if (atk.projectile && this.stance !== 'hold' &&
+            !t.def.attack?.projectile && t.def.attack &&
+            this.distTo(t) < atk.range * 0.55 + this.radius + t.radius) {
+          const dx = this.pos.x - t.pos.x, dz = this.pos.z - t.pos.z;
+          const d = Math.hypot(dx, dz) || 1;
+          this.moveBy((dx / d) * this.effSpeed() * 0.75 * dt, (dz / d) * this.effSpeed() * 0.75 * dt);
+          this.moving = true;
+        }
         this.facingTarget = Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
         if (this.stunDur > 0) break;   // stunned — cannot attack
         if (this.cooldown <= 0) {
