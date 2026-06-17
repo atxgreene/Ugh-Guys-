@@ -4,7 +4,8 @@ import { Game } from './game.js';
 import { AI } from './ai.js';
 import { Controls } from './controls.js';
 import { UI } from './ui.js';
-import { Sound } from './audio.js';
+import { Sound, Music } from './audio.js';
+import { Settings } from './settings.js';
 
 const TRAITS = {
   covenant: 'Balanced economy · strong defenses · disciplined bronze infantry · temple favor',
@@ -74,6 +75,15 @@ function buildMenu() {
   }
   const cont = document.getElementById('btn-continue');
   if (cont) cont.onclick = () => { Sound.click(); loadSavedGame(); };
+  // difficulty picker (persisted; applied to new games via Settings → game.difficulty)
+  const diffWrap = document.getElementById('menu-diff');
+  if (diffWrap) {
+    const sync = () => { for (const b of diffWrap.querySelectorAll('button'))
+      b.classList.toggle('on', b.dataset.d === Settings.get('difficulty')); };
+    for (const b of diffWrap.querySelectorAll('button'))
+      b.onclick = () => { Sound.click(); Settings.set('difficulty', b.dataset.d); sync(); };
+    sync();
+  }
   refreshContinue();
 }
 
@@ -118,12 +128,17 @@ function startGameNow(playerFactionKey, enemyKey, loadData) {
   ui.onSaveAvailable = hasSave;
   game.ai = new AI(game);
   if (loading && game._aiState) Object.assign(game.ai, game._aiState);
+  // pin quality if the player chose a fixed level (auto leaves the loop in charge)
+  if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
   window.__game = game; window.__controls = controls;
+
+  if (Settings.get('music')) Music.start();   // user gesture (faction click) already unlocked audio
 
   if (loading) { controls.intro = 0; ui.hideIntroCard(); ui.toast(`Campaign restored — ${game.map.biome.name}.`); }
   else {
     ui.showIntroCard(FACTIONS[playerFactionKey]);
     ui.toast(`${game.map.biome.name} — the ${FACTIONS[enemyKey].name} stir beyond the ridge…`);
+    showCoachHints();   // gentle first-match nudges (only on a fresh game)
   }
 
   let last = performance.now();
@@ -135,7 +150,7 @@ function startGameNow(playerFactionKey, enemyKey, loadData) {
     last = now;
     // auto quality: after warmup, sustained slow frames drop bloom + pixel ratio
     totalFrames++;
-    if (totalFrames > 40 && !game.lowQuality) {
+    if (totalFrames > 40 && !game.lowQuality && game.autoQuality) {
       slowFrames = rawDt > 0.045 ? slowFrames + 1 : Math.max(0, slowFrames - 2);
       if (slowFrames > 25) game.setLowQuality();
     }
@@ -162,6 +177,10 @@ function stopGame() {
 function returnToMenu() {
   saveGame(true);   // autosave on abandon (no-op if the match is already over)
   stopGame();
+  Music.stop();
+  hideCoach();
+  document.getElementById('help')?.classList.remove('show');
+  document.getElementById('settings').style.display = 'none';
   document.getElementById('menu').style.display = 'flex';
   document.getElementById('topbar').style.display = 'none';
   document.getElementById('minimap-wrap').style.display = 'none';
@@ -176,4 +195,129 @@ function returnToMenu() {
   refreshContinue();
 }
 
+// ---------- onboarding coach: a short sequence of first-match nudges ----------
+let coachTimers = [];
+function hideCoach() {
+  coachTimers.forEach(clearTimeout); coachTimers = [];
+  document.getElementById('coach')?.classList.remove('show');
+}
+function showCoachHints() {
+  if (Settings.get('coachSeen')) return;     // once per player, ever
+  const el = document.getElementById('coach');
+  if (!el) return;
+  const hints = [
+    '⛏  Select a laborer and right-click grain or timber to gather. Workers win wars.',
+    '🏗  Press B with a laborer selected to build. A granary raises your population cap.',
+    '⚔  Build a barracks, train soldiers, then press F to attack-move toward the enemy.',
+    '☠  Destroy the enemy\'s seat of power to win. Press ? any time for the full controls.',
+  ];
+  let i = 0;
+  const show = () => {
+    if (i >= hints.length) { el.classList.remove('show'); return; }
+    el.textContent = hints[i++];
+    el.classList.add('show');
+    coachTimers.push(setTimeout(() => { el.classList.remove('show'); coachTimers.push(setTimeout(show, 600)); }, 7000));
+  };
+  coachTimers.push(setTimeout(show, 6000));   // let the intro flyover land first
+  Settings.set('coachSeen', true);
+}
+
+// ---------- settings panel + help + touch notice (bound once) ----------
+function bindShell() {
+  // apply persisted audio volumes immediately
+  Sound.setVolume(Settings.get('sfxVol'));
+  Music.setVolume(Settings.get('musicVol'));
+
+  const $ = id => document.getElementById(id);
+  const settings = $('settings');
+  const openSettings = () => { syncSettingsUI(); settings.style.display = 'flex'; };
+  const closeSettings = () => { settings.style.display = 'none'; };
+
+  $('btn-settings')?.addEventListener('click', openSettings);
+  $('set-close')?.addEventListener('click', closeSettings);
+  settings?.addEventListener('click', e => { if (e.target === settings) closeSettings(); });
+
+  // brightness
+  const bright = $('set-bright'), brightVal = $('set-bright-val');
+  bright?.addEventListener('input', () => {
+    const v = parseFloat(bright.value);
+    brightVal.textContent = Math.round(v * 100) + '%';
+    Settings.set('brightness', v);
+    current?.game.setBrightness(v);
+  });
+  // quality segmented control
+  for (const b of document.querySelectorAll('#set-quality button')) {
+    b.addEventListener('click', () => {
+      const q = b.dataset.q;
+      Settings.set('quality', q);
+      current?.game.setQualityMode(q);
+      syncSeg('set-quality', 'q', q);
+    });
+  }
+  // music on/off
+  for (const b of document.querySelectorAll('#set-music button')) {
+    b.addEventListener('click', () => {
+      const on = b.dataset.m === 'on';
+      Settings.set('music', on);
+      if (on) { if (current) Music.start(); } else Music.stop();
+      syncSeg('set-music', 'm', b.dataset.m);
+    });
+  }
+  // volumes
+  const mvol = $('set-mvol'), mvolVal = $('set-mvol-val');
+  mvol?.addEventListener('input', () => {
+    const v = parseFloat(mvol.value);
+    mvolVal.textContent = Math.round(v * 100) + '%';
+    Settings.set('musicVol', v); Music.setVolume(v);
+  });
+  const svol = $('set-svol'), svolVal = $('set-svol-val');
+  svol?.addEventListener('input', () => {
+    const v = parseFloat(svol.value);
+    svolVal.textContent = Math.round(v * 100) + '%';
+    Settings.set('sfxVol', v); Sound.setVolume(v);
+    Sound.select();   // audible preview
+  });
+
+  // help / hotkey reference
+  const help = $('help');
+  const toggleHelp = () => help?.classList.toggle('show');
+  $('btn-help')?.addEventListener('click', toggleHelp);
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === '?') toggleHelp();
+    if (e.key === 'Escape') {
+      if (settings.style.display === 'flex') closeSettings();
+      else help?.classList.remove('show');
+    }
+  });
+
+  // "best on desktop" notice on touch / coarse-pointer devices
+  const touch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+  if (touch && !Settings.get('touchNoteDismissed')) {
+    const note = $('touchnote');
+    note?.classList.add('show');
+    $('touchnote-x')?.addEventListener('click', () => {
+      note.classList.remove('show'); Settings.set('touchNoteDismissed', true);
+    });
+    setTimeout(() => note?.classList.remove('show'), 12000);
+  }
+}
+
+function syncSeg(groupId, attr, value) {
+  for (const b of document.querySelectorAll(`#${groupId} button`))
+    b.classList.toggle('on', b.dataset[attr] === value);
+}
+function syncSettingsUI() {
+  const $ = id => document.getElementById(id);
+  const b = Settings.get('brightness');
+  $('set-bright').value = b; $('set-bright-val').textContent = Math.round(b * 100) + '%';
+  const mv = Settings.get('musicVol');
+  $('set-mvol').value = mv; $('set-mvol-val').textContent = Math.round(mv * 100) + '%';
+  const sv = Settings.get('sfxVol');
+  $('set-svol').value = sv; $('set-svol-val').textContent = Math.round(sv * 100) + '%';
+  syncSeg('set-quality', 'q', Settings.get('quality'));
+  syncSeg('set-music', 'm', Settings.get('music') ? 'on' : 'off');
+}
+
+bindShell();
 buildMenu();

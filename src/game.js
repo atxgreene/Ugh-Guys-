@@ -13,6 +13,7 @@ import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowM
 import { waterNormalMap } from './textures.js';
 import { ParticlePool } from './fx.js';
 import { Sound } from './audio.js';
+import { Settings } from './settings.js';
 
 let nextId = 1;
 
@@ -688,13 +689,21 @@ export class Game {
     this.metClans = {};   // first-contact dialogue fired per clan
     // a saved game pins the exact map (seed/biome/mood) so it reloads identically
     const load = opts.load || null;
-    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay }; }
+    this.loadedGame = !!load;   // AI skips the opening-stockpile handicap on a restored game
+    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay, difficulty: load.difficulty }; }
+    // AI difficulty: explicit option wins, else the saved value, else the player's setting
+    this.difficulty = opts.difficulty || Settings.get('difficulty') || 'normal';
     // choose the land first, then a sky mood that suits it
     const bkeys = Object.keys(BIOMES);
     this.biomeKey = opts.biome && BIOMES[opts.biome] ? opts.biome : bkeys[Math.floor(Math.random() * bkeys.length)];
     const moods = opts.timeOfDay ? [opts.timeOfDay] : BIOMES[this.biomeKey].moods;
     this.timeOfDay = moods[Math.floor(Math.random() * moods.length)];
     this.preset = TIME_PRESETS[this.timeOfDay];
+    // player-tunable exposure (settings panel); _exposureFade is the defeat dim.
+    this.brightness = Settings.get('brightness') ?? 1;
+    this._exposureFade = 1;
+    // quality: 'auto' lets the main loop drop visuals under load; 'high'/'low' pin it.
+    this.qualityMode = Settings.get('quality') || 'auto';
     this.units = []; this.buildings = []; this.resources = [];
     this.projectiles = []; this.effects = [];
     this.selection = [];
@@ -737,7 +746,7 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = this.preset.exposure;
+    this.applyExposure();
     this.container.appendChild(this.renderer.domElement);
 
     const P = this.preset;
@@ -1096,6 +1105,7 @@ export class Game {
     for (let i = 0; i < this.map.fog.length; i++) fogStr += String.fromCharCode(this.map.fog[i]);
     return {
       v: 1, t: this.time, timeOfDay: this.timeOfDay, biomeKey: this.biomeKey, seed: this.map.seed,
+      difficulty: this.difficulty,
       pf: this.pfKey, ef: this.efKey,
       players: [0, 1].map(o => { const p = this.players[o]; return {
         res: { ...p.resources }, up: [...p.upgrades], dmgMult: p.dmgMult, armorAdd: p.armorAdd, hpMult: p.hpMult }; }),
@@ -1598,7 +1608,8 @@ export class Game {
       const f = this.defeatFade;
       if (this.scene.fog) this.scene.fog.density = this.preset.fogD + f * 0.01;
       this.scene.background.lerpColors(new THREE.Color(this.preset.bg), new THREE.Color(0x05060a), f);
-      this.renderer.toneMappingExposure = this.preset.exposure * (1 - f * 0.4);
+      this._exposureFade = 1 - f * 0.4;
+      this.applyExposure();
     }
 
     for (const u of this.units) u.update(dt);
@@ -1701,7 +1712,24 @@ export class Game {
     else this.composer.render();
   }
 
-  // Called by the main loop when sustained frame times are poor.
+  // Final exposure = mood preset × player brightness × defeat-fade.
+  applyExposure() {
+    this.renderer.toneMappingExposure = this.preset.exposure * this.brightness * this._exposureFade;
+  }
+  setBrightness(v) {
+    this.brightness = Math.max(0.4, Math.min(2, v));
+    this.applyExposure();
+  }
+  // 'auto' (loop may drop), 'high' (pin full), 'low' (pin reduced).
+  get autoQuality() { return this.qualityMode === 'auto'; }
+  setQualityMode(mode) {
+    this.qualityMode = mode;
+    if (mode === 'low') this.setLowQuality();
+    else if (mode === 'high') this.setHighQuality();
+    // 'auto': leave current state; the loop decides from here.
+  }
+
+  // Called by the main loop when sustained frame times are poor, or pinned 'low'.
   setLowQuality() {
     if (this.lowQuality) return;
     this.lowQuality = true;
@@ -1710,6 +1738,15 @@ export class Game {
     this.sun.castShadow = false;
     this.scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
     this.emit('toast', 'Reduced visual quality for smoother play');
+  }
+  // Restore the full pipeline (shadows, bloom/grade composer, device pixel ratio).
+  setHighQuality() {
+    if (!this.lowQuality) return;
+    this.lowQuality = false;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.sun.castShadow = true;
+    this.scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
   }
 
   dispose() {

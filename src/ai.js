@@ -14,6 +14,15 @@ const ARMY_MIX = {
   nephilim: ['raider', 'raider', 'champion', 'warbeast', 'shaman', 'giant'],
 };
 
+// Difficulty tuning: economy size, attack-wave sizes/cadence, a passive resource
+// trickle (a stronger economy stand-in), and a handicap on the AI's opening
+// stockpile. 'normal' preserves the original numbers exactly.
+const DIFFICULTY = {
+  easy:   { worker: 9,  lateWorker: 11, waves: [3, 5, 7, 9, 12, 15],      firstWave: 220, cadence: 150, trickle: 0,   handicap: 0.8 },
+  normal: { worker: 11, lateWorker: 14, waves: [5, 8, 12, 16, 20, 24],    firstWave: 170, cadence: 110, trickle: 0,   handicap: 1.0 },
+  hard:   { worker: 14, lateWorker: 17, waves: [7, 11, 16, 22, 28, 34],   firstWave: 130, cadence: 85,  trickle: 1.6, handicap: 1.2 },
+};
+
 export class AI {
   constructor(game) {
     this.game = game;
@@ -22,12 +31,20 @@ export class AI {
     this.buildIndex = 0;
     this.thinkT = 0;
     this.wave = 0;
-    this.waveSizes = [5, 8, 12, 16, 20, 24];
-    this.nextWaveTime = 170;        // first push just under 3 min
+    const d = DIFFICULTY[game.difficulty] || DIFFICULTY.normal;
+    this.diff = d;
+    this.waveSizes = d.waves;
+    this.nextWaveTime = d.firstWave;   // first push timing scales with difficulty
     this.scouted = false;
     this.defendUntil = 0;
     this.defendPoint = null;
-    this.workerTarget = 11;
+    this.workerTarget = d.worker;
+    // resource handicap: scale the AI's opening stockpile up (hard) or down (easy).
+    // Skip on a restored save — those resources are already the post-handicap values.
+    if (d.handicap !== 1 && !game.loadedGame) {
+      const r = game.players[1].resources;
+      for (const k of ['grain', 'timber', 'bronze']) r[k] = Math.round((r[k] || 0) * d.handicap);
+    }
     game.on('damaged', (e, attacker) => {
       if (e.owner === 1 && attacker && attacker.owner === 0) {
         this.defendUntil = game.time + 18;
@@ -43,6 +60,12 @@ export class AI {
   myBuildings() { return this.game.buildings.filter(b => b.owner === 1 && !b.dead); }
 
   update(dt) {
+    // passive economy trickle (hard only) — applied every frame for smoothness
+    if (this.diff.trickle && !this.game.over) {
+      const r = this.game.players[1].resources;
+      const add = this.diff.trickle * dt;
+      r.grain = (r.grain || 0) + add; r.timber = (r.timber || 0) + add * 0.7; r.bronze = (r.bronze || 0) + add * 0.5;
+    }
     this.thinkT -= dt;
     if (this.thinkT > 0) return;
     this.thinkT = 0.8;
@@ -93,8 +116,8 @@ export class AI {
       }
       if (best) w.orderGather(best);
     }
-    // late game: grow worker count a bit
-    if (this.game.time > 300) this.workerTarget = 14;
+    // late game: grow worker count a bit (scaled by difficulty)
+    if (this.game.time > 300) this.workerTarget = this.diff.lateWorker;
   }
 
   manageBuildOrder(main) {
@@ -206,7 +229,7 @@ export class AI {
     const want = this.waveSizes[Math.min(this.wave, this.waveSizes.length - 1)];
     if (g.time >= this.nextWaveTime && army.length >= want) {
       this.wave++;
-      this.nextWaveTime = g.time + 110;
+      this.nextWaveTime = g.time + this.diff.cadence;
       // target: a known player building (prefer main), else map base site
       const target = g.playerMain && !g.playerMain.dead
         ? g.playerMain.pos
