@@ -32,12 +32,13 @@ accent** + **secondary glow** that the models apply to cloth, banners, armor, an
 - Warm key sun + **cool rim/back light** tracking the view for hero-pop; soft 3072² shadows.
 - **Image-based lighting** from a procedural sky env-map (bronze & star-metal reflect).
 - Cinematic grade pass: vignette, contrast, saturation. Bloom on all sacred fire/sigils.
-- **[planned]** god-rays at sacred sites; localized red storm-glow over corrupted zones; per-foundry point-light pools (currently emissive+bloom stand-ins).
+- **god-ray light shafts** lean along the key light across the map (mood-scaled, shimmering, flaring on lightning). **[planned]** localized red storm-glow over corrupted zones; per-foundry point-light pools (currently emissive+bloom stand-ins).
 
 ## 4. Sky & Flood foreshadowing  **[done]**
 Gradient sky dome, drifting **storm cloud wall**, **distant lightning** flashes (storm
 preset), far **rain curtain**, **lunar halo** (night/dawn), starfield, doomed red horizon
-star. **[planned]** moving cloud shadows, aurora for Watcher-dominant maps.
+star, plus **drifting cloud shadows** scrolling across the ground (mood-scaled).
+**[planned]** aurora for Watcher-dominant maps.
 
 ## 5. VFX system  **[done]**
 Pooled GPU particles (`fx.js`, one draw call each): **marching/footstep dust**,
@@ -186,8 +187,11 @@ repeated units, LODs, building mesh merging.
 8. ✅ Building construction scaffolds + damage/fire stages
 9. ✅ Prop dressing (sacks, carts, banners, braziers, amphorae, bones) — biome clutter +
    building-adjacent dressing, with god-ray shafts on braziers
-10. ⏳ Carved rivers/roads/cliffs (balance-careful)
-11. ⏳ Instancing/LOD pass for scale
+10. ✅ Carved rivers + fords + ancient roads (river slows, fords/roads
+    tune movement; channels carved into the heightfield with a water mesh)
+11. ✅ Instancing/LOD pass for scale — static doodad clutter merged into
+    per-material batches (hundreds of draw calls → a handful), shader-baked
+    fog, shadow-pass skipped for clutter
 
 ### Reach & accessibility pass (shipped version)
 Beyond the art roadmap, the shipped build added the upgrades that widen who can
