@@ -1088,11 +1088,112 @@ export class Game {
     }));
     this.scene.add(this.embers);
 
+    this.buildGodRays();
+    this.buildCloudShadows();
+
     // particle pools: marching/footstep dust, building & damage smoke, foundry sparks
     this.fxDust = new ParticlePool(this.scene, { capacity: 360, color: 0xb9a98a, gravity: -1.2 });
     this.fxSmoke = new ParticlePool(this.scene, { capacity: 300, color: 0x6a6358, gravity: 0.6 });
     this.fxSpark = new ParticlePool(this.scene, { capacity: 180, color: 0xffb24a, gravity: -7, blending: THREE.AdditiveBlending });
     this.shake = 0;
+  }
+
+  // Volumetric sun shafts: a handful of soft additive slabs leaning along the
+  // key-light direction, so light appears to stream down across the battlefield.
+  // Strong in daylight moods, near-absent at night / under storm cloud.
+  buildGodRays() {
+    const P = this.preset;
+    const rayI = P.night ? 0.05 : P.lightning ? 0.05 : this.timeOfDay === 'noon' ? 0.10 : 0.15;
+    const tex = this._shaftTexture();
+    const warm = new THREE.Color(P.sun).lerp(new THREE.Color(0xfff0d0), 0.4);
+    // align the slab's local up-axis with the direction back toward the sun
+    const up = new THREE.Vector3(40, 70, 25).normalize();
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
+    const grp = new THREE.Group();
+    this.godRayShafts = [];
+    const N = 7;
+    for (let i = 0; i < N; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex, color: warm, transparent: true, opacity: rayI,
+        blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
+      });
+      const w = 14 + Math.random() * 10, len = 95 + Math.random() * 30;
+      const shaft = new THREE.Mesh(new THREE.PlaneGeometry(w, len), mat);
+      shaft.quaternion.copy(quat);
+      shaft.rotateY(Math.random() * Math.PI); // spin around the shaft so some always face the camera
+      const ang = (i / N) * Math.PI * 2;
+      shaft.position.set(WORLD / 2 + Math.cos(ang) * (28 + Math.random() * 60), 34,
+                         WORLD / 2 + Math.sin(ang) * (28 + Math.random() * 60));
+      shaft.renderOrder = 2;
+      shaft.userData = { base: rayI, phase: Math.random() * Math.PI * 2, rate: 0.5 + Math.random() * 0.7, yaw: Math.random() * Math.PI };
+      grp.add(shaft);
+      this.godRayShafts.push(shaft);
+    }
+    this.scene.add(grp);
+    this.godRays = grp;
+  }
+
+  // Slow soft-noise plane just above the ground that scrolls dark blotches over
+  // the terrain — clouds passing overhead. Subtle, and skipped in dark moods.
+  buildCloudShadows() {
+    const P = this.preset;
+    const strength = P.night ? 0.0 : P.lightning ? 0.34 : 0.2;
+    if (strength <= 0) return;
+    const tex = this._cloudTexture();
+    tex.wrapS = tex.wrapT = THREE.MirroredRepeatWrapping;
+    tex.repeat.set(2.4, 2.4);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, opacity: strength, color: 0x0a0c12,
+      depthWrite: false, fog: false,
+    });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(WORLD * 1.4, WORLD * 1.4), mat);
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.set(WORLD / 2, 6.5, WORLD / 2);
+    plane.renderOrder = 1;
+    this.scene.add(plane);
+    this.cloudShadow = plane;
+  }
+
+  // Soft vertical gradient with feathered horizontal falloff for a light shaft.
+  _shaftTexture() {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 256;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0.0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.4, 'rgba(255,255,255,0.85)');
+    g.addColorStop(0.7, 'rgba(255,255,255,0.55)');
+    g.addColorStop(1.0, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 256);
+    // feather the left/right edges so the slab has no hard vertical seams
+    const h = ctx.createLinearGradient(0, 0, 64, 0);
+    h.addColorStop(0, 'rgba(0,0,0,1)'); h.addColorStop(0.5, 'rgba(0,0,0,0)'); h.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = h; ctx.fillRect(0, 0, 64, 256);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  // Tileable field of soft dark blobs — the silhouette of drifting clouds.
+  _cloudTexture() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, 256, 256);
+    let seed = (this.map.seed ^ 0x5bd1e995) >>> 0;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let i = 0; i < 26; i++) {
+      const x = rnd() * 256, y = rnd() * 256, r = 26 + rnd() * 60;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      const a = 0.35 + rnd() * 0.4;
+      g.addColorStop(0, `rgba(255,255,255,${a})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
   }
 
   addShake(amount) { this.shake = Math.min(1.2, this.shake + amount); }
@@ -1914,9 +2015,8 @@ export class Game {
     for (const r of this.resources) {
       r.mesh.visible = this.map.fogStateAt(r.pos.x, r.pos.z) >= 1;
     }
-    for (const d of this.map.doodads || []) {
-      d.visible = this.map.fogStateAt(d.position.x, d.position.z) >= 1;
-    }
+    // doodads are merged static batches whose fog is sampled per-fragment in the
+    // shader (see GameMap._applyDoodadFog), so no per-mesh visibility toggle here.
   }
 
   // ---------- main update ----------
@@ -2017,6 +2117,20 @@ export class Game {
 
   updateSky(dt) {
     if (this.stormBand) this.stormBand.rotation.y += dt * 0.012;
+    // drifting cloud shadows scroll slowly across the ground
+    if (this.cloudShadow) {
+      const off = this.cloudShadow.material.map.offset;
+      off.x += dt * 0.0065; off.y += dt * 0.0028;
+    }
+    // god-ray shafts shimmer gently (and lightning briefly flares them)
+    if (this.godRayShafts) {
+      const flare = 1 + (this._flash || 0) * 1.4;
+      for (const s of this.godRayShafts) {
+        const u = s.userData;
+        u.phase += dt * u.rate;
+        s.material.opacity = u.base * (0.7 + 0.3 * Math.sin(u.phase)) * flare;
+      }
+    }
     if (this.skyMat) {
       // distant lightning during storms: brief stacked flashes
       let f = 0;

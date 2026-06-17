@@ -1,6 +1,7 @@
 // Map generation, terrain mesh, walkability and fog of war.
 // World is GRID x GRID tiles of TILE world units, origin at (0,0).
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildDoodad } from './models.js';
 import { terrainMaps } from './textures.js';
 
@@ -344,6 +345,30 @@ export class GameMap {
       return weights[0][0];
     };
     const BLOCKS = new Set(['monolith', 'ruin', 'fallen_obelisk', 'giant_weapon']);
+    // Instead of adding ~170 multi-mesh doodad groups (hundreds of draw calls),
+    // collect every sub-mesh's world-baked geometry into buckets keyed by shared
+    // material, then merge each bucket into a single static mesh. Fog of war is
+    // sampled in-shader (per-fragment discard for unexplored tiles), so we no
+    // longer toggle per-doodad visibility every frame.
+    const buckets = new Map();   // material -> { mat, geoms: [] }
+    const collect = (obj) => {
+      obj.updateMatrixWorld(true);
+      obj.traverse(m => {
+        if (!m.isMesh) return;
+        let g = m.geometry.clone().applyMatrix4(m.matrixWorld);
+        g = g.index ? g.toNonIndexed() : g;
+        // keep a uniform attribute set so merge never fails on mismatched buffers
+        for (const name of Object.keys(g.attributes))
+          if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+        if (!g.attributes.uv) {
+          const n = g.attributes.position.count;
+          g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+        }
+        let b = buckets.get(m.material);
+        if (!b) buckets.set(m.material, (b = { mat: m.material, geoms: [] }));
+        b.geoms.push(g);
+      });
+    };
     const place = (count, minSite, yOffset) => {
       let made = 0;
       for (let attempt = 0; attempt < count * 3 && made < count; attempt++) {
@@ -355,14 +380,45 @@ export class GameMap {
         const wx = x * TILE, wz = y * TILE;
         d.position.set(wx, this.heightAt(wx, wz) + yOffset, wz);
         d.rotation.y = rng() * Math.PI * 2;
-        scene.add(d);
-        this.doodads.push(d);
+        collect(d);
         made++;
         if (BLOCKS.has(type)) { const t = this.tileOf(wx, wz); this.blocked[this.idx(t.x, t.y)] = 1; }
       }
     };
     place(150, 13, 0);     // dense ground cover keeps clear of bases
     place(20, 11, -0.05);  // a few extra landmarks closer in
+
+    for (const { mat, geoms } of buckets.values()) {
+      let merged;
+      try { merged = mergeGeometries(geoms, false); } catch (e) { merged = null; }
+      if (!merged) continue;
+      const fm = mat.clone();
+      this._applyDoodadFog(fm);
+      const mesh = new THREE.Mesh(merged, fm);
+      mesh.castShadow = false;     // static clutter skips the shadow pass (LOD budget)
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;  // one mesh spans the whole map; never cull wholesale
+      scene.add(mesh);
+      this.doodads.push(mesh);
+    }
+  }
+
+  // Bake fog-of-war straight into a doodad batch material: unexplored fragments
+  // are discarded (truly hidden), explored-but-unseen are dimmed, mirroring the
+  // terrain's fog multiply so merged clutter still respects vision.
+  _applyDoodadFog(material) {
+    const fogTex = this.fogTexture;
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.fogMap = { value: fogTex };
+      shader.uniforms.worldSizeV = { value: WORLD };
+      shader.vertexShader = ('uniform float worldSizeV;\n' + shader.vertexShader)
+        .replace('#include <common>', '#include <common>\nvarying vec2 vFogUv;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFogUv = vec2(position.x, position.z) / worldSizeV;');
+      shader.fragmentShader = 'uniform sampler2D fogMap;\nvarying vec2 vFogUv;\n' + shader.fragmentShader
+        .replace('#include <dithering_fragment>',
+          'float fogD = texture2D(fogMap, vFogUv).r;\nif (fogD < 0.2) discard;\ngl_FragColor.rgb *= (0.4 + 0.6 * fogD);\n#include <dithering_fragment>');
+    };
+    material.needsUpdate = true;
   }
 
   // Resource node placement plan: [{type, tx, ty}]
