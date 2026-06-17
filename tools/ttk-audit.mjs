@@ -52,5 +52,45 @@ for (const [ak, dk, label] of checks) {
   if (!ok) failed++;
   console.log(`${ok ? 'OK ' : 'XX '} ${label}: TTK ${ta.toFixed(1)}s vs ${td.toFixed(1)}s`);
 }
+// ---- cost efficiency: combat value produced per resource invested ----
+// rough resource value weights; supply is precious (cap is 80)
+const COSTW = { grain: 1, timber: 1.1, bronze: 1.4, favor: 2.2, knowledge: 2.6 };
+const costOf = (u) => Object.entries(u.cost || {}).reduce((s, [k, v]) => s + v * (COSTW[k] || 1), 0) + (u.supply || 1) * 14;
+// effective bulk vs an unarmored average target, and sustained dps
+const avgDps = (u) => {
+  let s = 0; for (const d of units) s += dmgPerHit(u, d) / u.attack.cooldown;
+  return s / units.length;
+};
+console.log('\n=== cost efficiency (effective HP x DPS per 100 cost; range-blind) ===');
+const eff = units.map(u => {
+  const c = costOf(u);
+  const score = (u.hp * avgDps(u)) / c;     // durability x output per cost
+  return { name: `${u.fac}/${u.key}`, cost: Math.round(c), dps: +avgDps(u).toFixed(1), score: +score.toFixed(2) };
+}).sort((a, b) => b.score - a.score);
+for (const e of eff) console.log(`${e.name.padEnd(22)} score ${String(e.score).padStart(6)}  | cost ${e.cost} avgDPS ${e.dps}`);
+
+// ---- ranged-aware duel: shooters land free hits while melee closes the gap ----
+// crude model: melee closer covers (attackerRange→0) at its speed; the longer-ranged
+// unit gets that window of free DPS first. Same-range falls back to the TTK duel.
+const CLOSE = 'melee approximation + a free-fire window for the longer-ranged unit';
+function rangedDuel(a, d) {
+  const gap = Math.abs(a.attack.range - d.attack.range);
+  const longer = a.attack.range >= d.attack.range ? a : d, shorter = longer === a ? d : a;
+  const closeSpeed = Math.max(3, shorter.speed);
+  const freeWindow = gap / closeSpeed;                       // seconds of unanswered fire
+  const freeDmg = (dmgPerHit(longer, shorter) / longer.attack.cooldown) * freeWindow;
+  const shorterHp = Math.max(1, shorter.hp - freeDmg);
+  const tLong = shorter.hp / (dmgPerHit(longer, shorter) / longer.attack.cooldown);
+  const tShort = shorterHp / (dmgPerHit(shorter, longer) / shorter.attack.cooldown);
+  return longer === a ? { ta: tLong, td: tShort } : { ta: tShort, td: tLong };
+}
+console.log(`\n=== ranged-aware win counts (${CLOSE}) ===`);
+const rrows = units.map(a => {
+  let w = 0, l = 0;
+  for (const d of units) { if (a === d) continue; const { ta, td } = rangedDuel(a, d); if (ta < td * 0.95) w++; else if (td < ta * 0.95) l++; }
+  return { name: `${a.fac}/${a.key}`, w, l, rng: a.attack.range };
+}).sort((x, y) => y.w - x.w);
+for (const r of rrows) console.log(`${r.name.padEnd(22)} W${String(r.w).padStart(2)} L${String(r.l).padStart(2)}  | rng ${r.rng}`);
+
 console.log(failed ? `\n${failed} counter check(s) FAILED` : '\nall counter checks passed');
 process.exit(failed ? 1 : 0);
