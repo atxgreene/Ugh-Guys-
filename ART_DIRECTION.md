@@ -87,6 +87,22 @@ Plus smooth turning, run-lean/bob, idle breathing, attack wind-up, harvest swing
 rings, death topple + debris; giants get larger dust + screen shake.
 **[planned]** hero/commander units with unique silhouettes; per-limb attack animation.
 
+## 8b. Combat foundation  **[done]**
+The core fight is built to feel decisive and read clearly:
+- **Tactical targeting** (`acquireTarget`, shared by player units AND the AI): scores
+  candidates by counter-prey (tag bonus), focus-fires the wounded, favours real threats
+  over workers, and treats buildings as the fallback — distance is only the baseline. Units
+  now hunt what they counter instead of swinging at the nearest body, which makes the
+  rock-paper-scissors kit actually matter and lifts enemy micro for free.
+- **Weighted blows**: melee damage is deferred to the lunge's strike apex (contact, not
+  wind-up); every hit throws a spark burst + dust puff scaled to the damage (bigger on
+  super-effective hits), the victim gets a scale-pop + recoil nudge, and heavy blows kick
+  the camera. Ranged hits land the same impact at the target.
+- **Counter coverage**: each faction has an answer to each threat class. Filled the two
+  glaring holes — Star-Metal Warrior braces vs **mounted** (×1.6), Bone-Club Champion
+  crushes **heavy** (×1.4) — so no faction is left without a counter to a whole class.
+**[planned]** ability/active-skill pass, formations on attack-move, per-faction combat audio.
+
 ## 9. Movement & barrier interaction  **[done]**
 LoL-smooth: collision **wall-sliding**, radius/clearance-aware pathfinding with tight-route
 fallback, **stuck-detection by net progress** (re-route → perpendicular slip → graceful

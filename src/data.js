@@ -135,7 +135,7 @@ export const FACTIONS = {
       }),
       starmetal: U({
         name: 'Star-Metal Warrior', cost: { grain: 70, bronze: 50, favor: 10 }, hp: 170, buildTime: 14,
-        attack: { dmg: 15, range: 1.7, cooldown: 1.1 },
+        attack: { dmg: 15, range: 1.7, cooldown: 1.1, bonus: { mounted: 1.6 } },
         armor: 3, speed: 6.8, supply: 2, model: 'starmetal', tags: ['heavy', 'corrupt'],
         desc: 'Clad in iron that fell burning from the sky.',
         trainedAt: 'obsidian_gate',
@@ -225,7 +225,7 @@ export const FACTIONS = {
       }),
       champion: U({
         name: 'Bone Club Champion', cost: { grain: 90, bronze: 60 }, hp: 260, buildTime: 16,
-        attack: { dmg: 22, range: 1.8, cooldown: 1.3 },
+        attack: { dmg: 22, range: 1.8, cooldown: 1.3, bonus: { heavy: 1.4 } },
         armor: 2, speed: 6.8, supply: 3, model: 'champion', tags: ['heavy'], radius: 0.75,
         desc: 'Carries the thighbone of his grandsire. It has opinions about your shield wall.',
         trainedAt: 'war_lodge',

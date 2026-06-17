@@ -83,6 +83,12 @@ export class Entity {
     if (this.dead) return;
     this.hp -= dmg;
     this.lastHurt = this.game.time;
+    this.hitFlash = 0.14;                    // drives a brief scale-pop + recoil (units)
+    if (attacker) {
+      const dx = this.pos.x - attacker.pos.x, dz = this.pos.z - attacker.pos.z;
+      const l = Math.hypot(dx, dz) || 1;
+      this.hitDir = { x: dx / l, z: dz / l };
+    }
     this.game.onDamaged(this, attacker);
     if (this.hp <= 0) this.die(attacker);
   }
@@ -228,15 +234,31 @@ export class Unit extends Entity {
     return Math.hypot(x - this.pos.x, z - this.pos.z) <= near;
   }
 
+  // Pick a target by tactical value, not just proximity: strongly prefer prey we
+  // counter (tag bonus), finish wounded targets (focus fire), favour real threats
+  // over workers, and treat buildings as a last resort. Distance is the baseline
+  // so units still fight what's in front of them. Shared by player units AND the
+  // AI, so smarter acquisition lifts enemy micro for free.
   acquireTarget(range) {
-    let best = null, bd = range;
+    const atk = this.def.attack;
+    let best = null, bestScore = -Infinity;
     for (const e of this.game.allCombatants()) {
       if (e.dead || e.owner === this.owner) continue;
       if (this.owner !== 2 && e.owner === 2 && this.state !== 'attackMove') continue; // don't auto-aggro neutrals
       if (this.owner === 2 && e.owner === 2) continue;
       if (e.isBuilding && !e.complete) continue;
       const d = this.distTo(e) - e.radius;
-      if (d < bd) { bd = d; best = e; }
+      if (d > range) continue;
+      let score = -d * 1.2;                              // closer is better (baseline)
+      if (atk?.bonus) {                                  // we counter this unit → hunt it
+        const mult = (e.def.tags || []).reduce((m, t) => m * (atk.bonus[t] || 1), 1);
+        if (mult > 1) score += (mult - 1) * 6;
+      }
+      score += (1 - e.hp / e.maxHp) * 5;                 // focus fire: finish the wounded
+      if (e.isUnit && !e.def.worker && e.def.attack) score += 3;   // real threat
+      else if (e.def.worker) score += 1.5;               // workers: juicy, low threat
+      if (e.isBuilding) score -= 5;                       // sieging is the fallback
+      if (score > bestScore) { bestScore = score; best = e; }
     }
     return best;
   }
@@ -260,6 +282,18 @@ export class Unit extends Entity {
     this.moving = false;
     this.harvesting = false;
     const atk = this.def.attack;
+
+    // deferred melee blow: lands when the lunge reaches the target (if still valid)
+    if (this.pendingStrike) {
+      this.pendingStrike.delay -= dt;
+      if (this.pendingStrike.delay <= 0) {
+        const ps = this.pendingStrike; this.pendingStrike = null;
+        const t = ps.target;
+        if (t && !t.dead && this.distTo(t) <= this.attackRange(t) + 0.4) {
+          this.game.performAttack(this, t, ps.atk);
+        }
+      }
+    }
 
     switch (this.state) {
       case 'idle': {
@@ -314,7 +348,10 @@ export class Unit extends Entity {
         if (this.cooldown <= 0) {
           this.cooldown = atk.cooldown;
           this.lungeDur = 0.3; this.lungeT = this.lungeDur;
-          this.game.performAttack(this, t, atk);
+          // ranged fires now (the projectile carries the timing); melee lands on
+          // contact — scheduled to the lunge's strike apex so the blow connects.
+          if (atk.projectile) this.game.performAttack(this, t, atk);
+          else this.pendingStrike = { target: t, atk, delay: 0.12 };
         }
         break;
       }
@@ -413,6 +450,19 @@ export class Unit extends Entity {
                          : Math.sin((0.65 - p) / 0.65 * Math.PI) * 0.55; // strike forward & return
       this.mesh.position.x += Math.sin(this.facing) * f;
       this.mesh.position.z += Math.cos(this.facing) * f;
+    }
+    // getting hit: a quick scale-pop + recoil nudge so blows register with weight
+    if (this.hitFlash > 0) {
+      this.hitFlash = Math.max(0, this.hitFlash - dt);
+      const k = this.hitFlash / 0.14;                 // 1 → 0
+      this.mesh.scale.setScalar(1 + 0.16 * k);
+      if (this.hitDir) {
+        const r = 0.18 * k;
+        this.mesh.position.x += this.hitDir.x * r;
+        this.mesh.position.z += this.hitDir.z * r;
+      }
+    } else if (this.mesh.scale.x !== 1) {
+      this.mesh.scale.setScalar(1);
     }
     // kicked-up dust while moving — heavier and shakier for the great ones
     if (this.moving) {
@@ -999,6 +1049,29 @@ export class Game {
       (Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.3, 0.55 * scale, 0.5, 2.4);
   }
 
+  // weight behind every blow: a spark burst (bigger on hard / super-effective
+  // hits) + a dust puff at the contact point, with a camera kick for heavy hits.
+  hitImpact(attacker, target, dmg, countered) {
+    if (this.map.fogStateAt(target.pos.x, target.pos.z) !== 2) return;
+    const gy = this.map.heightAt(target.pos.x, target.pos.z);
+    const dx = target.pos.x - attacker.pos.x, dz = target.pos.z - attacker.pos.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const cx = target.pos.x - dx / len * target.radius * 0.6;   // contact: just inside the target
+    const cz = target.pos.z - dz / len * target.radius * 0.6;
+    const y = gy + 1.0 + target.radius * 0.3;
+    const n = Math.min(12, 3 + (dmg / 5 | 0)) + (countered ? 4 : 0);
+    for (let i = 0; i < n; i++) {
+      this.fxSpark.spawn(cx, y, cz, (Math.random() - 0.5) * 4.5, 1 + Math.random() * 3.5,
+        (Math.random() - 0.5) * 4.5, 0.16 + Math.random() * 0.16, 0.16 + Math.random() * 0.12, 0.9, 0.6);
+    }
+    this.fxDust.spawn(cx, y - 0.4, cz, (Math.random() - 0.5) * 1.4, 0.4 + Math.random() * 0.5,
+      (Math.random() - 0.5) * 1.4, 0.45, 0.6, 0.5, 2.0);
+    if (dmg >= 22) {
+      const f = this.controls && this.controls.focus;
+      if (f && Math.hypot(target.pos.x - f.x, target.pos.z - f.z) < 24) this.addShake(0.07);
+    }
+  }
+
   updateEmbers(dt) {
     const a = this.embers.geometry.attributes.position;
     for (let i = 0; i < a.count; i++) {
@@ -1362,6 +1435,7 @@ export class Game {
     const armor = target.isUnit ? target.effArmor() : (target.def.armor || 0);
     const dmg = Math.max(1, Math.round(dmgBase * mult) - armor);
     target.takeDamage(dmg, attacker);
+    this.hitImpact(attacker, target, dmg, mult > 1.05);
   }
 
   spawnProjectile(attacker, target, atk, dmgBase) {
