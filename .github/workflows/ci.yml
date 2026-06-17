@@ -15,6 +15,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Balance audit (counter checks must hold)
+        run: npm run audit
 
   smoke:
     runs-on: ubuntu-latest

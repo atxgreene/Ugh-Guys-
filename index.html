@@ -40,6 +40,12 @@
       font-size: 13px; letter-spacing: 1px; }
     .menu-difficulty .seg button.on { background: linear-gradient(180deg, #4a3a24, #2a2014); color: #ffd56e;
       border-color: #e6c074; box-shadow: inset 0 1px 0 rgba(230,192,116,0.25), 0 0 10px rgba(230,192,116,0.18); }
+    .menu-setup { display: flex; gap: 28px; align-items: center; }
+    .menu-setup label { display: flex; align-items: center; gap: 10px; }
+    .menu-setup select { background: linear-gradient(180deg, #2c2519, #1a150d); color: #e6cf94;
+      border: 1px solid #6a4e26; padding: 7px 12px; font-family: inherit; font-size: 13px; border-radius: 4px;
+      cursor: pointer; letter-spacing: 0.5px; }
+    .menu-setup select:hover { border-color: #b88a3e; }
 
     /* ---------- HUD (ancient bronze + carved stone) ---------- */
     .hud { position: absolute; z-index: 10; }
@@ -55,6 +61,10 @@
     .res { padding: 2px 4px; }
     .res b { font-family: inherit; }
     #clock { margin-left: auto; color: #c9a86a; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    #btn-idle { background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6c074; border: 1px solid #7a5a2c;
+      padding: 3px 10px; cursor: pointer; font-family: inherit; border-radius: 3px; font-size: 13px;
+      box-shadow: inset 0 1px 0 rgba(230,192,116,0.2); }
+    #btn-idle:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); border-color: #e6c074; }
     #btn-menu { background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6c074;
       border: 1px solid #7a5a2c; padding: 5px 14px; cursor: pointer; font-family: inherit; border-radius: 3px;
       box-shadow: inset 0 1px 0 rgba(230,192,116,0.2); }
@@ -93,6 +103,8 @@
     .cmd:hover { border-color: #e6c074; background: linear-gradient(180deg, #3c3322, #241d12);
       box-shadow: inset 0 1px 0 rgba(230,192,116,0.25), 0 0 10px rgba(230,192,116,0.18); }
     .cmd.disabled { opacity: 0.32; cursor: not-allowed; }
+    .cmd.cmd-on { border-color: #e6c074; background: linear-gradient(180deg, #4a3a24, #2a2014);
+      box-shadow: inset 0 1px 0 rgba(230,192,116,0.3), 0 0 12px rgba(230,192,116,0.28); color: #ffd56e; }
     .cmd-icon { font-size: 19px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6)); }
     .cmd-label { font-size: 10.5px; text-align: center; line-height: 1.1; color: #cdbf9a; }
     .cmd-sub { font-size: 9.5px; color: #b89a5e; }
@@ -114,6 +126,9 @@
       align-items: center; justify-content: center; gap: 18px; background: rgba(5,5,8,0.82); }
     #gameover h1 { font-size: 64px; letter-spacing: 14px; font-weight: normal; text-shadow: 0 0 40px currentColor; }
     #gameover p { color: #9a93a5; font-style: italic; font-size: 16px; }
+    .go-stats { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; margin-top: 4px;
+      color: #b8aa88; font-size: 14px; letter-spacing: 0.5px; }
+    .go-stats b { color: #e6c074; font-variant-numeric: tabular-nums; }
     #btn-restart { background: #241f30; color: #d8c89a; border: 1px solid #4a4458; padding: 12px 36px;
       font-size: 17px; cursor: pointer; font-family: inherit; letter-spacing: 2px; border-radius: 3px; }
     #btn-restart:hover { background: #322b42; border-color: #d8c89a; }
@@ -261,6 +276,10 @@
           <button data-d="hard">Hard</button>
         </div>
       </div>
+      <div class="menu-setup">
+        <label><span class="md-label">Opponent</span><select id="sel-enemy"></select></label>
+        <label><span class="md-label">Land</span><select id="sel-biome"></select></label>
+      </div>
       <button id="btn-continue" style="display:none">Continue Campaign</button>
       <div class="hint">
         <b>WASD / arrows / screen edge</b> pan · <b>Q/E or middle-drag</b> rotate · <b>Wheel</b> zoom ·
@@ -272,6 +291,7 @@
 
     <div class="hud" id="topbar">
       <div id="resources"></div>
+      <button id="btn-idle" title="Select next idle worker (.)" style="display:none">⛏ <span id="idle-count">0</span></button>
       <div id="clock">0:00</div>
       <button id="btn-help" title="Controls &amp; hotkeys (?)">?</button>
       <button id="btn-settings" title="Settings">⚙</button>
@@ -299,8 +319,9 @@
       <div><b>Select</b> left-click / drag · <b>Add</b> <kbd>Shift</kbd></div>
       <div><b>Command</b> right-click (move · gather · attack)</div>
       <div><b>Attack-move</b> <kbd>F</kbd> · <b>Stop</b> <kbd>X</kbd> · <b>Build</b> <kbd>B</kbd></div>
+      <div><b>Stance</b> <kbd>Y</kbd> cycles aggressive / defensive / hold</div>
       <div><b>Groups</b> <kbd>Ctrl</kbd>+<kbd>1</kbd>–<kbd>9</kbd> set · <kbd>1</kbd>–<kbd>9</kbd> recall</div>
-      <div><b>Home</b> <kbd>H</kbd> · <b>Pause</b> <kbd>P</kbd> · <b>Help</b> <kbd>?</kbd></div>
+      <div><b>Home</b> <kbd>H</kbd> · <b>Idle worker</b> <kbd>.</kbd> · <b>Pause</b> <kbd>P</kbd> · <b>Help</b> <kbd>?</kbd></div>
       <div class="help-close">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</div>
     </div>
     <div class="hud" id="coach"></div>

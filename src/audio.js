@@ -54,6 +54,16 @@ const Music = {
     if (this._nodes) this._nodes.master.gain.setTargetAtTime(this.vol * 0.16, ac().currentTime, 0.5);
   },
 
+  // 0 = calm ambient, 1 = full battle. Swells the combat layer in (fast) and out
+  // (slower) so skirmishes lift the score without lurching.
+  setIntensity(x) {
+    if (!this.playing || !this._nodes) return;
+    x = Math.max(0, Math.min(1, x));
+    const rising = x > (this._intensity || 0);
+    this._intensity = x;
+    try { this._nodes.combat.gain.setTargetAtTime(x * this.vol * 0.18, ac().currentTime, rising ? 0.4 : 1.8); } catch {}
+  },
+
   start() {
     if (this.playing) return;
     let a; try { a = ac(); } catch { return; }
@@ -92,7 +102,27 @@ const Music = {
       lfo.connect(lg).connect(vg.gain); lfo.start();
       voices.push(o, lfo, sweep);
     }
-    this._nodes = { master, voices };
+
+    // combat layer: a tense minor-third drone + a low war-drum throb. `combat` is the
+    // intensity gain (driven by setIntensity), and EVERYTHING is downstream of it, so
+    // intensity 0 is truly silent. The throb is a positive-biased modulation on an
+    // inner gain, so the pulse can't phase-invert or leak through at rest.
+    const combat = a.createGain();
+    combat.gain.value = 0;
+    combat.connect(master);
+    for (const [freq, type] of [[87.3, 'sawtooth'], [110.0, 'square']]) {  // F2 minor third + A2
+      const o = a.createOscillator(); o.type = type; o.frequency.value = freq;
+      const g = a.createGain(); g.gain.value = 0.16;
+      o.connect(g).connect(combat); o.start(); voices.push(o);
+    }
+    const drum = a.createOscillator(); drum.type = 'sine'; drum.frequency.value = 55;
+    const throb = a.createGain(); throb.gain.value = 0.12;            // DC base so it stays >= 0
+    drum.connect(throb).connect(combat); drum.start(); voices.push(drum);
+    const pulse = a.createOscillator(); pulse.type = 'sine'; pulse.frequency.value = 2.0;  // ~120bpm
+    const pulseGain = a.createGain(); pulseGain.gain.value = 0.1;     // AC swing < base → throb in [0.02,0.22]
+    pulse.connect(pulseGain).connect(throb.gain); pulse.start(); voices.push(pulse);
+
+    this._nodes = { master, voices, combat };
 
     // a far-off bell that tolls now and then over the drone
     const tollBell = () => {
@@ -140,6 +170,22 @@ export const Sound = {
     if (now - lastHit < 90) return; // throttle
     lastHit = now;
     noiseBurst(0.08, 0.05, 1400);
+  },
+  // weighty melee thud — deeper + louder the harder the blow (power = base damage)
+  meleeHit(power = 12) {
+    const now = performance.now();
+    if (now - lastHit < 70) return;
+    lastHit = now;
+    const p = Math.min(2, power / 16);
+    noiseBurst(0.07 + p * 0.05, 0.05 + p * 0.04, 560 - p * 160);   // body of the impact
+    tone(150 - p * 40, 0.09 + p * 0.05, 'sawtooth', 0.05 + p * 0.04, -50); // low whump
+  },
+  // sharper, brighter strike for arrows / bolts / sigils landing
+  rangedHit() {
+    const now = performance.now();
+    if (now - lastHit < 70) return;
+    lastHit = now;
+    noiseBurst(0.06, 0.045, 2200);
   },
   death()      { noiseBurst(0.25, 0.07, 300); },
   buildingDie(){ noiseBurst(0.5, 0.12, 150); tone(90, 0.5, 'sawtooth', 0.08, -40); },

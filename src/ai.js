@@ -17,10 +17,13 @@ const ARMY_MIX = {
 // Difficulty tuning: economy size, attack-wave sizes/cadence, a passive resource
 // trickle (a stronger economy stand-in), and a handicap on the AI's opening
 // stockpile. 'normal' preserves the original numbers exactly.
+// retreatAt: keep pressing until the committed group falls below this fraction of
+// its launch size, then pull survivors home to regroup. harass: peel fast units
+// onto the player's workers on alternating waves.
 const DIFFICULTY = {
-  easy:   { worker: 9,  lateWorker: 11, waves: [3, 5, 7, 9, 12, 15],      firstWave: 220, cadence: 150, trickle: 0,   handicap: 0.8 },
-  normal: { worker: 11, lateWorker: 14, waves: [5, 8, 12, 16, 20, 24],    firstWave: 170, cadence: 110, trickle: 0,   handicap: 1.0 },
-  hard:   { worker: 14, lateWorker: 17, waves: [7, 11, 16, 22, 28, 34],   firstWave: 130, cadence: 85,  trickle: 1.6, handicap: 1.2 },
+  easy:   { worker: 9,  lateWorker: 11, waves: [3, 5, 7, 9, 12, 15],      firstWave: 220, cadence: 150, trickle: 0,   handicap: 0.8, retreatAt: 0.50, harass: false },
+  normal: { worker: 11, lateWorker: 14, waves: [5, 8, 12, 16, 20, 24],    firstWave: 170, cadence: 110, trickle: 0,   handicap: 1.0, retreatAt: 0.35, harass: true },
+  hard:   { worker: 14, lateWorker: 17, waves: [7, 11, 16, 22, 28, 34],   firstWave: 130, cadence: 85,  trickle: 1.6, handicap: 1.2, retreatAt: 0.22, harass: true },
 };
 
 export class AI {
@@ -39,6 +42,9 @@ export class AI {
     this.defendUntil = 0;
     this.defendPoint = null;
     this.workerTarget = d.worker;
+    this.phase = 'massing';     // 'massing' | 'attacking'
+    this.attackGroup = [];      // units committed to the current push
+    this.launchSize = 0;        // group size at launch (for the retreat threshold)
     // resource handicap: scale the AI's opening stockpile up (hard) or down (easy).
     // Skip on a restored save — those resources are already the post-handicap values.
     if (d.handicap !== 1 && !game.loadedGame) {
@@ -46,10 +52,13 @@ export class AI {
       for (const k of ['grain', 'timber', 'bronze']) r[k] = Math.round((r[k] || 0) * d.handicap);
     }
     game.on('damaged', (e, attacker) => {
-      if (e.owner === 1 && attacker && attacker.owner === 0) {
-        this.defendUntil = game.time + 18;
-        this.defendPoint = { x: attacker.pos.x, z: attacker.pos.z };
-      }
+      if (e.owner !== 1 || !attacker || attacker.owner !== 0) return;
+      // only treat it as a home threat if it's near our base — otherwise a single
+      // immortal harasser chipping a far outbuilding could lock us out of attacking
+      const m = this.main;
+      if (m && Math.hypot(e.pos.x - m.pos.x, e.pos.z - m.pos.z) > 34) return;
+      this.defendUntil = game.time + 14;
+      this.defendPoint = { x: attacker.pos.x, z: attacker.pos.z };
     });
   }
 
@@ -175,16 +184,41 @@ export class AI {
     return null;
   }
 
+  // Tally the tags of the player's standing army so we can train answers to it.
+  playerArmyTags() {
+    const tags = {};
+    for (const u of this.game.units) {
+      if (u.owner !== 0 || u.dead || u.def.worker) continue;
+      for (const t of u.def.tags || []) tags[t] = (tags[t] || 0) + 1;
+    }
+    return tags;
+  }
+  // How well a unit counters the player's army: sum of its bonus margins weighted
+  // by how many enemy units carry each countered tag.
+  counterScore(unitKey, enemyTags) {
+    const bonus = this.faction.units[unitKey]?.attack?.bonus;
+    if (!bonus) return 0;
+    let s = 0;
+    for (const tag in bonus) s += (bonus[tag] - 1) * (enemyTags[tag] || 0);
+    return s;
+  }
+
   manageTraining() {
     const g = this.game;
     const mix = ARMY_MIX[this.faction.key];
+    const enemyTags = this.playerArmyTags();
     for (const b of this.myBuildings()) {
       if (!b.complete || !b.def.trains.length || b.trainQueue.length >= 2) continue;
       const options = b.def.trains.filter(k =>
         !g.players[1].faction.units[k].worker && g.unitAvailable(1, k) && g.canAfford(1, g.players[1].faction.units[k].cost));
       if (!options.length) continue;
-      // weight by mix
-      const weighted = options.flatMap(k => Array(Math.max(1, mix.filter(m => m === k).length * 2)).fill(k));
+      // weight by base composition + a bias toward whatever counters the player's army
+      const weighted = [];
+      for (const k of options) {
+        let w = 1 + 2 * mix.filter(m => m === k).length;
+        w += this.counterScore(k, enemyTags) * 1.5;
+        for (let j = 0; j < Math.max(1, Math.round(w)); j++) weighted.push(k);
+      }
       g.queueTrain(b, weighted[Math.floor(Math.random() * weighted.length)]);
     }
     // research upgrades opportunistically
@@ -201,6 +235,8 @@ export class AI {
   manageDefense(main) {
     const g = this.game;
     if (g.time < this.defendUntil && this.defendPoint) {
+      // home is threatened — abort any push and bring everyone back to defend
+      if (this.phase === 'attacking') { this.phase = 'massing'; this.attackGroup = []; }
       for (const u of this.myArmy()) {
         if (u.state === 'idle' || (u.state === 'move' && !u.target)) {
           u.orderMove(this.defendPoint.x, this.defendPoint.z, true);
@@ -223,27 +259,86 @@ export class AI {
     }
   }
 
+  // freshest worthwhile target: player's main, else any known player building,
+  // else the player's base site on the map.
+  playerTarget() {
+    const g = this.game;
+    if (g.playerMain && !g.playerMain.dead) return g.playerMain.pos;
+    const b = g.buildings.find(x => x.owner === 0 && !x.dead);
+    if (b) return b.pos;
+    return { x: (g.map.basePlayer.x + 0.5) * TILE, z: (g.map.basePlayer.y + 0.5) * TILE };
+  }
+  // a forward staging point ~30% of the way from our base toward the player, so
+  // reserves mass up the field instead of dribbling out one unit at a time.
+  stagingPoint(main) {
+    const pb = this.game.map.basePlayer;
+    const px = (pb.x + 0.5) * TILE, pz = (pb.y + 0.5) * TILE;
+    return { x: main.pos.x + (px - main.pos.x) * 0.28, z: main.pos.z + (pz - main.pos.z) * 0.28 };
+  }
+  // peel the fastest free units onto the player's economy
+  harass() {
+    const g = this.game;
+    const workers = g.units.filter(u => u.owner === 0 && !u.dead && u.def.worker);
+    if (!workers.length) return;
+    const t = workers[Math.floor(Math.random() * workers.length)];
+    const fast = this.myArmy().filter(u => !this.attackGroup.includes(u) && !u._harassUntil && u.def.speed >= 9).slice(0, 4);
+    if (fast.length >= 2) {
+      for (const u of fast) u._harassUntil = g.time + 22;   // leave them on the raid, don't reclaim
+      g.formationMove(fast, t.pos.x, t.pos.z, true);
+    }
+  }
+
   manageAttacks(main) {
     const g = this.game;
+    if (g.time < this.defendUntil) return;      // defending home takes priority
     const army = this.myArmy();
     const want = this.waveSizes[Math.min(this.wave, this.waveSizes.length - 1)];
-    if (g.time >= this.nextWaveTime && army.length >= want) {
+
+    if (this.phase === 'attacking') {
+      this.attackGroup = this.attackGroup.filter(u => !u.dead);
+      // ground down past the retreat threshold → pull survivors back to regroup
+      // rather than feeding them in piecemeal
+      if (this.attackGroup.length < Math.max(2, this.launchSize * this.diff.retreatAt)) {
+        const home = this.stagingPoint(main);
+        for (const u of this.attackGroup) if (!u.dead) u.orderMove(home.x, home.z);
+        this.attackGroup = [];
+        this.phase = 'massing';
+        this.nextWaveTime = g.time + this.diff.cadence * 0.8;
+        return;
+      }
+      // keep the group pressing the freshest target
+      const t = this.playerTarget();
+      for (const u of this.attackGroup) {
+        if (!u.dead && (u.state === 'idle' || (u.state === 'move' && !u.target))) u.orderMove(t.x, t.z, true);
+      }
+      return;
+    }
+
+    // expire harass tags so those raiders rejoin the main force afterward
+    for (const u of army) if (u._harassUntil && g.time > u._harassUntil) u._harassUntil = 0;
+    const available = army.filter(u => !u._harassUntil);   // not currently on a raid
+
+    // massing → commit the wave as a single body when it's ready
+    if (g.time >= this.nextWaveTime && available.length >= want) {
       this.wave++;
       this.nextWaveTime = g.time + this.diff.cadence;
-      // target: a known player building (prefer main), else map base site
-      const target = g.playerMain && !g.playerMain.dead
-        ? g.playerMain.pos
-        : { x: (g.map.basePlayer.x + 0.5) * TILE, z: (g.map.basePlayer.y + 0.5) * TILE };
-      // raiders/fast units harass workers on odd waves
-      const attackers = army.slice(0, Math.max(want, Math.floor(army.length * 0.8)));
-      g.formationMove(attackers, target.x, target.z, true);
-    } else if (g.time >= this.nextWaveTime && army.length >= 4) {
-      // can't reach full wave yet; push timer a little
-      this.nextWaveTime = g.time + 30;
+      this.attackGroup = available.slice(0, Math.max(want, Math.floor(available.length * 0.85)));
+      this.launchSize = this.attackGroup.length;
+      this.phase = 'attacking';
+      const t = this.playerTarget();
+      g.formationMove(this.attackGroup, t.x, t.z, true);
+      if (this.diff.harass && this.wave % 2 === 1) this.harass();
+    } else if (g.time >= this.nextWaveTime && available.length >= 4) {
+      this.nextWaveTime = g.time + 25;          // not enough yet — check back soon
     }
-    // idle army units rally near base
+
+    // reserves gather at the forward staging point, ready for the next push
+    const stage = this.stagingPoint(main);
     for (const u of army) {
-      if (u.state === 'idle' && u.distTo(main) > 26) u.orderMove(main.pos.x + 8, main.pos.z + 8, true);
+      if (this.attackGroup.includes(u) || u._harassUntil) continue;
+      if (u.state === 'idle' && Math.hypot(u.pos.x - stage.x, u.pos.z - stage.z) > 10) {
+        u.orderMove(stage.x, stage.z, true);
+      }
     }
   }
 }

@@ -52,6 +52,8 @@ export class UI {
     const dlg = document.getElementById('dialogue');
     if (dlg) dlg.onclick = () => this.hideDialogue();
 
+    const idleBtn = document.getElementById('btn-idle');
+    if (idleBtn) idleBtn.onclick = () => this.selectIdleWorker();
     document.getElementById('btn-menu').onclick = () => onRestart();
     const bp = document.getElementById('btn-pause');
     if (bp) bp.onclick = () => this.onPause?.();
@@ -199,6 +201,29 @@ export class UI {
     this.elRes.innerHTML = html;
     const t = Math.floor(this.game.time);
     this.elClock.textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    // idle-worker badge — a classic RTS quality-of-life cue
+    const idle = this.idleWorkers();
+    const btn = document.getElementById('btn-idle');
+    if (btn) {
+      btn.style.display = idle.length ? 'inline-block' : 'none';
+      const c = document.getElementById('idle-count');
+      if (c) c.textContent = idle.length;
+    }
+  }
+
+  idleWorkers() {
+    return this.game.units.filter(u => u.owner === 0 && !u.dead && u.def.worker && u.state === 'idle');
+  }
+  // select the next idle worker and snap the camera to it (button + '.' hotkey)
+  selectIdleWorker() {
+    const idle = this.idleWorkers();
+    if (!idle.length) return;
+    this._idleI = ((this._idleI ?? -1) + 1) % idle.length;
+    const w = idle[this._idleI] || idle[0];
+    this.game.selection = [w];
+    this.game.emit('selection');
+    this.controls?.moveCameraTo?.(w.pos.x, w.pos.z);
+    Sound.select();
   }
 
   // ---------- selection / command panel ----------
@@ -243,6 +268,20 @@ export class UI {
     if (units.length) {
       cmds.push({ icon: '⚔', label: 'Attack-Move (F)', cls: 'cmd-act', fn: () => { this.controls.attackMoveArm = true; } });
       cmds.push({ icon: '✋', label: 'Stop (X)', cls: 'cmd-act', fn: () => units.forEach(u => u.stop()) });
+      // combat stance — shared value highlighted when the whole selection agrees
+      const fighters = units.filter(u => u.def.attack && !u.def.worker);
+      if (fighters.length) {
+        const allSame = (s) => fighters.every(u => u.stance === s);
+        const STANCES = [['aggressive', '⚔', 'Aggressive'], ['defensive', '🛡', 'Defensive'], ['hold', '⚓', 'Hold (Y)']];
+        for (const [s, icon, label] of STANCES) {
+          cmds.push({
+            icon, label, cls: 'cmd-act' + (allSame(s) ? ' cmd-on' : ''),
+            tip: `${label} stance — ${s === 'aggressive' ? 'hunt freely within sight'
+              : s === 'defensive' ? 'engage nearby but return to position' : 'stand ground; strike only what comes in range'}`,
+            fn: () => { fighters.forEach(u => u.setStance(s)); Sound.click(); this.refreshPanel(); },
+          });
+        }
+      }
     }
     if (workers.length && !this.buildMenuOpen) {
       cmds.push({ icon: '🏗', label: 'Build… (B)', cls: 'cmd-act', fn: () => { this.buildMenuOpen = true; this.refreshPanel(); } });
@@ -375,6 +414,15 @@ export class UI {
       div.querySelector('p').textContent = winner === 0
         ? 'The enemy\'s seat of power lies in ruin. The age endures — for now.'
         : 'Your hall has fallen. The waters will remember your name.';
+      // post-match chronicle
+      const s = this.game.stats, t = Math.floor(this.game.time);
+      const dur = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+      let chron = div.querySelector('.go-stats');
+      if (!chron) { chron = document.createElement('div'); chron.className = 'go-stats'; div.querySelector('p').after(chron); }
+      chron.innerHTML =
+        `<span>⏱ <b>${dur}</b></span><span>⚔ slain <b>${s.killed}</b></span>` +
+        `<span>☩ razed <b>${s.razed}</b></span><span>🕯 lost <b>${s.lost}</b></span>` +
+        `<span>⛏ raised <b>${s.trained}</b></span>`;
       document.getElementById('btn-restart').onclick = () => this.onRestart();
     }, 2200);
   }

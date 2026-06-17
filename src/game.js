@@ -9,7 +9,7 @@ import { GameMap, BIOMES, GRID, TILE, WORLD } from './terrain.js';
 import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
 import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP,
   FIELDS_OF_EVIL, NEUTRAL_UNIT_DEFS, NEUTRAL_BUILDING_DEFS } from './data.js';
-import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats, buildScaffold, buildFireCluster } from './models.js';
+import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats, buildScaffold, buildFireCluster, buildDoodad } from './models.js';
 import { waterNormalMap } from './textures.js';
 import { ParticlePool } from './fx.js';
 import { Sound } from './audio.js';
@@ -83,6 +83,12 @@ export class Entity {
     if (this.dead) return;
     this.hp -= dmg;
     this.lastHurt = this.game.time;
+    this.hitFlash = 0.14;                    // drives a brief scale-pop + recoil (units)
+    if (attacker) {
+      const dx = this.pos.x - attacker.pos.x, dz = this.pos.z - attacker.pos.z;
+      const l = Math.hypot(dx, dz) || 1;
+      this.hitDir = { x: dx / l, z: dz / l };
+    }
     this.game.onDamaged(this, attacker);
     if (this.hp <= 0) this.die(attacker);
   }
@@ -110,6 +116,8 @@ export class Unit extends Entity {
     this.repathT = 0;          // cooldown so we don't re-path every frame
     this.curSpeed = 0;         // eased speed for smooth accel/decel
     this.leash = null;         // neutral guard post
+    this.stance = 'aggressive'; // 'aggressive' | 'defensive' | 'hold'
+    this.anchor = null;         // hold/defensive return point
     const f = owner === 2 ? { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW } : game.players[owner].faction;
     this.mesh = buildUnitMesh(def.model, f.color, f.glow, f.accent, f.glow2);
     this.mesh.position.copy(this.pos);
@@ -128,6 +136,13 @@ export class Unit extends Entity {
     // even with no tile path (e.g. destination deep in a wall) still head there;
     // the collision resolver will slide along barriers rather than freeze.
     this.state = attackMove ? 'attackMove' : 'move';
+    if (this.stance !== 'aggressive') this.anchor = { x, z };   // hold/defend the new spot
+  }
+  // Combat stance: aggressive hunts freely, defensive engages but won't overextend
+  // from its anchor, hold stands its ground and only strikes what comes in range.
+  setStance(s) {
+    this.stance = s;
+    this.anchor = s === 'aggressive' ? null : { x: this.pos.x, z: this.pos.z };
   }
   orderAttack(target) {
     this.target = target; this.gatherNode = null; this.buildSite = null;
@@ -144,7 +159,7 @@ export class Unit extends Entity {
     this.buildSite = site; this.target = null; this.gatherNode = null;
     this.state = 'build'; this.path = null;
   }
-  stop() { this.state = 'idle'; this.path = null; this.target = null; this.gatherNode = null; this.buildSite = null; }
+  stop() { this.state = 'idle'; this.path = null; this.target = null; this.gatherNode = null; this.buildSite = null; this.pendingStrike = null; }
 
   // Collision-aware move with wall sliding (LoL-style barrier glide). Attempts
   // the full step; if blocked, slides along whichever axis is clear. Returns the
@@ -228,15 +243,31 @@ export class Unit extends Entity {
     return Math.hypot(x - this.pos.x, z - this.pos.z) <= near;
   }
 
+  // Pick a target by tactical value, not just proximity: strongly prefer prey we
+  // counter (tag bonus), finish wounded targets (focus fire), favour real threats
+  // over workers, and treat buildings as a last resort. Distance is the baseline
+  // so units still fight what's in front of them. Shared by player units AND the
+  // AI, so smarter acquisition lifts enemy micro for free.
   acquireTarget(range) {
-    let best = null, bd = range;
+    const atk = this.def.attack;
+    let best = null, bestScore = -Infinity;
     for (const e of this.game.allCombatants()) {
       if (e.dead || e.owner === this.owner) continue;
       if (this.owner !== 2 && e.owner === 2 && this.state !== 'attackMove') continue; // don't auto-aggro neutrals
       if (this.owner === 2 && e.owner === 2) continue;
       if (e.isBuilding && !e.complete) continue;
       const d = this.distTo(e) - e.radius;
-      if (d < bd) { bd = d; best = e; }
+      if (d > range) continue;
+      let score = -d * 1.2;                              // closer is better (baseline)
+      if (atk?.bonus) {                                  // we counter this unit → hunt it
+        const mult = (e.def.tags || []).reduce((m, t) => m * (atk.bonus[t] || 1), 1);
+        if (mult > 1) score += (mult - 1) * 6;
+      }
+      score += (1 - e.hp / e.maxHp) * 5;                 // focus fire: finish the wounded
+      if (e.isUnit && !e.def.worker && e.def.attack) score += 3;   // real threat
+      else if (e.def.worker) score += 1.5;               // workers: juicy, low threat
+      if (e.isBuilding) score -= 5;                       // sieging is the fallback
+      if (score > bestScore) { bestScore = score; best = e; }
     }
     return best;
   }
@@ -261,6 +292,20 @@ export class Unit extends Entity {
     this.harvesting = false;
     const atk = this.def.attack;
 
+    // deferred melee blow: lands when the lunge reaches the target — but only if
+    // we're still attacking that same target (orders/target may have changed).
+    if (this.pendingStrike) {
+      this.pendingStrike.delay -= dt;
+      if (this.pendingStrike.delay <= 0) {
+        const ps = this.pendingStrike; this.pendingStrike = null;
+        const t = ps.target;
+        if (t && !t.dead && this.state === 'attack' && this.target === t &&
+            this.distTo(t) <= this.attackRange(t) + 0.4) {
+          this.game.performAttack(this, t, ps.atk);
+        }
+      }
+    }
+
     switch (this.state) {
       case 'idle': {
         if (this.def.peaceful) { this.wander(dt); break; }   // shepherds don't hunt — they amble
@@ -268,7 +313,12 @@ export class Unit extends Entity {
         if (this.scanT <= 0) {
           this.scanT = 0.3;
           if (atk && !this.def.worker) {
-            const t = this.acquireTarget(this.def.aggroRange);
+            // hold only notices what it can already hit; defensive only what it can
+            // reach inside its leash; aggressive sweeps its full aggro range
+            const scanRange = this.stance === 'hold' ? atk.range + this.radius + 1.2
+              : this.stance === 'defensive' ? Math.min(this.def.aggroRange, 7 + atk.range)
+              : this.def.aggroRange;
+            const t = this.acquireTarget(scanRange);
             if (t) { this.target = t; this.state = 'attack'; this.returnTo = { x: this.pos.x, z: this.pos.z }; }
           }
           // neutral leash
@@ -309,12 +359,29 @@ export class Unit extends Entity {
           this.state = 'move'; this.dest = { ...this.leash }; this.path = null; break;
         }
         const inRange = this.distTo(t) <= this.attackRange(t);
-        if (!inRange) { this.seek(t.pos.x, t.pos.z, this.attackRange(t) - 0.2, dt); break; }
+        if (!inRange) {
+          // hold stands its ground — wait if the target is still within reach (same
+          // band the idle scan used, so no acquire/drop flicker), else release it
+          if (this.stance === 'hold') {
+            if (this.distTo(t) > atk.range + this.radius + 1.2) { this.target = null; this.state = 'idle'; }
+            break;
+          }
+          // defensive chases, but breaks home if pulled past the leash. The break
+          // radius is strictly beyond the defensive scan reach so it can't yo-yo.
+          if (this.stance === 'defensive' && this.anchor &&
+              Math.hypot(this.pos.x - this.anchor.x, this.pos.z - this.anchor.z) > 7 + atk.range + 2) {
+            this.target = null; this.orderMove(this.anchor.x, this.anchor.z); break;
+          }
+          this.seek(t.pos.x, t.pos.z, this.attackRange(t) - 0.2, dt); break;
+        }
         this.facingTarget = Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
         if (this.cooldown <= 0) {
           this.cooldown = atk.cooldown;
           this.lungeDur = 0.3; this.lungeT = this.lungeDur;
-          this.game.performAttack(this, t, atk);
+          // ranged fires now (the projectile carries the timing); melee lands on
+          // contact — scheduled to the lunge's strike apex so the blow connects.
+          if (atk.projectile) this.game.performAttack(this, t, atk);
+          else this.pendingStrike = { target: t, atk, delay: 0.12 };
         }
         break;
       }
@@ -414,6 +481,19 @@ export class Unit extends Entity {
       this.mesh.position.x += Math.sin(this.facing) * f;
       this.mesh.position.z += Math.cos(this.facing) * f;
     }
+    // getting hit: a quick scale-pop + recoil nudge so blows register with weight
+    if (this.hitFlash > 0) {
+      this.hitFlash = Math.max(0, this.hitFlash - dt);
+      const k = this.hitFlash / 0.14;                 // 1 → 0
+      this.mesh.scale.setScalar(1 + 0.16 * k);
+      if (this.hitDir) {
+        const r = 0.18 * k;
+        this.mesh.position.x += this.hitDir.x * r;
+        this.mesh.position.z += this.hitDir.z * r;
+      }
+    } else if (this.mesh.scale.x !== 1) {
+      this.mesh.scale.setScalar(1);
+    }
     // kicked-up dust while moving — heavier and shakier for the great ones
     if (this.moving) {
       const massive = (this.def.tags || []).includes('massive');
@@ -445,6 +525,9 @@ export class Unit extends Entity {
 
   die(attacker) {
     this.dead = true;
+    const s = this.game.stats;
+    if (this.owner === 0) s.lost++;
+    else if (attacker && attacker.owner === 0) s.killed++;
     this.game.removeUnit(this);
     Sound.death();
   }
@@ -650,6 +733,7 @@ export class Building extends Entity {
 
   die(attacker) {
     this.dead = true;
+    if (this.owner === 1 && attacker && attacker.owner === 0) this.game.stats.razed++;
     this.removeScaffold();
     if (this.fire) { this.game.scene.remove(this.fire); this.fire = null; }
     if (this.scorch) { this.game.scene.remove(this.scorch); this.scorch = null; }
@@ -686,6 +770,8 @@ export class Game {
     this.over = false;
     this.paused = false;
     this.fogTimer = 0;
+    this.combatHeat = 0;  // 0..1 battle intensity, drives the music's combat layer
+    this.stats = { trained: 0, lost: 0, killed: 0, razed: 0 };  // player (owner 0) match tally
     this.metClans = {};   // first-contact dialogue fired per clan
     // a saved game pins the exact map (seed/biome/mood) so it reloads identically
     const load = opts.load || null;
@@ -999,6 +1085,29 @@ export class Game {
       (Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.3, 0.55 * scale, 0.5, 2.4);
   }
 
+  // weight behind every blow: a spark burst (bigger on hard / super-effective
+  // hits) + a dust puff at the contact point, with a camera kick for heavy hits.
+  hitImpact(attacker, target, dmg, countered) {
+    if (this.map.fogStateAt(target.pos.x, target.pos.z) !== 2) return;
+    const gy = this.map.heightAt(target.pos.x, target.pos.z);
+    const dx = target.pos.x - attacker.pos.x, dz = target.pos.z - attacker.pos.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const cx = target.pos.x - dx / len * target.radius * 0.6;   // contact: just inside the target
+    const cz = target.pos.z - dz / len * target.radius * 0.6;
+    const y = gy + 1.0 + target.radius * 0.3;
+    const n = Math.min(12, 3 + (dmg / 5 | 0)) + (countered ? 4 : 0);
+    for (let i = 0; i < n; i++) {
+      this.fxSpark.spawn(cx, y, cz, (Math.random() - 0.5) * 4.5, 1 + Math.random() * 3.5,
+        (Math.random() - 0.5) * 4.5, 0.16 + Math.random() * 0.16, 0.16 + Math.random() * 0.12, 0.9, 0.6);
+    }
+    this.fxDust.spawn(cx, y - 0.4, cz, (Math.random() - 0.5) * 1.4, 0.4 + Math.random() * 0.5,
+      (Math.random() - 0.5) * 1.4, 0.45, 0.6, 0.5, 2.0);
+    if (dmg >= 22) {
+      const f = this.controls && this.controls.focus;
+      if (f && Math.hypot(target.pos.x - f.x, target.pos.z - f.z) < 24) this.addShake(0.07);
+    }
+  }
+
   updateEmbers(dt) {
     const a = this.embers.geometry.attributes.position;
     for (let i = 0; i < a.count; i++) {
@@ -1111,7 +1220,8 @@ export class Game {
         res: { ...p.resources }, up: [...p.upgrades], dmgMult: p.dmgMult, armorAdd: p.armorAdd, hpMult: p.hpMult }; }),
       units: this.units.filter(u => !u.dead).map(u => ({ o: u.owner, k: u.key,
         x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), hp: Math.round(u.hp),
-        cy: u.carry || 0, ct: u.carryType || null, leash: u.leash || null })),
+        cy: u.carry || 0, ct: u.carryType || null, leash: u.leash || null,
+        st: u.stance !== 'aggressive' ? u.stance : undefined })),
       buildings: this.buildings.filter(b => !b.dead).map(b => ({ o: b.owner, k: b.key, tx: b.tx, ty: b.ty,
         hp: Math.round(b.hp), c: b.complete, p: +(b.progress || 0).toFixed(3),
         q: b.trainQueue.map(j => ({ key: j.key, t: +j.t.toFixed(2), total: j.total, up: !!j.upgrade })),
@@ -1147,6 +1257,7 @@ export class Game {
       const u = new Unit(this, us.o, { ...def, hp: Math.round(def.hp * hpMult) }, us.k, us.x, us.z);
       u.hp = Math.min(u.maxHp, us.hp);
       u.leash = us.leash || null;
+      if (us.st) u.setStance(us.st);
       if (us.cy) { u.carry = us.cy; u.carryType = us.ct; }
       this.units.push(u);
     }
@@ -1169,6 +1280,7 @@ export class Game {
     const def = p.faction.units[key];
     const eff = { ...def, hp: Math.round(def.hp * p.hpMult) };
     const u = new Unit(this, owner, eff, key, x, z);
+    if (owner === 0) this.stats.trained++;
     this.units.push(u);
     this.recalcSupply();
     return u;
@@ -1344,6 +1456,34 @@ export class Game {
     if (b.owner === 0) this.emit('toast', b.def.name + ' complete');
     // builders go idle next to it
     for (const u of this.units) if (u.buildSite === b) u.stop();
+    this.dressBuilding(b);
+  }
+
+  // Scatter a couple of themed props just outside a finished building so settlements
+  // read as lived-in: sacks at granaries, weapon racks at war buildings, braziers at
+  // temples, banners at the seat of power. Decorative scene objects (not children, so
+  // construction scaling never touches them); removed when the building falls.
+  dressBuilding(b) {
+    if (b.owner > 1) return;
+    const types = b.def.main ? ['banner', 'amphorae', 'brazier']
+      : /granary|store/.test(b.key) ? ['grain_sacks', 'amphorae', 'wood_pile']
+      : /barrack|lodge|foundry|forge|gate|pit|den/.test(b.key) ? ['weapon_rack', 'banner']
+      : /temple|totem|archive|tower|cairn|spire|hearth/.test(b.key) ? ['brazier', 'banner']
+      : ['amphorae'];
+    const n = 1 + (Math.random() < 0.6 ? 1 : 0);
+    b.props = b.props || [];
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, r = b.radius + 0.7 + Math.random() * 0.6;
+      const wx = b.pos.x + Math.cos(a) * r, wz = b.pos.z + Math.sin(a) * r;
+      const t = this.map.tileOf(wx, wz);
+      if (!this.map.inBounds(t.x, t.y) || this.map.blocked[this.map.idx(t.x, t.y)]) continue;
+      const d = buildDoodad(types[(Math.random() * types.length) | 0]);
+      d.position.set(wx, this.map.heightAt(wx, wz), wz);
+      d.rotation.y = Math.random() * Math.PI * 2;
+      d.scale.setScalar(0.7);
+      this.scene.add(d);
+      b.props.push(d);
+    }
   }
 
   // ---------- combat ----------
@@ -1353,7 +1493,7 @@ export class Game {
       this.spawnProjectile(attacker, target, atk, dmgBase);
     } else {
       this.applyHit(attacker, target, atk, dmgBase);
-      if (this.map.fogStateAt(target.pos.x, target.pos.z) === 2) Sound.hit();
+      if (this.map.fogStateAt(target.pos.x, target.pos.z) === 2) Sound.meleeHit(dmgBase);
     }
   }
 
@@ -1362,6 +1502,7 @@ export class Game {
     const armor = target.isUnit ? target.effArmor() : (target.def.armor || 0);
     const dmg = Math.max(1, Math.round(dmgBase * mult) - armor);
     target.takeDamage(dmg, attacker);
+    this.hitImpact(attacker, target, dmg, mult > 1.05);
   }
 
   spawnProjectile(attacker, target, atk, dmgBase) {
@@ -1411,10 +1552,10 @@ export class Game {
               this.applyHit(p.attacker, e, p.atk, p.dmgBase);
             }
           }
-          if (visible) Sound.hit();
+          if (visible) Sound.rangedHit();
         } else if (!p.target.dead) {
           this.applyHit(p.attacker, p.target, p.atk, p.dmgBase);
-          if (visible) Sound.hit();
+          if (visible) Sound.rangedHit();
         }
       }
     }
@@ -1432,6 +1573,7 @@ export class Game {
   }
 
   onDamaged(entity, attacker) {
+    this.combatHeat = Math.min(1, this.combatHeat + 0.05);   // feeds the combat music layer
     if (entity.owner === 0 && (this.time - (this.lastAlert || -99)) > 12) {
       const anySelectedNear = false;
       if (this.map.fogStateAt(entity.pos.x, entity.pos.z) !== 2 || entity.isBuilding) {
@@ -1450,7 +1592,10 @@ export class Game {
         if (entity.def.worker) {
           entity.orderMove(entity.pos.x + (entity.pos.x - attacker.pos.x), entity.pos.z + (entity.pos.z - attacker.pos.z));
         } else if (!entity.target) {
-          entity.orderAttack(attacker);
+          // hold stands its ground — it fires back only if the attacker is in range,
+          // never chasing (the idle scan picks it up if it closes in)
+          if (entity.stance === 'hold' && entity.distTo(attacker) > entity.attackRange(attacker)) { /* hold */ }
+          else entity.orderAttack(attacker);
         }
       }
     }
@@ -1460,6 +1605,7 @@ export class Game {
 
   removeUnit(u) {
     // death animation: topple + sink, plus a burst of debris
+    u.mesh.scale.setScalar(1);   // clear any mid-flash scale-pop before the corpse falls
     this.effects.push({ mesh: u.mesh, life: 1.0, max: 1.0, type: 'corpse' });
     if (this.map.fogStateAt(u.pos.x, u.pos.z) === 2) {
       const h = this.map.heightAt(u.pos.x, u.pos.z);
@@ -1484,6 +1630,7 @@ export class Game {
   removeBuilding(b, attacker) {
     for (let y = 0; y < b.size; y++) for (let x = 0; x < b.size; x++)
       this.map.blocked[this.map.idx(b.tx + x, b.ty + y)] = 0;
+    if (b.props) { for (const p of b.props) this.scene.remove(p); b.props = null; }
     if (b.disc) this.scene.remove(b.disc);
     this.addEffect(b.pos.x, b.pos.z, b.radius * 1.4, glowMat(0xff5522, 1.5));
     this.effects.push({ mesh: b.mesh, life: 1.4, max: 1.4, type: 'rubble' });
@@ -1562,17 +1709,41 @@ export class Game {
     this.formationMove(units, wx, wz, false);
   }
 
+  // Move a group as a battle line: the block is oriented to the travel direction
+  // with a wide front, melee in the leading rows and ranged/casters/workers tucked
+  // behind them. Reads as an army and keeps fragile units out of the front line.
   formationMove(units, wx, wz, attackMove) {
     const n = units.length;
-    const cols = Math.ceil(Math.sqrt(n));
-    // space slots to the largest unit so big bodies aren't fighting for one tile
+    if (n === 0) return;
+    if (n === 1) { units[0].orderMove(wx, wz, attackMove); return; }
+
+    // travel direction from the group's centroid toward the destination
+    let cx = 0, cz = 0;
+    for (const u of units) { cx += u.pos.x; cz += u.pos.z; }
+    cx /= n; cz /= n;
+    let dx = wx - cx, dz = wz - cz;
+    const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+    const rx = -dz, rz = dx;                       // right vector (across the front)
+
     const maxR = units.reduce((m, u) => Math.max(m, u.radius), 0.5);
     const spacing = Math.max(1.7, maxR * 2.2);
+
+    // melee lead, then workers/support, then ranged at the back
+    const melee  = units.filter(u => u.def.attack && !u.def.attack.projectile && !u.def.worker);
+    const ranged = units.filter(u => u.def.attack && u.def.attack.projectile);
+    const rest   = units.filter(u => !melee.includes(u) && !ranged.includes(u));
+    const ordered = [...melee, ...rest, ...ranged];
+
+    // a touch wider than tall so it presents a front, not a square
+    const cols = Math.max(1, Math.round(Math.sqrt(n) * 1.4));
     const rows = Math.ceil(n / cols);
-    units.forEach((u, i) => {
+    ordered.forEach((u, i) => {
       const r = Math.floor(i / cols), c = i % cols;
-      const ox = (c - (cols - 1) / 2) * spacing, oz = (r - (rows - 1) / 2) * spacing;
-      u.orderMove(wx + ox, wz + oz, attackMove);
+      const across = (c - (cols - 1) / 2) * spacing;
+      const depth  = ((rows - 1) / 2 - r) * spacing;   // r=0 → front, toward the target
+      const sx = wx + rx * across + dx * depth;
+      const sz = wz + rz * across + dz * depth;
+      u.orderMove(sx, sz, attackMove);
     });
   }
 
@@ -1601,6 +1772,7 @@ export class Game {
   update(dt) {
     if (this.over) dt *= 0.3; // slow-mo end
     this.time += dt;
+    this.combatHeat = Math.max(0, this.combatHeat - dt * 0.14);   // cools between clashes
     this._combat = null;
     // defeat: the world slowly darkens toward the gathering Flood
     if (this.over && this.winner === 1 && this.defeatFade !== undefined) {

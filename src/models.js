@@ -44,6 +44,13 @@ const LEATHER = 0x4a3526, CLOTH = 0x33304a, LINEN = 0xbfb49a, SKIN = 0x7a6450, H
 // bronze with a little metalness so it catches the env reflections
 const bronzeMat = () => mat(0x8a6a30, { metal: 0.55, rough: 0.45 });
 
+// shared additive material for soft fire light-shafts (god-rays); cached once
+let _godRayMat = null;
+const godRayMat = () => (_godRayMat ||= new THREE.MeshBasicMaterial({
+  color: 0xffa850, transparent: true, opacity: 0.1,
+  blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+}));
+
 function prim(geo, material, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
   const m = new THREE.Mesh(geo, material);
   m.position.set(x, y, z); m.rotation.set(rx, ry, rz);
@@ -965,6 +972,83 @@ export function buildDoodad(type) {
     // shattered clay tablet leaning in the dust
     grp.add(box(1.0, 1.3, 0.14, mat(0x5a4a36), 0, 0.6, 0, -0.5, Math.random(), 0.1));
     grp.add(box(0.5, 0.7, 0.14, mat(0x4a3c2c), 0.7, 0.25, 0.3, -0.7, Math.random(), 0.3)); // broken-off piece
+  } else if (type === 'cart') {
+    // an abandoned ox-cart, one wheel sunk, bed tilted toward the dust
+    const tilt = 0.18;
+    grp.add(box(1.5, 0.16, 0.85, mat(WOOD), 0, 0.62, 0, tilt, Math.random() * 0.4, 0));   // bed
+    grp.add(box(1.5, 0.32, 0.06, mat(0x2e2620), 0, 0.78, 0.42, tilt, 0, 0));               // side rails
+    grp.add(box(1.5, 0.32, 0.06, mat(0x2e2620), 0, 0.78, -0.42, tilt, 0, 0));
+    grp.add(cyl(0.05, 0.05, 1.8, mat(0x2e2620), 5, 0.4, 0.2, 0, 0, 0, Math.PI / 2 - 0.1)); // draught pole to the ground
+    for (const z of [0.5, -0.5]) {                                                          // spoked wheels
+      const w = new THREE.Group();
+      w.add(torus(0.42, 0.07, mat(0x2a2218), 0, 0, 0, 0, 0, 0));
+      for (let i = 0; i < 6; i++) w.add(cyl(0.03, 0.03, 0.8, mat(0x2a2218), 4, 0, 0, 0, 0, 0, i / 6 * Math.PI));
+      w.rotation.y = Math.PI / 2;
+      w.position.set(-0.5, 0.42, z);
+      grp.add(w);
+    }
+  } else if (type === 'grain_sacks') {
+    // a stack of bulging grain sacks, one split open
+    const burlap = mat(0x9a8456), burlap2 = mat(0x847043);
+    const sack = (x, y, z, s, m) => grp.add(prim(new THREE.SphereGeometry(s, 6, 5), m, x, y, z, 0, 0, 0));
+    sack(0, 0.32, 0, 0.36, burlap); sack(0.5, 0.3, 0.1, 0.34, burlap2);
+    sack(0.22, 0.34, 0.5, 0.34, burlap); sack(0.26, 0.74, 0.2, 0.32, burlap2);
+    grp.add(prim(new THREE.CircleGeometry(0.4, 8), mat(0xc9b87a), 0.7, 0.02, -0.4, -Math.PI / 2)); // spilled grain
+  } else if (type === 'wood_pile') {
+    // stacked cedar logs ready for the walls that never rose
+    for (let r = 0; r < 3; r++) for (let i = 0; i < 4 - r; i++)
+      grp.add(cyl(0.16, 0.16, 1.7, mat(WOOD), 6, (i - (3 - r) / 2) * 0.36 + (r % 2) * 0.18, 0.16 + r * 0.3, 0, 0, 0, Math.PI / 2));
+  } else if (type === 'amphorae') {
+    // clustered clay storage jars, a couple toppled
+    const clay = mat(0x8a5a36), clay2 = mat(0x73492b);
+    const jar = (x, z, lean, m) => {
+      const j = new THREE.Group();
+      j.add(cyl(0.16, 0.26, 0.5, m, 7, 0, 0.35, 0));
+      j.add(cyl(0.26, 0.1, 0.5, m, 7, 0, 0.78, 0));
+      j.add(cone(0.08, 0.18, m, 6, 0, 1.08, 0));
+      j.position.set(x, 0, z); j.rotation.z = lean;
+      grp.add(j);
+    };
+    jar(0, 0, 0, clay); jar(0.5, 0.15, 0, clay2); jar(0.2, 0.5, 0, clay);
+    jar(-0.4, 0.4, Math.PI / 2 - 0.1, clay2);   // toppled
+  } else if (type === 'brazier') {
+    // a tripod fire-bowl, embers still glowing — sacred light against the dark
+    grp.add(cyl(0.45, 0.55, 0.25, bronzeMat(), 8, 0, 1.0, 0));            // bowl
+    grp.add(prim(new THREE.CircleGeometry(0.42, 10), glowMat(0xff7a30, 1.6), 0, 1.14, 0, -Math.PI / 2)); // embers
+    for (let i = 0; i < 3; i++) {                                          // legs
+      const a = i / 3 * Math.PI * 2;
+      grp.add(cyl(0.04, 0.05, 1.0, mat(0x2e2620), 4, Math.cos(a) * 0.32, 0.5, Math.sin(a) * 0.32, 0.18, a, 0));
+    }
+    grp.add(sph(0.12, glowMat(0xffb24a, 2.2), 0, 1.22, 0));               // flame core (bloom catches it)
+    // a soft god-ray light shaft rising from the flame (additive, no shadow; shared material)
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.12, 2.6, 10, 1, true), godRayMat());
+    shaft.position.set(0, 2.5, 0); shaft.castShadow = false; shaft.receiveShadow = false;
+    grp.add(shaft);
+  } else if (type === 'weapon_rack') {
+    // a rack of bronze spears, a shield leaned against it
+    grp.add(box(1.4, 0.14, 0.2, mat(WOOD), 0, 0.2, 0));                   // base beam
+    grp.add(box(1.4, 0.1, 0.14, mat(WOOD), 0, 1.2, 0));                   // top beam
+    grp.add(cyl(0.06, 0.06, 1.3, mat(WOOD), 4, -0.6, 0.7, 0));
+    grp.add(cyl(0.06, 0.06, 1.3, mat(WOOD), 4, 0.6, 0.7, 0));
+    for (let i = 0; i < 5; i++) {                                          // spears
+      const x = (i - 2) * 0.26;
+      grp.add(cyl(0.02, 0.02, 1.5, mat(0x3d3228), 4, x, 0.95, 0, (Math.random() - 0.5) * 0.1, 0, 0.04));
+      grp.add(cone(0.05, 0.18, bronzeMat(), 4, x, 1.72, 0));
+    }
+    grp.add(prim(new THREE.CircleGeometry(0.34, 8), bronzeMat(), 0.7, 0.5, 0.1, 0, 0.2, 0)); // leaning shield
+  } else if (type === 'banner') {
+    // a tall faction-neutral war banner, its cloth sculpted mid-furl
+    grp.add(cyl(0.05, 0.06, 3.2, mat(0x2e2620), 5, 0, 1.6, 0));           // pole
+    grp.add(cone(0.09, 0.22, bronzeMat(), 5, 0, 3.3, 0));                 // finial
+    const cloth = mat(0x7a2a22);                                          // dried-blood red
+    // a few panels stepped outward to fake a furl in the wind
+    for (let i = 0; i < 5; i++)
+      grp.add(box(0.06, 0.42, 0.7 - i * 0.02, cloth, 0.06 + Math.sin(i * 0.9) * 0.14, 2.7 - i * 0.42, 0, 0, Math.sin(i * 0.9) * 0.4, 0));
+  } else if (type === 'skull_totem') {
+    // a stacked-skull totem on a stake — Nephilim territory marker
+    grp.add(cyl(0.06, 0.08, 2.2, mat(0x2a2218), 5, 0, 1.1, 0));
+    for (let i = 0; i < 3; i++) grp.add(sph(0.2 - i * 0.02, mat(BONE), 0, 1.4 + i * 0.34, 0));
+    grp.add(box(0.5, 0.06, 0.06, mat(0x2a2218), 0, 1.5, 0, 0, 0.4, 0));   // crossbar
   }
   return grp;
 }

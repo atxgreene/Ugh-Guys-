@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "playwright test"
+    "test": "playwright test",
+    "audit": "node tools/ttk-audit.mjs"
   },
   "dependencies": {
     "three": "^0.165.0"
