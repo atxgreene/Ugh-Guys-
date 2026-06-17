@@ -175,6 +175,7 @@ export class Controls {
     }
     if (k === 'escape') { this.cancelPlacement(); this.attackMoveArm = false; this.ui.buildMenuOpen = false; this.ui.refreshPanel(); }
     if (k === 'h') { const m = this.game.playerMain; if (m) { this.focusT.x = m.pos.x; this.focusT.z = m.pos.z; } }
+    if (k === '.') { this.ui.selectIdleWorker?.(); }
     if (k === 'b' && this.selectedUnits().some(u => u.def.worker)) { this.ui.buildMenuOpen = true; this.ui.refreshPanel(); }
     if (k >= '1' && k <= '9') {
       if (e.ctrlKey || e.metaKey) {

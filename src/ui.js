@@ -52,6 +52,8 @@ export class UI {
     const dlg = document.getElementById('dialogue');
     if (dlg) dlg.onclick = () => this.hideDialogue();
 
+    const idleBtn = document.getElementById('btn-idle');
+    if (idleBtn) idleBtn.onclick = () => this.selectIdleWorker();
     document.getElementById('btn-menu').onclick = () => onRestart();
     const bp = document.getElementById('btn-pause');
     if (bp) bp.onclick = () => this.onPause?.();
@@ -199,6 +201,29 @@ export class UI {
     this.elRes.innerHTML = html;
     const t = Math.floor(this.game.time);
     this.elClock.textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    // idle-worker badge — a classic RTS quality-of-life cue
+    const idle = this.idleWorkers();
+    const btn = document.getElementById('btn-idle');
+    if (btn) {
+      btn.style.display = idle.length ? 'inline-block' : 'none';
+      const c = document.getElementById('idle-count');
+      if (c) c.textContent = idle.length;
+    }
+  }
+
+  idleWorkers() {
+    return this.game.units.filter(u => u.owner === 0 && !u.dead && u.def.worker && u.state === 'idle');
+  }
+  // select the next idle worker and snap the camera to it (button + '.' hotkey)
+  selectIdleWorker() {
+    const idle = this.idleWorkers();
+    if (!idle.length) return;
+    this._idleI = ((this._idleI ?? -1) + 1) % idle.length;
+    const w = idle[this._idleI] || idle[0];
+    this.game.selection = [w];
+    this.game.emit('selection');
+    this.controls?.moveCameraTo?.(w.pos.x, w.pos.z);
+    Sound.select();
   }
 
   // ---------- selection / command panel ----------

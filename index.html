@@ -61,6 +61,10 @@
     .res { padding: 2px 4px; }
     .res b { font-family: inherit; }
     #clock { margin-left: auto; color: #c9a86a; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    #btn-idle { background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6c074; border: 1px solid #7a5a2c;
+      padding: 3px 10px; cursor: pointer; font-family: inherit; border-radius: 3px; font-size: 13px;
+      box-shadow: inset 0 1px 0 rgba(230,192,116,0.2); }
+    #btn-idle:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); border-color: #e6c074; }
     #btn-menu { background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6c074;
       border: 1px solid #7a5a2c; padding: 5px 14px; cursor: pointer; font-family: inherit; border-radius: 3px;
       box-shadow: inset 0 1px 0 rgba(230,192,116,0.2); }
@@ -284,6 +288,7 @@
 
     <div class="hud" id="topbar">
       <div id="resources"></div>
+      <button id="btn-idle" title="Select next idle worker (.)" style="display:none">⛏ <span id="idle-count">0</span></button>
       <div id="clock">0:00</div>
       <button id="btn-help" title="Controls &amp; hotkeys (?)">?</button>
       <button id="btn-settings" title="Settings">⚙</button>
@@ -313,7 +318,7 @@
       <div><b>Attack-move</b> <kbd>F</kbd> · <b>Stop</b> <kbd>X</kbd> · <b>Build</b> <kbd>B</kbd></div>
       <div><b>Stance</b> <kbd>Y</kbd> cycles aggressive / defensive / hold</div>
       <div><b>Groups</b> <kbd>Ctrl</kbd>+<kbd>1</kbd>–<kbd>9</kbd> set · <kbd>1</kbd>–<kbd>9</kbd> recall</div>
-      <div><b>Home</b> <kbd>H</kbd> · <b>Pause</b> <kbd>P</kbd> · <b>Help</b> <kbd>?</kbd></div>
+      <div><b>Home</b> <kbd>H</kbd> · <b>Idle worker</b> <kbd>.</kbd> · <b>Pause</b> <kbd>P</kbd> · <b>Help</b> <kbd>?</kbd></div>
       <div class="help-close">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</div>
     </div>
     <div class="hud" id="coach"></div>
