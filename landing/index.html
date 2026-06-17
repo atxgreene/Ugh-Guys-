@@ -314,7 +314,7 @@
       <span class="badge">CC0 · Public Domain</span>
     </div>
     <p>Shadow of the Watchers — <a href="https://github.com/atxgreene/Ugh-Guys-" target="_blank" rel="noopener">source on GitHub</a>
-      <span id="secret-spot" title="type a name…" aria-hidden="true">◈</span></p>
+      <span id="secret-spot" title="type a name…" aria-hidden="true">◈</span><a id="codex-spot" href="codex.html" target="_blank" rel="noopener" title="" aria-hidden="true">⛧</a></p>
   </div>
 </footer>
 
@@ -322,6 +322,10 @@
 <style>
   #secret-spot { color:#2a2636; cursor:default; margin-left:8px; transition:color .3s; user-select:none; }
   #secret-spot:hover { color:#7a5a2c; }
+  /* hidden button → the full Easter Egg Codex. Nearly invisible until found. */
+  #codex-spot { color:#1c1a26; margin-left:10px; text-decoration:none; border:0 !important;
+    transition:color .3s, text-shadow .3s; user-select:none; cursor:pointer; }
+  #codex-spot:hover { color:#b88a3e; text-shadow:0 0 10px rgba(184,138,62,.6); }
   #secret { position:fixed; inset:0; z-index:90; display:none; align-items:center; justify-content:center;
     background:rgba(4,4,8,0.86); backdrop-filter:blur(3px); padding:24px; }
   #secret.show { display:flex; }
@@ -394,6 +398,7 @@
       else if (code.endsWith('tucker')) open('tucker');
       else if (code.endsWith('gatsby') || code.endsWith('hounds')) open('gatsby');
       else if (code.endsWith('parker') || code.endsWith('shepherd')) open('parker');
+      else if (code.endsWith('codex')) window.open('codex.html', '_blank', 'noopener');
     });
     document.getElementById('secret-spot')?.addEventListener('click', () => open(order[cyc++ % order.length]));
     document.getElementById('secret-x')?.addEventListener('click', close);
