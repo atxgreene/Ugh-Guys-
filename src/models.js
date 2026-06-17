@@ -1013,6 +1013,12 @@ export function buildDoodad(type) {
       grp.add(cyl(0.04, 0.05, 1.0, mat(0x2e2620), 4, Math.cos(a) * 0.32, 0.5, Math.sin(a) * 0.32, 0.18, a, 0));
     }
     grp.add(sph(0.12, glowMat(0xffb24a, 2.2), 0, 1.22, 0));               // flame core (bloom catches it)
+    // a soft god-ray light shaft rising from the flame (additive, no shadow)
+    const shaftMat = new THREE.MeshBasicMaterial({ color: 0xffa850, transparent: true, opacity: 0.1,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.12, 2.6, 10, 1, true), shaftMat);
+    shaft.position.set(0, 2.5, 0); shaft.castShadow = false; shaft.receiveShadow = false;
+    grp.add(shaft);
   } else if (type === 'weapon_rack') {
     // a rack of bronze spears, a shield leaned against it
     grp.add(box(1.4, 0.14, 0.2, mat(WOOD), 0, 0.2, 0));                   // base beam
