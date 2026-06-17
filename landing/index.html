@@ -43,6 +43,9 @@
     align-items:center;justify-content:center;text-align:center;z-index:1;overflow:hidden;
     background:#0a0a10 center/cover no-repeat}
   /* key-art photo behind everything (degrades to the gradient if the file is absent) */
+  /* lay the hero content out as a centered column so the pitch + buttons line up
+     under the title instead of hugging the left edge of the shrink-wrapped box */
+  .hero .wrap{display:flex;flex-direction:column;align-items:center;width:100%}
   .hero .bg{position:absolute;inset:0;z-index:-2;background-position:center;background-size:cover;
     opacity:.9}
   .hero::before{content:"";position:absolute;inset:0;z-index:-1;
