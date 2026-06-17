@@ -100,8 +100,15 @@ The core fight is built to feel decisive and read clearly:
   the camera. Ranged hits land the same impact at the target.
 - **Counter coverage**: each faction has an answer to each threat class. Filled the two
   glaring holes — Star-Metal Warrior braces vs **mounted** (×1.6), Bone-Club Champion
-  crushes **heavy** (×1.4) — so no faction is left without a counter to a whole class.
-**[planned]** ability/active-skill pass, formations on attack-move, per-faction combat audio.
+  crushes **heavy** (×1.4) — and fixed the Bronze Spearman's signature anti-cavalry role
+  (anti-mounted/beast ×2.8) which a TTK audit revealed was losing to its own prey.
+- **Battle-line formations**: groups move oriented to travel with a wide front, melee
+  leading and ranged/casters/workers tucked behind. AI attack waves inherit it.
+- **AI counter-composition**: the AI tallies the player's army by tag and biases training
+  toward counters — so it picks counter-*units* as well as counter-*targets*.
+- **Balance audit** (`npm run audit`, `tools/ttk-audit.mjs`, enforced in CI): numeric
+  time-to-kill duels + assertions that every counter relationship holds.
+**[planned]** stances (hold/aggressive), ability/active-skill pass, ranged kiting micro.
 
 ## 9. Movement & barrier interaction  **[done]**
 LoL-smooth: collision **wall-sliding**, radius/clearance-aware pathfinding with tight-route

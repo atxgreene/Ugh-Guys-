@@ -44,7 +44,7 @@ export const FACTIONS = {
       }),
       spearman: U({
         name: 'Bronze Spearman', cost: { grain: 50, bronze: 25 }, hp: 110, buildTime: 11,
-        attack: { dmg: 11, range: 1.6, cooldown: 1.1, bonus: { mounted: 2.0, beast: 2.0 } },
+        attack: { dmg: 11, range: 1.6, cooldown: 1.1, bonus: { mounted: 2.8, beast: 2.8 } },
         armor: 1, speed: 7, model: 'spearman', tags: ['heavy'],
         desc: 'Phalanx of the city levy. Spears against chariot and beast.',
         trainedAt: 'barracks',
