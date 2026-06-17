@@ -181,6 +181,7 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
       if (autosaveT <= 0) { autosaveT = AUTOSAVE_SECONDS; saveGame(true); }
     }
     if (!game.paused) game.update(dt);   // pause freezes the simulation only
+    Music.setIntensity(game.paused || game.over ? 0 : game.combatHeat);  // score swells with battle
     controls.updateCamera(dt);           // camera + HUD stay responsive while paused
     ui.update(dt);
     game.render();

@@ -766,6 +766,7 @@ export class Game {
     this.over = false;
     this.paused = false;
     this.fogTimer = 0;
+    this.combatHeat = 0;  // 0..1 battle intensity, drives the music's combat layer
     this.metClans = {};   // first-contact dialogue fired per clan
     // a saved game pins the exact map (seed/biome/mood) so it reloads identically
     const load = opts.load || null;
@@ -1538,6 +1539,7 @@ export class Game {
   }
 
   onDamaged(entity, attacker) {
+    this.combatHeat = Math.min(1, this.combatHeat + 0.05);   // feeds the combat music layer
     if (entity.owner === 0 && (this.time - (this.lastAlert || -99)) > 12) {
       const anySelectedNear = false;
       if (this.map.fogStateAt(entity.pos.x, entity.pos.z) !== 2 || entity.isBuilding) {
@@ -1735,6 +1737,7 @@ export class Game {
   update(dt) {
     if (this.over) dt *= 0.3; // slow-mo end
     this.time += dt;
+    this.combatHeat = Math.max(0, this.combatHeat - dt * 0.14);   // cools between clashes
     this._combat = null;
     // defeat: the world slowly darkens toward the gathering Flood
     if (this.over && this.winner === 1 && this.defeatFade !== undefined) {

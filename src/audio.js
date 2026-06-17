@@ -54,6 +54,16 @@ const Music = {
     if (this._nodes) this._nodes.master.gain.setTargetAtTime(this.vol * 0.16, ac().currentTime, 0.5);
   },
 
+  // 0 = calm ambient, 1 = full battle. Swells the combat layer in (fast) and out
+  // (slower) so skirmishes lift the score without lurching.
+  setIntensity(x) {
+    if (!this.playing || !this._nodes) return;
+    x = Math.max(0, Math.min(1, x));
+    const rising = x > (this._intensity || 0);
+    this._intensity = x;
+    try { this._nodes.combat.gain.setTargetAtTime(x * this.vol * 0.18, ac().currentTime, rising ? 0.4 : 1.8); } catch {}
+  },
+
   start() {
     if (this.playing) return;
     let a; try { a = ac(); } catch { return; }
@@ -92,7 +102,23 @@ const Music = {
       lfo.connect(lg).connect(vg.gain); lfo.start();
       voices.push(o, lfo, sweep);
     }
-    this._nodes = { master, voices };
+
+    // combat layer: a tense minor-third drone + a low war-drum pulse, silent until
+    // battle heats up (driven by setIntensity). Its own gain so it can swell fast.
+    const combat = a.createGain();
+    combat.gain.value = 0;
+    combat.connect(master);
+    for (const [freq, type] of [[87.3, 'sawtooth'], [110.0, 'square']]) {  // F2 minor third + A2
+      const o = a.createOscillator(); o.type = type; o.frequency.value = freq;
+      const g = a.createGain(); g.gain.value = 0.18;
+      o.connect(g).connect(combat); o.start(); voices.push(o);
+    }
+    const pulse = a.createOscillator(), pulseGain = a.createGain();   // ~120bpm war-drum throb
+    pulse.type = 'sine'; pulse.frequency.value = 2.0;
+    pulseGain.gain.value = 0.5;
+    pulse.connect(pulseGain).connect(combat.gain); pulse.start(); voices.push(pulse);
+
+    this._nodes = { master, voices, combat };
 
     // a far-off bell that tolls now and then over the drone
     const tollBell = () => {
