@@ -154,6 +154,16 @@ export class Controls {
     // WASD pan the camera, so unit commands live on F (attack-move) and X (stop)
     if (k === 'f' && !this.placement) { if (this.selectedUnits().length) this.attackMoveArm = true; }
     if (k === 'x') { this.selectedUnits().forEach(u => u.stop()); this.attackMoveArm = false; }
+    if (k === 'y') {   // cycle combat stance for the selected fighters
+      const order = ['aggressive', 'defensive', 'hold'];
+      const fighters = this.selectedUnits().filter(u => u.def.attack && !u.def.worker);
+      if (fighters.length) {
+        const next = order[(order.indexOf(fighters[0].stance) + 1) % order.length];
+        fighters.forEach(u => u.setStance(next));
+        this.ui.toast?.(`Stance: ${next[0].toUpperCase() + next.slice(1)}`);
+        this.ui.refreshPanel?.();
+      }
+    }
     if (k === 'p') { this.onPause?.(); }
     // secret code: type "greene" to summon the Fields of Evil near your city
     this._code = ((this._code || '') + k).slice(-6);

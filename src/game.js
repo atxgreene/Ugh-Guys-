@@ -116,6 +116,8 @@ export class Unit extends Entity {
     this.repathT = 0;          // cooldown so we don't re-path every frame
     this.curSpeed = 0;         // eased speed for smooth accel/decel
     this.leash = null;         // neutral guard post
+    this.stance = 'aggressive'; // 'aggressive' | 'defensive' | 'hold'
+    this.anchor = null;         // hold/defensive return point
     const f = owner === 2 ? { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW } : game.players[owner].faction;
     this.mesh = buildUnitMesh(def.model, f.color, f.glow, f.accent, f.glow2);
     this.mesh.position.copy(this.pos);
@@ -134,6 +136,13 @@ export class Unit extends Entity {
     // even with no tile path (e.g. destination deep in a wall) still head there;
     // the collision resolver will slide along barriers rather than freeze.
     this.state = attackMove ? 'attackMove' : 'move';
+    if (this.stance !== 'aggressive') this.anchor = { x, z };   // hold/defend the new spot
+  }
+  // Combat stance: aggressive hunts freely, defensive engages but won't overextend
+  // from its anchor, hold stands its ground and only strikes what comes in range.
+  setStance(s) {
+    this.stance = s;
+    this.anchor = s === 'aggressive' ? null : { x: this.pos.x, z: this.pos.z };
   }
   orderAttack(target) {
     this.target = target; this.gatherNode = null; this.buildSite = null;
@@ -302,7 +311,12 @@ export class Unit extends Entity {
         if (this.scanT <= 0) {
           this.scanT = 0.3;
           if (atk && !this.def.worker) {
-            const t = this.acquireTarget(this.def.aggroRange);
+            // hold only notices what it can already hit; defensive only what it can
+            // reach inside its leash; aggressive sweeps its full aggro range
+            const scanRange = this.stance === 'hold' ? atk.range + this.radius + 1.0
+              : this.stance === 'defensive' ? Math.min(this.def.aggroRange, 7 + atk.range)
+              : this.def.aggroRange;
+            const t = this.acquireTarget(scanRange);
             if (t) { this.target = t; this.state = 'attack'; this.returnTo = { x: this.pos.x, z: this.pos.z }; }
           }
           // neutral leash
@@ -343,7 +357,15 @@ export class Unit extends Entity {
           this.state = 'move'; this.dest = { ...this.leash }; this.path = null; break;
         }
         const inRange = this.distTo(t) <= this.attackRange(t);
-        if (!inRange) { this.seek(t.pos.x, t.pos.z, this.attackRange(t) - 0.2, dt); break; }
+        if (!inRange) {
+          // hold stands its ground; defensive won't chase past its anchor leash
+          if (this.stance === 'hold') { this.target = null; this.state = 'idle'; break; }
+          if (this.stance === 'defensive' && this.anchor &&
+              Math.hypot(this.pos.x - this.anchor.x, this.pos.z - this.anchor.z) > 7) {
+            this.target = null; this.orderMove(this.anchor.x, this.anchor.z); break;
+          }
+          this.seek(t.pos.x, t.pos.z, this.attackRange(t) - 0.2, dt); break;
+        }
         this.facingTarget = Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
         if (this.cooldown <= 0) {
           this.cooldown = atk.cooldown;
@@ -1184,7 +1206,8 @@ export class Game {
         res: { ...p.resources }, up: [...p.upgrades], dmgMult: p.dmgMult, armorAdd: p.armorAdd, hpMult: p.hpMult }; }),
       units: this.units.filter(u => !u.dead).map(u => ({ o: u.owner, k: u.key,
         x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), hp: Math.round(u.hp),
-        cy: u.carry || 0, ct: u.carryType || null, leash: u.leash || null })),
+        cy: u.carry || 0, ct: u.carryType || null, leash: u.leash || null,
+        st: u.stance !== 'aggressive' ? u.stance : undefined })),
       buildings: this.buildings.filter(b => !b.dead).map(b => ({ o: b.owner, k: b.key, tx: b.tx, ty: b.ty,
         hp: Math.round(b.hp), c: b.complete, p: +(b.progress || 0).toFixed(3),
         q: b.trainQueue.map(j => ({ key: j.key, t: +j.t.toFixed(2), total: j.total, up: !!j.upgrade })),
@@ -1220,6 +1243,7 @@ export class Game {
       const u = new Unit(this, us.o, { ...def, hp: Math.round(def.hp * hpMult) }, us.k, us.x, us.z);
       u.hp = Math.min(u.maxHp, us.hp);
       u.leash = us.leash || null;
+      if (us.st) u.setStance(us.st);
       if (us.cy) { u.carry = us.cy; u.carryType = us.ct; }
       this.units.push(u);
     }
@@ -1524,7 +1548,10 @@ export class Game {
         if (entity.def.worker) {
           entity.orderMove(entity.pos.x + (entity.pos.x - attacker.pos.x), entity.pos.z + (entity.pos.z - attacker.pos.z));
         } else if (!entity.target) {
-          entity.orderAttack(attacker);
+          // hold stands its ground — it fires back only if the attacker is in range,
+          // never chasing (the idle scan picks it up if it closes in)
+          if (entity.stance === 'hold' && entity.distTo(attacker) > entity.attackRange(attacker)) { /* hold */ }
+          else entity.orderAttack(attacker);
         }
       }
     }

@@ -243,6 +243,20 @@ export class UI {
     if (units.length) {
       cmds.push({ icon: '⚔', label: 'Attack-Move (F)', cls: 'cmd-act', fn: () => { this.controls.attackMoveArm = true; } });
       cmds.push({ icon: '✋', label: 'Stop (X)', cls: 'cmd-act', fn: () => units.forEach(u => u.stop()) });
+      // combat stance — shared value highlighted when the whole selection agrees
+      const fighters = units.filter(u => u.def.attack && !u.def.worker);
+      if (fighters.length) {
+        const allSame = (s) => fighters.every(u => u.stance === s);
+        const STANCES = [['aggressive', '⚔', 'Aggressive'], ['defensive', '🛡', 'Defensive'], ['hold', '⚓', 'Hold (Y)']];
+        for (const [s, icon, label] of STANCES) {
+          cmds.push({
+            icon, label, cls: 'cmd-act' + (allSame(s) ? ' cmd-on' : ''),
+            tip: `${label} stance — ${s === 'aggressive' ? 'hunt freely within sight'
+              : s === 'defensive' ? 'engage nearby but return to position' : 'stand ground; strike only what comes in range'}`,
+            fn: () => { fighters.forEach(u => u.setStance(s)); Sound.click(); this.refreshPanel(); },
+          });
+        }
+      }
     }
     if (workers.length && !this.buildMenuOpen) {
       cmds.push({ icon: '🏗', label: 'Build… (B)', cls: 'cmd-act', fn: () => { this.buildMenuOpen = true; this.refreshPanel(); } });
