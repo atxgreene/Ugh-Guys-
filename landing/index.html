@@ -314,7 +314,7 @@
       <span class="badge">CC0 · Public Domain</span>
     </div>
     <p>Shadow of the Watchers — <a href="https://github.com/atxgreene/Ugh-Guys-" target="_blank" rel="noopener">source on GitHub</a>
-      <span id="secret-spot" title="type a name…" aria-hidden="true">◈</span></p>
+      <span id="secret-spot" title="type a name…" aria-hidden="true">◈</span><a id="codex-spot" href="codex.html" target="_blank" rel="noopener" title="" aria-hidden="true">⛧</a></p>
   </div>
 </footer>
 
@@ -322,6 +322,10 @@
 <style>
   #secret-spot { color:#2a2636; cursor:default; margin-left:8px; transition:color .3s; user-select:none; }
   #secret-spot:hover { color:#7a5a2c; }
+  /* hidden button → the full Easter Egg Codex. Nearly invisible until found. */
+  #codex-spot { color:#1c1a26; margin-left:10px; text-decoration:none; border:0 !important;
+    transition:color .3s, text-shadow .3s; user-select:none; cursor:pointer; }
+  #codex-spot:hover { color:#b88a3e; text-shadow:0 0 10px rgba(184,138,62,.6); }
   #secret { position:fixed; inset:0; z-index:90; display:none; align-items:center; justify-content:center;
     background:rgba(4,4,8,0.86); backdrop-filter:blur(3px); padding:24px; }
   #secret.show { display:flex; }
@@ -359,9 +363,9 @@
   // ===== hidden gems: type a name (or click the faint ◈) to summon a champion =====
   (function () {
     const GEMS = {
-      landon: { img: 'img/card-landon.png', who: 'King of the Landonians',
+      landon: { img: 'img/card-landon.png', who: 'Landry · King of the Landonians',
         line: 'He brought a war-wagon to the age before the Flood. No one asked. No one could stop him.' },
-      boyd:   { img: 'img/card-boydonian.png', who: 'King of the Boydonians',
+      boyd:   { img: 'img/card-boydonian.png', who: 'Connor · King of the Boydonians',
         line: 'Swing true. Fear nothing. The Fourteenth of Paragon does not flinch.' },
       greene: { img: 'img/card-greene.png', who: 'Mr Greene',
         line: 'Master of the House at the heart of the Fields of Evil — and the hounds answer to no one else.' },
@@ -389,11 +393,12 @@
       if (modal.classList.contains('show') && e.key === 'Escape') return close();
       code = (code + e.key.toLowerCase()).slice(-8);
       if (code.endsWith('greene') || code.endsWith('austin')) open('greene');
-      else if (code.endsWith('landon')) open('landon');
+      else if (code.endsWith('landon') || code.endsWith('landry')) open('landon');
       else if (code.endsWith('boyd') || code.endsWith('connor')) open('boyd');
       else if (code.endsWith('tucker')) open('tucker');
       else if (code.endsWith('gatsby') || code.endsWith('hounds')) open('gatsby');
       else if (code.endsWith('parker') || code.endsWith('shepherd')) open('parker');
+      else if (code.endsWith('codex')) window.open('codex.html', '_blank', 'noopener');
     });
     document.getElementById('secret-spot')?.addEventListener('click', () => open(order[cyc++ % order.length]));
     document.getElementById('secret-x')?.addEventListener('click', close);

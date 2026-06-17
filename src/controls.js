@@ -56,6 +56,92 @@ export class Controls {
     window.addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
     document.addEventListener('mouseleave', () => { this.mouse.inside = false; });
     document.addEventListener('mouseenter', () => { this.mouse.inside = true; });
+    this.bindTouch(d);
+  }
+
+  // ---------- touch: drag-pan, pinch-zoom, two-finger rotate, tap select/command ----------
+  bindTouch(d) {
+    this.touch = null;  // { mode, sx, sy, lx, ly, t0, dist0, ang0, yaw0, distT0, moved }
+    const pt = t => ({ x: t.clientX, y: t.clientY });
+    const dist2 = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const ang2  = (a, b) => Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX);
+
+    d.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (this.intro > 0) { this.skipIntro(); }
+      if (e.touches.length === 1) {
+        const p = pt(e.touches[0]);
+        this.touch = { mode: 'one', sx: p.x, sy: p.y, lx: p.x, ly: p.y, t0: performance.now(), moved: 0 };
+      } else if (e.touches.length === 2) {
+        this.touch = {
+          mode: 'two', dist0: dist2(e.touches[0], e.touches[1]), ang0: ang2(e.touches[0], e.touches[1]),
+          distT0: this.distT, yaw0: this.yawT,
+        };
+      }
+    }, { passive: false });
+
+    d.addEventListener('touchmove', e => {
+      e.preventDefault();
+      const tc = this.touch; if (!tc) return;
+      if (tc.mode === 'one' && e.touches.length === 1) {
+        const p = pt(e.touches[0]);
+        const dx = p.x - tc.lx, dy = p.y - tc.ly;
+        tc.moved += Math.abs(dx) + Math.abs(dy);
+        tc.lx = p.x; tc.ly = p.y;
+        // drag-to-pan: content follows the finger. Ground basis at this yaw is
+        // worldRight=(cos,-sin), worldFwd=(-sin,-cos); finger-right shifts focus
+        // left, finger-down shifts focus forward (into the screen).
+        const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw), k = this.dist * 0.0022;
+        this.focusT.x += (-dx * cos - dy * sin) * k;
+        this.focusT.z += (dx * sin - dy * cos) * k;
+        this.focusT.x = Math.max(4, Math.min(WORLD - 4, this.focusT.x));
+        this.focusT.z = Math.max(4, Math.min(WORLD - 4, this.focusT.z));
+      } else if (tc.mode === 'two' && e.touches.length === 2) {
+        const dn = dist2(e.touches[0], e.touches[1]);
+        const an = ang2(e.touches[0], e.touches[1]);
+        if (tc.dist0 > 0) this.distT = Math.max(16, Math.min(80, tc.distT0 * (tc.dist0 / dn)));
+        this.yawT = tc.yaw0 + (an - tc.ang0);
+      }
+    }, { passive: false });
+
+    d.addEventListener('touchend', e => {
+      e.preventDefault();
+      const tc = this.touch;
+      // a quick, near-stationary single touch is a tap → select or command
+      if (tc && tc.mode === 'one' && tc.moved < 14 && performance.now() - tc.t0 < 350) {
+        this.handleTap(tc.sx, tc.sy);
+      }
+      // if one finger remains (e.g. lifted from a pinch), keep panning with it but
+      // mark it moved so it can't register as a tap; otherwise clear the gesture.
+      if (e.touches.length === 1) {
+        const p = pt(e.touches[0]);
+        this.touch = { mode: 'one', sx: p.x, sy: p.y, lx: p.x, ly: p.y, t0: performance.now(), moved: 99 };
+      } else {
+        this.touch = null;
+      }
+    }, { passive: false });
+  }
+
+  // Tap: own unit/building → select; with a selection, tapping elsewhere issues a
+  // command (move/gather/attack); tapping empty ground with nothing picked clears.
+  handleTap(cx, cy) {
+    const ent = this.pickEntity(cx, cy);
+    const mine = this.selectedUnits();
+    if (ent && ent.owner === 0 && !ent.isResource) {
+      this.game.selection = [ent]; Sound.select(); this.game.emit('selection'); return;
+    }
+    if (mine.length) {
+      const p = this.screenToWorld(cx, cy);
+      if (p) {
+        this.game.commandRightClick(this.game.selection, p.x, p.z, ent);
+        if (!ent) this.game.emit('ground-click', p.x, p.z, 'move');
+        Sound.command();
+      }
+      return;
+    }
+    if (ent) { this.game.selection = [ent]; Sound.select(); }
+    else this.game.selection = [];
+    this.game.emit('selection');
   }
 
   skipIntro() { if (this.intro > 0) { this.intro = 0; this.ui?.hideIntroCard?.(); } }

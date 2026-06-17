@@ -98,8 +98,30 @@ giant footfalls & collapses. **[planned]** opening flyover, victory pan, defeat 
 
 ## 11. UI / HUD  **[done]** bronze-trim + carved-stone reskin: topbar lintel with bronze
 border-image, command panel as a stone slab, **minimap as a bronze-rimmed tablet**, carved
-command buttons, bronze toasts. **[planned]** parchment texture fills, carved glyph icons
-replacing emoji, tech-tree view, victory/defeat art.
+command buttons, bronze toasts. **Settings panel** (brightness/exposure slider, graphics
+quality Auto/High/Low, music & SFX volume) and a **collapsible hotkey reference** (`?`),
+both reachable from the topbar. **First-match coach hints** nudge new players through
+gather → build → attack → win, shown once per player. **[planned]** parchment texture
+fills, carved glyph icons replacing emoji, tech-tree view, victory/defeat art.
+
+## 11b. Audio  **[done]** WebAudio synth — no asset files. SFX (UI blips, combat hits,
+construction, alerts, win/lose stings) with a master SFX volume. **Ambient music**: a low,
+evolving pre-Flood drone — a root/fifth/octave oscillator stack breathing through a slow
+lowpass sweep, each voice swelling on its own LFO, with a distant bell tolling on a long
+random interval. Master music volume + on/off, persisted. **[planned]** per-biome musical
+modes, combat intensity layer.
+
+## 11c. Accessibility & reach  **[done]** persisted player **Settings** (`settings.js`):
+brightness lets each monitor tune the deliberately-dark mood; quality pin overrides the
+auto-fallback; difficulty (Easy/Normal/Hard) is chosen at the menu. **Mobile/touch
+controls** (`controls.js`): drag-to-pan, pinch-zoom, two-finger rotate, tap-to-select and
+tap-to-command, plus a "best on desktop" notice on coarse-pointer devices. **[planned]**
+dedicated touch command palette, remappable keys, colour-blind selection cues.
+
+## 11d. Difficulty  **[done]** Easy/Normal/Hard scale the AI's worker target, attack-wave
+sizes and cadence, opening-stockpile handicap, and a passive economy trickle on Hard
+(`DIFFICULTY` in `ai.js`). Normal preserves the original tuning exactly. Persisted and
+saved with the campaign so a restored game keeps its setting.
 
 ## 12. Asset prompt library (for any future external art)
 > "Hyper-realistic ancient antediluvian RTS game asset — Mesopotamian / Levantine /
@@ -110,7 +132,11 @@ replacing emoji, tech-tree view, victory/defeat art.
 
 ## 13. Technical / performance  **[done]** single-draw-call particle pools, shared geometries
 & cached materials, procedural textures (no downloads), MSAA bloom target, **automatic
-quality fallback** (drops bloom/shadows/pixel-ratio under sustained slow frames).
+quality fallback** (drops bloom/shadows/pixel-ratio under sustained slow frames) with a
+manual override. **Three.js split into its own bundle chunk** for first-paint + long-term
+caching. **Playwright smoke tests in CI** (`tests/smoke.spec.js`): boots the built game,
+asserts units/buildings spawn with no console errors, the simulation advances (no freeze),
+and the Fields of Evil easter egg fires — run on every PR alongside `npm run build`.
 **[planned]** InstancedMesh for trees/props & repeated units, LODs, building mesh merging.
 
 ## 14. Highest-impact upgrades, in order
@@ -126,7 +152,23 @@ quality fallback** (drops bloom/shadows/pixel-ratio under sustained slow frames)
 10. ⏳ Carved rivers/roads/cliffs (balance-careful)
 11. ⏳ Instancing/LOD pass for scale
 
+### Reach & accessibility pass (shipped version)
+Beyond the art roadmap, the shipped build added the upgrades that widen who can
+actually play and enjoy it:
+- ✅ Mobile/touch controls + "best on desktop" notice
+- ✅ Settings panel: brightness/exposure + graphics-quality override
+- ✅ Onboarding: collapsible hotkey reference + first-match coach hints
+- ✅ Ambient music (evolving synth drone, no asset files)
+- ✅ Difficulty selector (Easy/Normal/Hard)
+- ✅ Fields-of-Evil cast complete in-game (Parker, Tucker, Gatsby)
+- ✅ Playwright smoke tests in CI
+- ✅ Three.js bundle split
+
 ## 15. Code map
-`game.js` engine + atmosphere/lighting/sky/FX • `fx.js` particle pools • `models.js`
-meshes & doodads • `textures.js` procedural PBR • `terrain.js` map/biome/fog •
-`pathfinding.js` clearance A* • `controls.js` camera/shake/input • `ui.js` HUD • `data.js` lore/stats.
+`game.js` engine + atmosphere/lighting/sky/FX + exposure/quality controls •
+`fx.js` particle pools • `models.js` meshes & doodads • `textures.js` procedural PBR •
+`terrain.js` map/biome/fog • `pathfinding.js` clearance A* •
+`controls.js` camera/shake + mouse/keyboard **& touch** input •
+`ui.js` HUD • `data.js` lore/stats • `ai.js` enemy AI **+ difficulty tiers** •
+`audio.js` SFX **+ ambient music** • `settings.js` persisted player settings •
+`main.js` lifecycle, menu, settings/help/coach wiring • `tests/smoke.spec.js` CI smoke tests.

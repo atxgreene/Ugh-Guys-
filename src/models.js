@@ -438,6 +438,89 @@ const unitBuilders = {
       grp.add(cyl(0.022, 0.022, 0.2, face, 4, x, 0.08, z)));      // four legs
     return grp;
   },
+  tucker(b, g) {                                                   // Easter egg: Tucker the Goldendoodle
+    const grp = new THREE.Group();
+    const fur    = mat(0xc49030);  // honey-gold
+    const furDk  = mat(0x8a6020);  // darker gold for depth
+    const furLt  = mat(0xe8bc68);  // highlights
+    const nose   = mat(0x1c1008);
+    const eye    = mat(0x1a1004, { emissive: 0x3a2408, ei: 0.3 });
+    const paw    = mat(0x6a4818);
+    // body — big fluffy oval
+    grp.add(sph(0.28, fur, 0, 0.32, 0));
+    grp.add(sph(0.24, furLt, 0, 0.34, 0.1));
+    grp.add(box(0.44, 0.22, 0.52, fur, 0, 0.28, 0));              // barrel body
+    // leg puffs
+    [[-0.16, 0.1, 0.18], [0.16, 0.1, 0.18], [-0.16, 0.1, -0.18], [0.16, 0.1, -0.18]].forEach(([x,y,z]) => {
+      grp.add(cyl(0.07, 0.07, 0.2, furDk, 5, x, y, z));
+      grp.add(sph(0.07, paw, x, 0.01, z));
+    });
+    // tail — curling upward at the back
+    grp.add(cyl(0.05, 0.03, 0.28, fur, 5, 0, 0.44, -0.26, -1.0, 0, 0));
+    grp.add(sph(0.06, furLt, 0, 0.58, -0.38));
+    // neck
+    grp.add(cyl(0.12, 0.15, 0.14, fur, 5, 0, 0.52, 0.18));
+    // head — big and round, goldendoodle style
+    grp.add(sph(0.22, fur, 0, 0.68, 0.2));
+    grp.add(sph(0.18, furLt, 0, 0.7, 0.24));
+    // floppy ears — hang down on each side
+    grp.add(box(0.09, 0.22, 0.18, furDk, -0.2, 0.58, 0.2, 0, 0, 0.25));
+    grp.add(box(0.09, 0.22, 0.18, furDk,  0.2, 0.58, 0.2, 0, 0, -0.25));
+    // snout puff
+    grp.add(sph(0.12, furLt, 0, 0.62, 0.35));
+    // nose
+    grp.add(sph(0.048, nose, 0, 0.64, 0.46));
+    // eyes
+    grp.add(sph(0.044, eye, -0.09, 0.72, 0.38));
+    grp.add(sph(0.044, eye,  0.09, 0.72, 0.38));
+    // fur poof on top
+    grp.add(sph(0.14, furDk, 0, 0.84, 0.14));
+    grp.add(sph(0.1, fur, -0.09, 0.87, 0.14));
+    grp.add(sph(0.1, fur,  0.09, 0.87, 0.14));
+    return grp;
+  },
+  gatsby(b, g) {                                                   // Easter egg: Gatsby the French Bulldog
+    const grp = new THREE.Group();
+    const fur    = mat(0x9e9296);  // grey-lilac brindle
+    const furDk  = mat(0x6a6070);  // darker stripe
+    const cream  = mat(0xd4c8b8);  // cream muzzle / chest
+    const nose   = mat(0x1e1418);
+    const eye    = mat(0x1a1220, { emissive: 0x28182e, ei: 0.35 });
+    const paw    = mat(0x504858);
+    // stocky barrel body — low and wide
+    grp.add(box(0.44, 0.28, 0.52, fur, 0, 0.24, 0));
+    grp.add(box(0.38, 0.16, 0.32, cream, 0, 0.27, 0.15));         // chest blaze
+    // four thick legs
+    [[-0.17, 0.1, 0.18], [0.17, 0.1, 0.18], [-0.17, 0.1, -0.17], [0.17, 0.1, -0.17]].forEach(([x,y,z]) => {
+      grp.add(cyl(0.075, 0.075, 0.2, fur, 5, x, y, z));
+      grp.add(sph(0.076, paw, x, 0.01, z));
+    });
+    // tiny tail nub
+    grp.add(sph(0.05, furDk, 0, 0.38, -0.27));
+    // short thick neck
+    grp.add(cyl(0.14, 0.18, 0.12, fur, 5, 0, 0.45, 0.16));
+    // big round head — frenchie proportions
+    grp.add(sph(0.24, fur, 0, 0.62, 0.2));
+    // forehead wrinkle ridges
+    grp.add(box(0.24, 0.03, 0.08, furDk, 0, 0.7, 0.32));
+    grp.add(box(0.18, 0.03, 0.06, furDk, 0, 0.76, 0.3));
+    // cream muzzle block (big pushed-in snout)
+    grp.add(sph(0.14, cream, 0, 0.58, 0.36));
+    // nose — flat, wide
+    grp.add(box(0.1, 0.04, 0.06, nose, 0, 0.61, 0.47));
+    // eyes — big and round
+    grp.add(sph(0.05, eye, -0.1, 0.67, 0.38));
+    grp.add(sph(0.05, eye,  0.1, 0.67, 0.38));
+    // bat ears — upright triangular cones
+    grp.add(cone(0.06, 0.2, furDk, 4, -0.18, 0.84, 0.18, 0, 0, -0.18));
+    grp.add(cone(0.06, 0.2, furDk, 4,  0.18, 0.84, 0.18, 0, 0,  0.18));
+    grp.add(cone(0.04, 0.14, fur, 4, -0.18, 0.82, 0.2, 0, 0, -0.16));
+    grp.add(cone(0.04, 0.14, fur, 4,  0.18, 0.82, 0.2, 0, 0,  0.16));
+    // jowls
+    grp.add(sph(0.09, cream, -0.14, 0.55, 0.36));
+    grp.add(sph(0.09, cream,  0.14, 0.55, 0.36));
+    return grp;
+  },
   champion(b, g, a) {                                              // bone-club bruiser
     const grp = new THREE.Group();
     grp.add(box(0.5, 0.66, 0.36, mat(HIDE), 0, 0.78, 0));         // massive chest

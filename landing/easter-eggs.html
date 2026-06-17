@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shadow of the Watchers — Easter Egg Cheat Sheet</title>
+<style>
+  :root {
+    --gold: #e6c074;
+    --gold-dim: #b88a3e;
+    --gold-glow: rgba(232,179,58,0.18);
+    --bg: #0c0a10;
+    --surface: #13101a;
+    --border: #2a2438;
+    --text: #d8cdb6;
+    --dim: #8a7a62;
+    --green: #5aad7a;
+    --purple: #9b72cf;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: var(--bg); color: var(--text);
+    font-family: Georgia, 'Times New Roman', serif; min-height: 100%; }
+  body { max-width: 860px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  /* header */
+  .page-title {
+    text-align: center; margin-bottom: 48px;
+  }
+  .page-title h1 {
+    font-size: 32px; letter-spacing: 8px; text-transform: uppercase; font-weight: normal;
+    color: var(--gold); text-shadow: 0 0 28px rgba(230,192,116,0.4);
+  }
+  .page-title p {
+    color: var(--dim); font-style: italic; letter-spacing: 2px; font-size: 14px; margin-top: 8px;
+  }
+  .rule { width: 240px; height: 1px; margin: 14px auto 0;
+    background: linear-gradient(90deg, transparent, var(--gold-dim), transparent); }
+
+  /* section headers */
+  h2 {
+    font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: var(--gold-dim);
+    font-weight: normal; margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
+  }
+  h2::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  section { margin-bottom: 40px; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead th {
+    text-align: left; padding: 6px 12px; font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--border);
+    font-weight: normal;
+  }
+  tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); }
+  tbody tr:hover { background: rgba(230,192,116,0.04); }
+  td { padding: 11px 12px; vertical-align: top; line-height: 1.5; }
+  td:first-child { white-space: nowrap; }
+
+  /* trigger chips */
+  .chip {
+    display: inline-block; padding: 2px 9px; border-radius: 3px; font-size: 12px;
+    letter-spacing: 1px; font-family: 'Courier New', monospace; line-height: 1.6;
+  }
+  .chip-key  { background: rgba(230,192,116,0.12); color: var(--gold); border: 1px solid var(--gold-dim); }
+  .chip-click { background: rgba(155,114,207,0.12); color: var(--purple); border: 1px solid rgba(155,114,207,0.5); }
+  .chip-event { background: rgba(90,173,122,0.12); color: var(--green); border: 1px solid rgba(90,173,122,0.4); }
+
+  .reward { color: var(--gold); font-size: 13px; }
+  .note   { color: var(--dim); font-size: 12px; font-style: italic; display: block; margin-top: 3px; }
+
+  /* portrait grid */
+  .portrait-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px;
+  }
+  .pcard {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 14px 10px; text-align: center;
+  }
+  .pcard .avatar {
+    width: 64px; height: 64px; margin: 0 auto 10px;
+    border: 1px solid var(--border); border-radius: 3px; background: #0b0a10;
+    image-rendering: pixelated; display: block;
+  }
+  .pcard .pname { color: var(--gold); font-size: 12px; letter-spacing: 0.5px; }
+  .pcard .ptrig {
+    color: var(--dim); font-size: 11px; margin-top: 4px;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* dismiss tip */
+  .tip {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    padding: 10px 14px; font-size: 12px; color: var(--dim); font-style: italic; margin-top: 12px;
+  }
+
+  /* footer */
+  footer { text-align: center; color: var(--dim); font-size: 11px; font-style: italic;
+    letter-spacing: 1px; margin-top: 64px; }
+</style>
+</head>
+<body>
+
+<div class="page-title">
+  <h1>Shadow of the Watchers</h1>
+  <p>easter egg cheat sheet — all secrets, all triggers</p>
+  <div class="rule"></div>
+</div>
+
+<!-- ───────────── IN-GAME ───────────── -->
+<section>
+  <h2>In-Game Secrets</h2>
+  <p style="color:var(--dim);font-size:13px;font-style:italic;margin-bottom:18px;">
+    These activate during a match, after you've chosen your faction.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Trigger</th>
+        <th>What Happens</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="chip chip-key">greene</span></td>
+        <td>
+          Spawns the <strong>Fields of Evil</strong> immediately — the House of Greene, Landry's
+          and Connor's clans feuding around it, the hounds at the door, and the Warwagon.
+          <span class="note">Normally only an 18% chance per map. Type any time during play.</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="chip chip-event">Find the House</span></td>
+        <td>
+          Discovery toast fires + <strong>Mr Greene's</strong> portrait dialogue appears at the
+          bottom of the HUD.
+          <span class="note">"Welcome to my Fields, stranger. The hounds caught your scent a mile off."</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="chip chip-event">First Landonian sighted</span></td>
+        <td>
+          <strong>Landry · King of the Landonians</strong> portrait pops up.
+          <span class="note">"You're standing in my Fields. Bold move — I respect it."</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="chip chip-event">First Boydonian sighted</span></td>
+        <td>
+          <strong>Connor · King of the Boydonians</strong> portrait pops up.
+          <span class="note">"Swing true, fear nothing. This is Boydonian ground."</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="chip chip-event">First sight of Parker</span></td>
+        <td>
+          <strong>Parker the Shepherd</strong> greets you — then checks in periodically
+          while he's in view.
+          <span class="note">"Oh — hello there! Parker's the name. How are you holding up?"</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="chip chip-event">First sight of Tucker</span></td>
+        <td>
+          <strong>Tucker the Goldendoodle</strong> sniffs you thoroughly, wags once, and trots
+          back to the house.
+          <span class="note">Verdict: you passed.</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="chip chip-event">First sight of Gatsby</span></td>
+        <td>
+          <strong>Gatsby the French Bulldog</strong> stares at you with absolute confidence.
+          <span class="note">He has never doubted himself. Not once.</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="chip chip-event">Raze the House of Greene</span></td>
+        <td>
+          <span class="reward">+500 Forbidden Knowledge &nbsp;·&nbsp; +200 Divine Favor</span>
+          <span class="note">Toast: "☩ The House of Greene has fallen. Their hoard of forbidden knowledge is yours."</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="tip">
+    Portraits appear in the <strong>bronze-bordered dialogue box</strong> at bottom-centre of the HUD.
+    Click it (or wait 8 s) to dismiss.
+  </div>
+</section>
+
+<!-- ───────────── LANDING PAGE ───────────── -->
+<section>
+  <h2>Landing Page Secrets</h2>
+  <p style="color:var(--dim);font-size:13px;font-style:italic;margin-bottom:18px;">
+    Two ways to unlock pixel portrait cards on the marketing site.
+  </p>
+
+  <h2 style="font-size:10px;margin-bottom:14px;">Method 1 — Type a Name</h2>
+  <div class="portrait-grid">
+    <div class="pcard">
+      <img class="avatar" src="../landing/img/card-landon.png" alt="Landry" onerror="this.style.opacity=0.2">
+      <div class="pname">Landry</div>
+      <div class="ptrig">landon · landry</div>
+    </div>
+    <div class="pcard">
+      <img class="avatar" src="../landing/img/card-boydonian.png" alt="Connor" onerror="this.style.opacity=0.2">
+      <div class="pname">Connor</div>
+      <div class="ptrig">boyd · connor</div>
+    </div>
+    <div class="pcard">
+      <img class="avatar" src="../landing/img/card-greene.png" alt="Mr Greene" onerror="this.style.opacity=0.2">
+      <div class="pname">Mr Greene</div>
+      <div class="ptrig">greene · austin</div>
+    </div>
+    <div class="pcard">
+      <img class="avatar" src="../landing/img/card-tucker.png" alt="Tucker" onerror="this.style.opacity=0.2">
+      <div class="pname">Tucker</div>
+      <div class="ptrig">tucker</div>
+    </div>
+    <div class="pcard">
+      <img class="avatar" src="../landing/img/card-gatsby.png" alt="Gatsby" onerror="this.style.opacity=0.2">
+      <div class="pname">Gatsby</div>
+      <div class="ptrig">gatsby · hounds</div>
+    </div>
+    <div class="pcard">
+      <img class="avatar" src="../landing/img/card-parker.png" alt="Parker" onerror="this.style.opacity=0.2">
+      <div class="pname">Parker</div>
+      <div class="ptrig">parker · shepherd</div>
+    </div>
+  </div>
+
+  <table style="margin-top:28px;">
+    <thead>
+      <tr><th>Method</th><th>How</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="chip chip-key">keyboard</span></td>
+        <td>Type any trigger word from the grid above — anywhere on the page, no focus needed.</td>
+      </tr>
+      <tr>
+        <td><span class="chip chip-click">◈ footer</span></td>
+        <td>
+          Click the faint <strong>◈</strong> symbol on the right side of the footer copyright line.
+          Cycles through all six cards in order.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="tip">Dismiss any card with <strong>Esc</strong> or by clicking outside it.</div>
+</section>
+
+<!-- ───────────── LEGEND ───────────── -->
+<section>
+  <h2>Legend</h2>
+  <table>
+    <tbody>
+      <tr>
+        <td style="width:130px"><span class="chip chip-key">type</span></td>
+        <td>Keyboard trigger — type the word at any time</td>
+      </tr>
+      <tr>
+        <td><span class="chip chip-click">click</span></td>
+        <td>UI interaction — click something on the page</td>
+      </tr>
+      <tr>
+        <td><span class="chip chip-event">game event</span></td>
+        <td>Fires automatically when the condition is met in a match</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<footer>Shadow of the Watchers &nbsp;·&nbsp; all secrets belong to the age before the Flood</footer>
+
+</body>
+</html>
