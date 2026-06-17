@@ -1,5 +1,6 @@
 // Entry point: main menu, faction selection, game lifecycle and loop.
 import { FACTIONS } from './data.js';
+import { BIOMES } from './terrain.js';
 import { Game } from './game.js';
 import { AI } from './ai.js';
 import { Controls } from './controls.js';
@@ -84,6 +85,21 @@ function buildMenu() {
       b.onclick = () => { Sound.click(); Settings.set('difficulty', b.dataset.d); sync(); };
     sync();
   }
+  // skirmish setup: opponent + land selectors (Random by default)
+  const enemySel = document.getElementById('sel-enemy');
+  if (enemySel) {
+    enemySel.innerHTML = '<option value="random">Random</option>' +
+      Object.values(FACTIONS).map(f => `<option value="${f.key}">${f.name}</option>`).join('');
+    enemySel.value = Settings.get('enemy') || 'random';
+    enemySel.onchange = () => Settings.set('enemy', enemySel.value);
+  }
+  const biomeSel = document.getElementById('sel-biome');
+  if (biomeSel) {
+    biomeSel.innerHTML = '<option value="random">Random</option>' +
+      Object.entries(BIOMES).map(([k, b]) => `<option value="${k}">${b.name}</option>`).join('');
+    biomeSel.value = Settings.get('biome') || 'random';
+    biomeSel.onchange = () => Settings.set('biome', biomeSel.value);
+  }
   refreshContinue();
 }
 
@@ -95,11 +111,16 @@ function showLoading(then) {
 }
 
 function startGame(playerFactionKey) {
+  // resolve opponent + land from the skirmish-setup selectors (Random by default)
+  const enemySel = Settings.get('enemy');
+  const enemyKey = enemySel && enemySel !== 'random' && enemySel !== playerFactionKey ? enemySel : null;
+  const biomeSel = Settings.get('biome');
+  const biome = biomeSel && biomeSel !== 'random' ? biomeSel : null;
   // world generation takes a moment — paint the loading screen first
-  showLoading(() => startGameNow(playerFactionKey));
+  showLoading(() => startGameNow(playerFactionKey, enemyKey, null, biome));
 }
 
-function startGameNow(playerFactionKey, enemyKey, loadData) {
+function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   stopGame();
   const loading = !!loadData;
   if (!enemyKey) { // new game: enemy is a random different faction
@@ -114,7 +135,7 @@ function startGameNow(playerFactionKey, enemyKey, loadData) {
   document.getElementById('gameover').style.display = 'none';
 
   const container = document.getElementById('game-container');
-  const opts = loadData ? { load: loadData } : (window.__forceOpts || {});
+  const opts = loadData ? { load: loadData } : { ...(window.__forceOpts || {}), ...(biome ? { biome } : {}) };
   const game = new Game(container, playerFactionKey, enemyKey, opts);
   const ui = new UI(game, returnToMenu);
   const controls = new Controls(game, ui);

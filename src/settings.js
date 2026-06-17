@@ -7,6 +7,8 @@ const DEFAULTS = {
   brightness: 1.0,        // exposure multiplier, 0.6 – 1.6
   quality: 'auto',        // 'auto' | 'high' | 'low'
   difficulty: 'normal',   // 'easy' | 'normal' | 'hard'
+  enemy: 'random',        // 'random' | faction key
+  biome: 'random',        // 'random' | biome key
   music: true,            // ambient drone on/off
   musicVol: 0.6,          // 0 – 1
   sfxVol: 1.0,            // 0 – 1
