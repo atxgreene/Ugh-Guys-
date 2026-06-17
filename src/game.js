@@ -9,7 +9,7 @@ import { GameMap, BIOMES, GRID, TILE, WORLD } from './terrain.js';
 import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
 import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP,
   FIELDS_OF_EVIL, NEUTRAL_UNIT_DEFS, NEUTRAL_BUILDING_DEFS } from './data.js';
-import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats, buildScaffold, buildFireCluster } from './models.js';
+import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats, buildScaffold, buildFireCluster, buildDoodad } from './models.js';
 import { waterNormalMap } from './textures.js';
 import { ParticlePool } from './fx.js';
 import { Sound } from './audio.js';
@@ -1450,6 +1450,34 @@ export class Game {
     if (b.owner === 0) this.emit('toast', b.def.name + ' complete');
     // builders go idle next to it
     for (const u of this.units) if (u.buildSite === b) u.stop();
+    this.dressBuilding(b);
+  }
+
+  // Scatter a couple of themed props just outside a finished building so settlements
+  // read as lived-in: sacks at granaries, weapon racks at war buildings, braziers at
+  // temples, banners at the seat of power. Decorative scene objects (not children, so
+  // construction scaling never touches them); removed when the building falls.
+  dressBuilding(b) {
+    if (b.owner > 1) return;
+    const types = b.def.main ? ['banner', 'amphorae', 'brazier']
+      : /granary|store/.test(b.key) ? ['grain_sacks', 'amphorae', 'wood_pile']
+      : /barrack|lodge|foundry|forge|gate|pit|den/.test(b.key) ? ['weapon_rack', 'banner']
+      : /temple|totem|archive|tower|cairn|spire|hearth/.test(b.key) ? ['brazier', 'banner']
+      : ['amphorae'];
+    const n = 1 + (Math.random() < 0.6 ? 1 : 0);
+    b.props = b.props || [];
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, r = b.radius + 0.7 + Math.random() * 0.6;
+      const wx = b.pos.x + Math.cos(a) * r, wz = b.pos.z + Math.sin(a) * r;
+      const t = this.map.tileOf(wx, wz);
+      if (!this.map.inBounds(t.x, t.y) || this.map.blocked[this.map.idx(t.x, t.y)]) continue;
+      const d = buildDoodad(types[(Math.random() * types.length) | 0]);
+      d.position.set(wx, this.map.heightAt(wx, wz), wz);
+      d.rotation.y = Math.random() * Math.PI * 2;
+      d.scale.setScalar(0.7);
+      this.scene.add(d);
+      b.props.push(d);
+    }
   }
 
   // ---------- combat ----------
@@ -1596,6 +1624,7 @@ export class Game {
   removeBuilding(b, attacker) {
     for (let y = 0; y < b.size; y++) for (let x = 0; x < b.size; x++)
       this.map.blocked[this.map.idx(b.tx + x, b.ty + y)] = 0;
+    if (b.props) { for (const p of b.props) this.scene.remove(p); b.props = null; }
     if (b.disc) this.scene.remove(b.disc);
     this.addEffect(b.pos.x, b.pos.z, b.radius * 1.4, glowMat(0xff5522, 1.5));
     this.effects.push({ mesh: b.mesh, life: 1.4, max: 1.4, type: 'rubble' });
