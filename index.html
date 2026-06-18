@@ -5,12 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Shadow of the Watchers — Ancient Apocalyptic RTS</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none;
+      -webkit-user-select: none; -webkit-touch-callout: none; }
+    /* iOS ignores user-scalable=no, so stop the page itself from ever zooming:
+       `manipulation` kills double-tap-to-zoom (without delaying real taps); the game
+       canvas takes full gesture ownership; text inputs stay selectable/editable. */
     html, body { width: 100%; height: 100%; overflow: hidden; background: #08080c;
-      font-family: Georgia, 'Times New Roman', serif; color: #d8d2c4; }
+      font-family: Georgia, 'Times New Roman', serif; color: #d8d2c4;
+      touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+    input, textarea { -webkit-user-select: text; user-select: text; }
     #app { position: relative; width: 100%; height: 100%; }
-    #game-container { position: absolute; inset: 0; }
-    canvas { display: block; }
+    #game-container { position: absolute; inset: 0; touch-action: none; }
+    canvas { display: block; touch-action: none; }
 
     /* ---------- main menu ---------- */
     #menu { position: absolute; inset: 0; z-index: 50; display: flex; flex-direction: column;
@@ -252,7 +258,7 @@
     .lobby-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
     .lobby-row > span { width: 92px; color: #b0a4be; font-size: 13px; flex-shrink: 0; }
     .lobby-row input, .lobby-row select { flex: 1; background: #0e0b14; color: #e6cf94; border: 1px solid #4a4458;
-      border-radius: 4px; padding: 8px 10px; font-family: inherit; font-size: 13px; }
+      border-radius: 4px; padding: 8px 10px; font-family: inherit; font-size: 16px; }
     .lobby-actions { display: flex; gap: 10px; margin-top: 14px; }
     .lobby-actions button { flex: 1; background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6cf94;
       border: 1px solid #6a5634; border-radius: 4px; padding: 10px; font-family: inherit; font-size: 14px;

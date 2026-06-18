@@ -511,6 +511,13 @@ function showCoachHints() {
 
 // ---------- settings panel + help + touch notice (bound once) ----------
 function bindShell() {
+  // iOS ignores the viewport's user-scalable=no, so a pinch (even on the HUD, away
+  // from the canvas which already preventDefaults its touches) would zoom the whole
+  // page and strand the player off-screen. Suppressing the Safari gesture events
+  // stops page pinch-zoom everywhere; CSS touch-action handles double-tap zoom.
+  for (const t of ['gesturestart', 'gesturechange', 'gestureend'])
+    document.addEventListener(t, e => e.preventDefault(), { passive: false });
+
   // apply persisted audio volumes immediately
   Sound.setVolume(Settings.get('sfxVol'));
   Music.setVolume(Settings.get('musicVol'));
