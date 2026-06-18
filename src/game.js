@@ -8,7 +8,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GameMap, BIOMES, GRID, TILE, WORLD, MAP_SIZES, setMapSize } from './terrain.js';
 import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
 import { FACTIONS, UPGRADES, NEUTRALS, MONSTERS, RESOURCE_NODES, START_RES, SUPPLY_CAP,
-  FIELDS_OF_EVIL, NEUTRAL_UNIT_DEFS, NEUTRAL_BUILDING_DEFS } from './data.js';
+  FIELDS_OF_EVIL, NEUTRAL_UNIT_DEFS, NEUTRAL_BUILDING_DEFS, EMPOWER } from './data.js';
+import { makeRng } from './rng.js';
 import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats, buildScaffold, buildFireCluster, buildDoodad } from './models.js';
 import { waterNormalMap } from './textures.js';
 import { ParticlePool } from './fx.js';
@@ -107,9 +108,9 @@ export class Unit extends Entity {
     this.gatherNode = null; this.carry = 0; this.carryType = null;
     this.buildSite = null;
     this.cooldown = 0;
-    this.scanT = Math.random() * 0.3;
-    this.animT = Math.random() * 10;
-    this.facing = Math.random() * Math.PI * 2;
+    this.scanT = game.rand() * 0.3;       // sim-critical (scan cadence) → seeded
+    this.animT = Math.random() * 10;       // cosmetic
+    this.facing = Math.random() * Math.PI * 2;  // cosmetic (smoothly corrected on first order)
     this.facingTarget = this.facing;
     this.clearance = clearanceFor(def.radius || 0.6);
     this.stuckT = 0;           // time spent making no progress while moving
@@ -118,6 +119,8 @@ export class Unit extends Entity {
     this.leash = null;         // neutral guard post
     this.stance = 'aggressive'; // 'aggressive' | 'defensive' | 'hold'
     this.anchor = null;         // hold/defensive return point
+    this.orderQueue = [];       // shift-queued waypoints/commands (FIFO)
+    this.patrolA = null; this.patrolB = null;  // patrol endpoints
     this.abilityCd = 0;         // seconds until ability is ready again
     this.abilityActiveDur = 0;  // seconds remaining on an active self-buff
     this.abilityBuff = null;    // { dmgMult?, armorAdd?, spdMult?, atkCdMult?, firstHit?, stunDur? }
@@ -172,7 +175,41 @@ export class Unit extends Entity {
     this.buildSite = site; this.target = null; this.gatherNode = null;
     this.state = 'build'; this.path = null;
   }
-  stop() { this.state = 'idle'; this.path = null; this.target = null; this.gatherNode = null; this.buildSite = null; this.pendingStrike = null; }
+  stop() { this.state = 'idle'; this.path = null; this.target = null; this.gatherNode = null; this.buildSite = null; this.pendingStrike = null; this.patrolA = this.patrolB = null; this.orderQueue.length = 0; }
+
+  // Patrol back and forth between the current spot and a point, attacking what
+  // strays into range and returning to the beat — classic guard micro.
+  orderPatrol(x, z) {
+    this.patrolA = { x: this.pos.x, z: this.pos.z };
+    this.patrolB = { x, z };
+    this.patrolTo = 'B';
+    this.target = null; this.gatherNode = null; this.buildSite = null;
+    this.orderMove(x, z, true);
+    this.state = 'patrol';
+  }
+
+  // ---- shift-queued orders ----
+  // Dispatch a single queued command object to the matching order.
+  startOrder(c) {
+    if (c.type === 'move') this.orderMove(c.x, c.z, c.attackMove);
+    else if (c.type === 'patrol') this.orderPatrol(c.x, c.z);
+    else if (c.type === 'attack') { if (c.target && !c.target.dead) this.orderAttack(c.target); else this.orderMove(c.x, c.z); }
+    else if (c.type === 'gather') { if (c.node && c.node.amount > 0) this.orderGather(c.node); else this.orderMove(c.x, c.z); }
+    else if (c.type === 'build') { if (c.site && !c.site.dead && !c.site.complete) this.orderBuild(c.site); else this.orderMove(c.x, c.z); }
+  }
+  // Issue a command, optionally appending to the queue (shift). Appends only while
+  // the unit is already busy or has a queue; otherwise it starts immediately.
+  command(c, queue) {
+    if (queue && (this.state !== 'idle' || this.orderQueue.length)) this.orderQueue.push(c);
+    else { this.orderQueue.length = 0; this.startOrder(c); }
+  }
+  // Pop and begin the next queued command; returns false when the queue is empty.
+  advanceOrders() {
+    const next = this.orderQueue.shift();
+    if (!next) return false;
+    this.startOrder(next);
+    return true;
+  }
 
   // Collision-aware move with wall sliding (LoL-style barrier glide). Attempts
   // the full step; if blocked, slides along whichever axis is clear. Returns the
@@ -290,11 +327,11 @@ export class Unit extends Entity {
   // leash, or the spawn point). orderMove carries us off in 'move'; on arrival
   // we fall back to 'idle' and amble again.
   wander(dt) {
-    this.wanderT = (this.wanderT ?? Math.random() * 4) - dt;
+    this.wanderT = (this.wanderT ?? this.game.rand() * 4) - dt;
     if (this.wanderT > 0) return;
-    this.wanderT = 4 + Math.random() * 6;
+    this.wanderT = 4 + this.game.rand() * 6;
     const home = this.leash || (this.wanderHome ||= { x: this.pos.x, z: this.pos.z });
-    const a = Math.random() * Math.PI * 2, r = 2.5 + Math.random() * 6.5;
+    const a = this.game.rand() * Math.PI * 2, r = 2.5 + this.game.rand() * 6.5;
     this.orderMove(home.x + Math.cos(a) * r, home.z + Math.sin(a) * r);
   }
 
@@ -355,7 +392,7 @@ export class Unit extends Entity {
         break;
       }
       case 'move': {
-        if (this.seek(this.dest.x, this.dest.z, 0.5, dt)) this.state = 'idle';
+        if (this.seek(this.dest.x, this.dest.z, 0.5, dt)) { if (!this.advanceOrders()) this.state = 'idle'; }
         break;
       }
       case 'attackMove': {
@@ -365,16 +402,33 @@ export class Unit extends Entity {
           const t = this.acquireTarget(this.def.aggroRange + 2);
           if (t) { this.target = t; this.state = 'attack'; this.resumeAM = this.dest; break; }
         }
-        if (this.seek(this.dest.x, this.dest.z, 0.8, dt)) this.state = 'idle';
+        if (this.seek(this.dest.x, this.dest.z, 0.8, dt)) { if (!this.advanceOrders()) this.state = 'idle'; }
+        break;
+      }
+      case 'patrol': {
+        this.scanT -= dt;
+        if (this.scanT <= 0) {
+          this.scanT = 0.25;
+          const t = this.acquireTarget(this.def.aggroRange + 2);
+          if (t) { this.target = t; this.state = 'attack'; this.resumePatrol = true; break; }
+        }
+        const ep = this.patrolTo === 'B' ? this.patrolB : this.patrolA;
+        if (!ep) { this.state = 'idle'; break; }
+        if (this.seek(ep.x, ep.z, 0.9, dt)) {
+          this.patrolTo = this.patrolTo === 'B' ? 'A' : 'B';
+          const n = this.patrolTo === 'B' ? this.patrolB : this.patrolA;
+          this.orderMove(n.x, n.z, true); this.state = 'patrol';
+        }
         break;
       }
       case 'attack': {
         const t = this.target;
         if (!t || t.dead) {
           this.target = null;
-          if (this.resumeAM) { this.orderMove(this.resumeAM.x, this.resumeAM.z, true); this.resumeAM = null; }
+          if (this.resumePatrol && this.patrolB) { this.resumePatrol = false; const ep = this.patrolTo === 'B' ? this.patrolB : this.patrolA; this.orderMove(ep.x, ep.z, true); this.state = 'patrol'; }
+          else if (this.resumeAM) { this.orderMove(this.resumeAM.x, this.resumeAM.z, true); this.resumeAM = null; }
           else if (this.owner === 2 && this.leash) { this.state = 'move'; this.dest = { ...this.leash }; this.path = null; }
-          else this.state = 'idle';
+          else if (!this.advanceOrders()) this.state = 'idle';
           break;
         }
         if (!atk) { this.state = 'idle'; break; }
@@ -429,16 +483,23 @@ export class Unit extends Entity {
         const n = this.gatherNode;
         if (!n || n.amount <= 0) { this.findNewNode(); break; }
         if (this.seek(n.pos.x, n.pos.z, n.radius + this.radius + 0.5, dt)) {
-          this.gatherT = (this.gatherT ?? 0) + dt;
+          // a faction-wide gather surge (Marshal the Stores) speeds the swing
+          const boost = this.game.players[this.owner].gatherBoostT > 0 ? EMPOWER.gatherBoost : 1;
+          this.gatherT = (this.gatherT ?? 0) + dt * boost;
           this.facingTarget = Math.atan2(n.pos.x - this.pos.x, n.pos.z - this.pos.z);
           this.harvesting = true;          // drives the chop/swing + gather particles
           this.game.gatherFx(n);
           const info = RESOURCE_NODES[n.type];
           if (this.gatherT >= info.gatherTime) {
             this.gatherT = 0;
+            // worker saturation: past the node's ideal headcount, each surplus
+            // laborer hauls less — the engine's nudge to spread out and expand.
+            const crew = this.game.gatherersOn(n);
+            const ideal = info.ideal || 3;
+            const sat = crew <= ideal ? 1 : Math.max(0.45, ideal / crew);
             const take = Math.min(info.carry, n.amount);
             n.amount -= take;
-            this.carry = take; this.carryType = n.type;
+            this.carry = take * sat; this.carryType = n.type;
             if (n.amount <= 0) this.game.depleteNode(n);
             this.state = 'return';
           }
@@ -838,6 +899,7 @@ export class Game {
     this.qualityMode = Settings.get('quality') || 'auto';
     this.units = []; this.buildings = []; this.resources = [];
     this.projectiles = []; this.effects = [];
+    this.pendingTelegraphs = [];   // dodgeable boss AoE wind-ups (resolve after a delay)
     this.selection = [];
     this.listeners = {};
 
@@ -849,6 +911,10 @@ export class Game {
 
     this.initRenderer();
     this.map = new GameMap(opts.seed, this.biomeKey);
+    // Seeded simulation RNG: every gameplay-affecting random draw flows through
+    // this.rand() so a match is fully reproducible from (seed + input stream).
+    // Derived from the (now-fixed) map seed so a save/replay reloads identically.
+    this.rng = makeRng((this.map.seed ^ 0x53c0ffee) >>> 0);
     this.scene.add(this.map.buildMesh());
     const _wm = this.map.buildWaterMesh();
     if (_wm) this.scene.add(_wm);
@@ -870,8 +936,14 @@ export class Game {
       dmgMult: 1, armorAdd: 0, hpMult: 1,
       upgrades: new Set(),
       supplyUsed: 0, supplyCap: 0,
+      empowerCd: 0,      // Marshal-the-Stores cooldown (active economy ability)
+      gatherBoostT: 0,   // remaining seconds of the gather-speed surge it grants
     };
   }
+
+  // Seeded simulation RNG accessor — use for ANY randomness that affects the
+  // simulation (movement, AI, timing). Cosmetic-only jitter stays on Math.random.
+  rand() { return this.rng(); }
 
   initRenderer() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -1301,6 +1373,13 @@ export class Game {
         const rawDmg = unit.effDmg(unit.def.attack?.dmg || 10);
         const dmgBase = rawDmg * (ab.dmgMult || 1);
         const fxColor = unit.owner <= 1 ? this.players[unit.owner].faction.glow : 0xff7a4d;
+        // World bosses TELEGRAPH their slam: a warning ring blooms on the ground and
+        // the blow lands a beat later, so a sharp player can pull units out of it.
+        // (Player/AI abilities still strike instantly to preserve PvP balance.)
+        if (unit.owner === 2 && unit.def.boss) {
+          this.telegraphAoe(unit, ab, dmgBase, fxColor);
+          break;
+        }
         this.addEffect(unit.pos.x, unit.pos.z, ab.radius, glowMat(fxColor, 2));
         if (visible) {
           for (let i = 0; i < 12; i++) {
@@ -1360,6 +1439,61 @@ export class Game {
 
   useSelectedAbility() {
     for (const u of this.selection) if (u.isUnit && u.owner === 0 && !u.dead) this.useAbility(u);
+  }
+
+  // ---- dodgeable boss AoE telegraphs ----
+  // Paint a danger zone on the ground that detonates after a wind-up. The impact
+  // centre is FIXED where the boss stood, so micro'ing units out of the ring dodges
+  // the blow — the heart of reading a boss fight.
+  telegraphAoe(attacker, ab, dmgBase, fxColor) {
+    const windup = ab.windup || 1.1;
+    const x = attacker.pos.x, z = attacker.pos.z, r = ab.radius;
+    const y = this.map.heightAt(x, z) + 0.12;
+    const ringMat = new THREE.MeshBasicMaterial({ color: fxColor, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r * 0.84, r, 36), ringMat);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(x, y, z);
+    this.scene.add(ring);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 36),
+      new THREE.MeshBasicMaterial({ color: fxColor, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
+    disc.rotation.x = -Math.PI / 2; disc.position.set(x, y, z);
+    this.scene.add(disc);
+    this.pendingTelegraphs.push({ attacker, ab, dmgBase, x, z, r, t: 0, dur: windup, ring, disc });
+    if (this.map.fogStateAt(x, z) === 2) Sound.alert();
+  }
+
+  updateTelegraphs(dt) {
+    if (!this.pendingTelegraphs.length) return;
+    for (const tg of this.pendingTelegraphs) {
+      tg.t += dt;
+      const p = Math.min(1, tg.t / tg.dur);
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
+      tg.disc.material.opacity = 0.08 + 0.20 * p;
+      tg.ring.material.opacity = 0.30 + 0.55 * p * pulse;
+      if (tg.t < tg.dur) continue;
+      tg.done = true;
+      this.scene.remove(tg.ring); this.scene.remove(tg.disc);
+      const u = tg.attacker;
+      const gy = this.map.heightAt(tg.x, tg.z);
+      const visible = this.map.fogStateAt(tg.x, tg.z) === 2;
+      this.addEffect(tg.x, tg.z, tg.r, glowMat(0xff7a4d, 2));
+      if (visible) {
+        for (let i = 0; i < 14; i++) {
+          const a = i / 14 * Math.PI * 2, rr = tg.r * (0.5 + Math.random() * 0.6);
+          this.fxSpark.spawn(tg.x + Math.cos(a) * rr, gy + 0.6, tg.z + Math.sin(a) * rr,
+            Math.cos(a) * 2, 1 + Math.random() * 2, Math.sin(a) * 2, 0.5, 0.14, 1.0);
+        }
+        this.addShake(0.25); Sound.abilityAoe();
+      }
+      // only what is STILL inside the marked zone is struck — step out to dodge
+      for (const e of this.allCombatants()) {
+        if (e.dead || e.owner === u.owner || (u.owner !== 2 && e.owner === 2)) continue;
+        if (Math.hypot(e.pos.x - tg.x, e.pos.z - tg.z) - e.radius <= tg.r) {
+          this.applyHit(u, e, u.def.attack || {}, tg.dmgBase);
+          if (tg.ab.stunDur && e.isUnit) e.stunDur = Math.max(e.stunDur || 0, tg.ab.stunDur);
+        }
+      }
+    }
+    this.pendingTelegraphs = this.pendingTelegraphs.filter(t => !t.done);
   }
 
   updateEmbers(dt) {
@@ -1582,6 +1716,31 @@ export class Game {
     this.units.push(u);
     this.recalcSupply();
     return u;
+  }
+
+  // ---------- macro: active economy ability ----------
+  // How many of an owner's laborers are currently working a given node — drives
+  // worker-saturation diminishing returns.
+  gatherersOn(node) {
+    let c = 0;
+    for (const u of this.units) if (!u.dead && u.gatherNode === node) c++;
+    return c;
+  }
+  // "Marshal the Stores": instant soft-resource burst + a timed gather surge, on a
+  // cooldown. Returns false (and stays silent) if still cooling down. Deterministic.
+  marshalStores(owner) {
+    const p = this.players[owner];
+    if (!p || p.empowerCd > 0) return false;
+    p.empowerCd = EMPOWER.cooldown;
+    p.gatherBoostT = Math.max(p.gatherBoostT, EMPOWER.boostDur);
+    for (const [k, v] of Object.entries(EMPOWER.burst)) p.resources[k] = (p.resources[k] || 0) + v;
+    if (owner === 0) {
+      Sound.upgrade();
+      this.emit('toast', '⛟ The stores are marshalled — granaries fill and the laborers quicken.');
+      const m = this.playerMain;
+      if (m) this.addEffect(m.pos.x, m.pos.z, m.radius + 3, glowMat(this.players[0].faction.glow, 2));
+    }
+    return true;
   }
 
   // ---------- queries ----------
@@ -1883,8 +2042,9 @@ export class Game {
       const anySelectedNear = false;
       if (this.map.fogStateAt(entity.pos.x, entity.pos.z) !== 2 || entity.isBuilding) {
         this.lastAlert = this.time;
+        this.lastAlertPos = { x: entity.pos.x, z: entity.pos.z };   // Space jumps here
         Sound.alert();
-        this.emit('toast', '⚔ Your forces are under attack!');
+        this.emit('toast', '⚔ Your forces are under attack! (Space to view)');
         this.emit('ping', entity.pos.x, entity.pos.z);
       }
     }
@@ -2016,7 +2176,7 @@ export class Game {
   }
 
   // ---------- commands from UI ----------
-  commandRightClick(targets, wx, wz, entity) {
+  commandRightClick(targets, wx, wz, entity, queue = false) {
     const units = targets.filter(t => t.isUnit && t.owner === 0);
     const buildings = targets.filter(t => t.isBuilding && t.owner === 0);
     for (const b of buildings) {
@@ -2026,28 +2186,37 @@ export class Game {
     if (!units.length) return;
     Sound.command();
     if (entity && entity.isResource) {
-      for (const u of units) u.def.worker ? u.orderGather(entity) : u.orderMove(wx, wz);
+      for (const u of units) u.command(u.def.worker ? { type: 'gather', node: entity, x: wx, z: wz } : { type: 'move', x: wx, z: wz }, queue);
       return;
     }
     if (entity && !entity.dead && entity.owner !== 0 && !entity.isResource) {
-      for (const u of units) u.def.attack ? u.orderAttack(entity) : u.orderMove(wx, wz);
+      for (const u of units) u.command(u.def.attack ? { type: 'attack', target: entity, x: wx, z: wz } : { type: 'move', x: wx, z: wz }, queue);
       return;
     }
     if (entity && entity.isBuilding && entity.owner === 0 && !entity.complete) {
-      for (const u of units) u.def.worker ? u.orderBuild(entity) : u.orderMove(wx, wz);
+      for (const u of units) u.command(u.def.worker ? { type: 'build', site: entity, x: wx, z: wz } : { type: 'move', x: wx, z: wz }, queue);
       return;
     }
     // formation move
-    this.formationMove(units, wx, wz, false);
+    this.formationMove(units, wx, wz, false, queue);
+  }
+
+  // Patrol: each selected unit walks a beat between where it stands and the point,
+  // engaging what wanders into range. Shift appends it as a queued order.
+  commandPatrol(units, wx, wz, queue = false) {
+    const us = units.filter(u => u.isUnit && u.owner === 0);
+    if (!us.length) return;
+    Sound.command();
+    for (const u of us) u.command({ type: 'patrol', x: wx, z: wz }, queue);
   }
 
   // Move a group as a battle line: the block is oriented to the travel direction
   // with a wide front, melee in the leading rows and ranged/casters/workers tucked
   // behind them. Reads as an army and keeps fragile units out of the front line.
-  formationMove(units, wx, wz, attackMove) {
+  formationMove(units, wx, wz, attackMove, queue = false) {
     const n = units.length;
     if (n === 0) return;
-    if (n === 1) { units[0].orderMove(wx, wz, attackMove); return; }
+    if (n === 1) { units[0].command({ type: 'move', x: wx, z: wz, attackMove }, queue); return; }
 
     // travel direction from the group's centroid toward the destination
     let cx = 0, cz = 0;
@@ -2075,7 +2244,7 @@ export class Game {
       const depth  = ((rows - 1) / 2 - r) * spacing;   // r=0 → front, toward the target
       const sx = wx + rx * across + dx * depth;
       const sz = wz + rz * across + dz * depth;
-      u.orderMove(sx, sz, attackMove);
+      u.command({ type: 'move', x: sx, z: sz, attackMove }, queue);
     });
   }
 
@@ -2114,6 +2283,14 @@ export class Game {
       this._exposureFade = 1 - f * 0.4;
       this.applyExposure();
     }
+
+    // macro ability timers (active economy: Marshal the Stores)
+    for (const o of [0, 1]) {
+      const p = this.players[o];
+      if (p.empowerCd > 0) p.empowerCd = Math.max(0, p.empowerCd - dt);
+      if (p.gatherBoostT > 0) p.gatherBoostT = Math.max(0, p.gatherBoostT - dt);
+    }
+    this.updateTelegraphs(dt);   // dodgeable boss AoE wind-ups land here
 
     for (const u of this.units) u.update(dt);
     for (const b of this.buildings) b.update(dt);

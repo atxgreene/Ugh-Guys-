@@ -152,8 +152,11 @@ export class Controls {
     if (e.target.tagName === 'INPUT') return;
     this.skipIntro();
     // WASD pan the camera, so unit commands live on F (attack-move) and X (stop)
-    if (k === 'f' && !this.placement) { if (this.selectedUnits().length) this.attackMoveArm = true; }
-    if (k === 'x') { this.selectedUnits().forEach(u => u.stop()); this.attackMoveArm = false; }
+    if (k === 'f' && !this.placement) { if (this.selectedUnits().length) { this.attackMoveArm = true; this.patrolArm = false; } }
+    if (k === 'r' && !this.placement) { if (this.selectedUnits().length) { this.patrolArm = true; this.attackMoveArm = false; } }
+    if (k === 'x') { this.selectedUnits().forEach(u => u.stop()); this.attackMoveArm = false; this.patrolArm = false; }
+    if (k === 'g') { this.game.marshalStores(0); this.ui.refreshPanel?.(); }
+    if (k === ' ') { const a = this.game.lastAlertPos; if (a) { this.focusT.x = a.x; this.focusT.z = a.z; } e.preventDefault(); }
     if (k === 'y') {   // cycle combat stance for the selected fighters
       const order = ['aggressive', 'defensive', 'hold'];
       const fighters = this.selectedUnits().filter(u => u.def.attack && !u.def.worker);
@@ -174,7 +177,7 @@ export class Controls {
       if (this.game.spawnFieldsOfEvil(bp.x + 12, bp.y - 12))
         this.ui.toast('The Fields of Evil rise nearby. The House of Greene awaits.');
     }
-    if (k === 'escape') { this.cancelPlacement(); this.attackMoveArm = false; this.ui.buildMenuOpen = false; this.ui.refreshPanel(); }
+    if (k === 'escape') { this.cancelPlacement(); this.attackMoveArm = false; this.patrolArm = false; this.ui.buildMenuOpen = false; this.ui.refreshPanel(); }
     if (k === 'h') { const m = this.game.playerMain; if (m) { this.focusT.x = m.pos.x; this.focusT.z = m.pos.z; } }
     if (k === '.') { this.ui.selectIdleWorker?.(); }
     if (k === 'b' && this.selectedUnits().some(u => u.def.worker)) { this.ui.buildMenuOpen = true; this.ui.refreshPanel(); }
@@ -183,8 +186,16 @@ export class Controls {
         this.groups[k] = [...this.selectedUnits()];
         e.preventDefault();
       } else if (this.groups[k]?.length) {
-        this.game.selection = this.groups[k].filter(u => !u.dead);
+        const live = this.groups[k].filter(u => !u.dead);
+        this.game.selection = live;
         this.game.emit('selection');
+        // double-tap the same group key to snap the camera to it (classic RTS)
+        const now = performance.now();
+        if (this._lastGroupKey === k && now - (this._lastGroupT || 0) < 320 && live.length) {
+          let cx = 0, cz = 0; for (const u of live) { cx += u.pos.x; cz += u.pos.z; }
+          this.focusT.x = cx / live.length; this.focusT.z = cz / live.length;
+        }
+        this._lastGroupKey = k; this._lastGroupT = now;
       }
     }
   }
@@ -224,11 +235,20 @@ export class Controls {
       if (this.attackMoveArm) {
         const p = this.screenToWorld(e.clientX, e.clientY);
         if (p) {
-          this.game.formationMove(this.selectedUnits(), p.x, p.z, true);
+          this.game.formationMove(this.selectedUnits(), p.x, p.z, true, e.shiftKey);
           this.game.emit('ground-click', p.x, p.z, 'attack');
           Sound.command();
         }
         this.attackMoveArm = false;
+        return;
+      }
+      if (this.patrolArm) {
+        const p = this.screenToWorld(e.clientX, e.clientY);
+        if (p) {
+          this.game.commandPatrol(this.selectedUnits(), p.x, p.z, e.shiftKey);
+          this.game.emit('ground-click', p.x, p.z, 'attack');
+        }
+        this.patrolArm = false;
         return;
       }
       this.dragStart = { x: e.clientX, y: e.clientY };
@@ -237,12 +257,12 @@ export class Controls {
       e.preventDefault();
     } else if (e.button === 2) {
       if (this.placement) { this.cancelPlacement(); return; }
-      if (this.attackMoveArm) { this.attackMoveArm = false; return; }
+      if (this.attackMoveArm || this.patrolArm) { this.attackMoveArm = false; this.patrolArm = false; return; }
       const ent = this.pickEntity(e.clientX, e.clientY);
       const p = this.screenToWorld(e.clientX, e.clientY);
       if (p) {
-        this.game.commandRightClick(this.game.selection, p.x, p.z, ent);
-        if (!ent) this.game.emit('ground-click', p.x, p.z, 'move');
+        this.game.commandRightClick(this.game.selection, p.x, p.z, ent, e.shiftKey);
+        if (!ent) this.game.emit('ground-click', p.x, p.z, e.shiftKey ? 'queue' : 'move');
       }
     }
   }

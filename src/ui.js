@@ -179,7 +179,7 @@ export class UI {
 
   // ---------- ground click marker ----------
   groundMarker(x, z, kind) {
-    const color = kind === 'attack' ? 0xff4433 : 0x66ff88;
+    const color = kind === 'attack' ? 0xff4433 : kind === 'queue' ? 0x66ccff : 0x66ff88;
     const mesh = new THREE.Mesh(
       new THREE.RingGeometry(0.3, 0.55, 16),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false })
@@ -313,6 +313,17 @@ export class UI {
         });
       }
       cmds.push({ icon: '↩', label: 'Back (Esc)', cls: 'cmd-act', fn: () => { this.buildMenuOpen = false; this.refreshPanel(); } });
+    }
+    if (building && building.def.main && building.complete) {
+      const p = this.game.players[0];
+      const ready = p.empowerCd <= 0;
+      cmds.push({
+        icon: '⛟', label: 'Marshal Stores (G)',
+        sub: ready ? '— Ready —' : `${Math.ceil(p.empowerCd)} s`,
+        cls: 'cmd-act cmd-ability' + (ready ? ' cmd-ability-ready' : ''),
+        tip: 'Marshal the Stores — instant burst of grain & favor and a 10 s surge of gather speed. On a cooldown; keep it up between fights for a macro edge.',
+        fn: () => { if (this.game.marshalStores(0)) Sound.click(); else Sound.error(); this.refreshPanel(); },
+      });
     }
     if (building && building.complete) {
       for (const key of building.def.trains) {

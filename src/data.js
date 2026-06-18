@@ -399,8 +399,8 @@ export const MONSTERS = {
     attack: { dmg: 34, range: 11, cooldown: 2.2, projectile: 'ember', aoe: 3.0 },
     speed: 6.5, model: 'boss_leviathan', tags: ['beast', 'massive', 'boss'],
     radius: 1.3, aggroRange: 14, sight: 18, leashRange: 40,
-    ability: { name: 'Deluge', icon: '🌊', cooldown: 14, type: 'aoe_strike', radius: 6.2, dmgMult: 1.9, stunDur: 1.0,
-      desc: 'Calls down the waters of the deep — an engulfing wave that batters and staggers everything near.' },
+    ability: { name: 'Deluge', icon: '🌊', cooldown: 14, type: 'aoe_strike', radius: 6.2, dmgMult: 1.9, stunDur: 1.0, windup: 1.1,
+      desc: 'Calls down the waters of the deep — an engulfing wave that batters and staggers everything near. Telegraphed: pull out of the ring to dodge.' },
     bounty: { knowledge: 280, bronze: 200 },
     desc: 'A serpent of the drowned world, scaled in basalt and brine. It remembers the Flood, and means to repeat it.',
   }),
@@ -409,8 +409,8 @@ export const MONSTERS = {
     attack: { dmg: 50, range: 2.8, cooldown: 2.4, bonus: { structure: 2.0, light: 1.3 } },
     speed: 5.6, model: 'boss_titan', tags: ['massive', 'boss'],
     radius: 1.55, aggroRange: 13, sight: 16, leashRange: 42,
-    ability: { name: 'Worldbreaker Slam', icon: '💥', cooldown: 12, type: 'aoe_strike', radius: 6.6, dmgMult: 2.2, stunDur: 2.0,
-      desc: 'Brings both fists down like falling mountains — a shockwave that stuns and crushes.' },
+    ability: { name: 'Worldbreaker Slam', icon: '💥', cooldown: 12, type: 'aoe_strike', radius: 6.6, dmgMult: 2.2, stunDur: 2.0, windup: 1.35,
+      desc: 'Brings both fists down like falling mountains — a shockwave that stuns and crushes. Telegraphed: clear the ring before it lands.' },
     bounty: { knowledge: 350, grain: 250, favor: 100 },
     desc: 'One of the giants of old, taller than the gatehouse, older than the kingdom. The ground keeps its footprints.',
   }),
@@ -494,12 +494,21 @@ export const NEUTRAL_UNIT_DEFS = {
 export const NEUTRAL_BUILDING_DEFS = { house_of_greene: FIELDS_OF_EVIL.building };
 
 
+// `ideal` = workers a node feeds at full efficiency; beyond it each extra worker's
+// haul is scaled down (diminishing returns), so spreading laborers across nodes and
+// expanding to fresh ones is a real macro decision rather than blob-on-one-pile.
 export const RESOURCE_NODES = {
-  grain:     { name: 'Wild Grain Field', amount: 1500, model: 'field',   carry: 10, gatherTime: 2.2 },
-  timber:    { name: 'Cedar Stand',      amount: 1200, model: 'tree',    carry: 10, gatherTime: 2.4 },
-  bronze:    { name: 'Bronze Lode',      amount: 1400, model: 'ore',     carry: 10, gatherTime: 2.6 },
-  knowledge: { name: 'Graven Obelisk',   amount: 500,  model: 'obelisk', carry: 5,  gatherTime: 3.5 },
+  grain:     { name: 'Wild Grain Field', amount: 1500, model: 'field',   carry: 10, gatherTime: 2.2, ideal: 3 },
+  timber:    { name: 'Cedar Stand',      amount: 1200, model: 'tree',    carry: 10, gatherTime: 2.4, ideal: 3 },
+  bronze:    { name: 'Bronze Lode',      amount: 1400, model: 'ore',     carry: 10, gatherTime: 2.6, ideal: 3 },
+  knowledge: { name: 'Graven Obelisk',   amount: 500,  model: 'obelisk', carry: 5,  gatherTime: 3.5, ideal: 2 },
 };
+
+// Active economy ability — every faction's main hall can "Marshal the Stores" on a
+// cooldown (hotkey G): an instant burst of soft resources plus a short surge of
+// gather speed. Rewards attention the way Inject/MULE/Chrono do — a macro rhythm
+// you keep up between fights. Free but re-cast, so the skill is remembering it.
+export const EMPOWER = { cooldown: 50, burst: { favor: 35, grain: 60 }, gatherBoost: 1.35, boostDur: 10 };
 
 export const SUPPLY_CAP = 80;
 export const START_RES = { grain: 300, timber: 200, bronze: 100, favor: 0, knowledge: 0 };
