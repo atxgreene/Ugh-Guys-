@@ -5,9 +5,19 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildDoodad } from './models.js';
 import { terrainMaps } from './textures.js';
 
-export const GRID = 96;
+export let GRID = 96;
 export const TILE = 2;
-export const WORLD = GRID * TILE;
+export let WORLD = GRID * TILE;
+
+// Selectable battlefield sizes. Bigger maps = longer marches, more neutral
+// ground for monster lairs and expansions. GRID/WORLD are exported `let`s and
+// ESM live bindings, so calling setMapSize() before a match rebuilds the world
+// at the new scale with no plumbing through every consumer.
+export const MAP_SIZES = { standard: 96, large: 120, huge: 144 };
+export function setMapSize(key) {
+  GRID = MAP_SIZES[key] || MAP_SIZES.standard;
+  WORLD = GRID * TILE;
+}
 
 // deterministic value noise
 function makeNoise(seed) {
@@ -90,11 +100,11 @@ export class GameMap {
       // mountainous border
       const edge = Math.min(x, y, GRID - 1 - x, GRID - 1 - y);
       if (edge < 5) h += (5 - edge) * 1.6;
-      // central ridge with two passes
+      // central ridge with two passes (thresholds scale with map size)
       const dCenter = Math.abs((x + y) - GRID) / Math.SQRT2; // distance to anti-diagonal
       const alongRidge = Math.abs(x - y);                    // position along ridge
-      const gap = (alongRidge > 18 && alongRidge < 34);      // two symmetric passes
-      if (dCenter < 4 && !gap && alongRidge < 62) h += (4 - dCenter) * 1.5 + noise(x * 0.3, y * 0.3);
+      const gap = (alongRidge > GRID * 0.19 && alongRidge < GRID * 0.35); // two symmetric passes
+      if (dCenter < 4 && !gap && alongRidge < GRID * 0.65) h += (4 - dCenter) * 1.5 + noise(x * 0.3, y * 0.3);
       // flatten base + expansion sites
       for (const s of [this.basePlayer, this.baseEnemy, ...this.expansions]) {
         const d = Math.hypot(x - s.x, y - s.y);
@@ -309,8 +319,9 @@ export class GameMap {
   }
 
   _genRoads() {
-    const passA = { x: Math.floor(GRID / 2 + 13), y: Math.floor(GRID / 2 - 13) };
-    const passB = { x: Math.floor(GRID / 2 - 13), y: Math.floor(GRID / 2 + 13) };
+    const po = GRID * 0.135;   // pass offset along the ridge — aligns with the carved gaps
+    const passA = { x: Math.floor(GRID / 2 + po), y: Math.floor(GRID / 2 - po) };
+    const passB = { x: Math.floor(GRID / 2 - po), y: Math.floor(GRID / 2 + po) };
     const pb = this.basePlayer, eb = this.baseEnemy;
     const seg = (x1, y1, x2, y2) => {
       const steps = Math.ceil(Math.hypot(x2 - x1, y2 - y1) * 1.3);
@@ -442,12 +453,35 @@ export class GameMap {
       addCluster(e.x, e.y + 5, 'timber', 3, 1.5);
     }
     // knowledge obelisks near the two ridge passes (guarded)
-    const passes = [{ x: GRID / 2 - 13, y: GRID / 2 + 13 }, { x: GRID / 2 + 13, y: GRID / 2 - 13 }];
-    for (const p of passes) plan.push({ type: 'knowledge', tx: p.x, ty: p.y, guarded: true });
+    const po = GRID * 0.135;
+    const passes = [{ x: GRID / 2 - po, y: GRID / 2 + po }, { x: GRID / 2 + po, y: GRID / 2 - po }];
+    for (const p of passes) plan.push({ type: 'knowledge', tx: Math.round(p.x), ty: Math.round(p.y), guarded: true });
     // a couple of extra timber stands mid-map
-    addCluster(GRID / 2 - 20, GRID / 2 - 6, 'timber', 3, 1.6);
-    addCluster(GRID / 2 + 20, GRID / 2 + 6, 'timber', 3, 1.6);
+    addCluster(GRID / 2 - GRID * 0.21, GRID / 2 - GRID * 0.06, 'timber', 3, 1.6);
+    addCluster(GRID / 2 + GRID * 0.21, GRID / 2 + GRID * 0.06, 'timber', 3, 1.6);
     return plan.filter(p => this.isWalkable(p.tx, p.ty));
+  }
+
+  // Monster-lair sites: deterministic per seed, parked in the neutral mid-field
+  // well away from both bases (and each other). Count scales with map size, so
+  // bigger battlefields host more world bosses. Returns [{tx, ty}].
+  lairPlan() {
+    const sites = [];
+    const bases = [this.basePlayer, this.baseEnemy, ...this.expansions];
+    const minBase = GRID * 0.22, minLair = GRID * 0.18;
+    const want = GRID >= 140 ? 4 : GRID >= 116 ? 3 : 2;
+    let s = (this.seed ^ 0x1d8e3a7b) >>> 0;
+    const rng = () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    for (let attempt = 0; attempt < want * 40 && sites.length < want; attempt++) {
+      const tx = Math.round(GRID * 0.22 + rng() * GRID * 0.56);
+      const ty = Math.round(GRID * 0.22 + rng() * GRID * 0.56);
+      if (!this.isWalkableClear(tx, ty, 2)) continue;
+      if (bases.some(b => Math.hypot(tx - b.x, ty - b.y) < minBase)) continue;
+      if (sites.some(l => Math.hypot(tx - l.tx, ty - l.ty) < minLair)) continue;
+      sites.push({ tx, ty });
+    }
+    return sites;
   }
 
   // ---- fog of war ----

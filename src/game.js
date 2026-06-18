@@ -5,9 +5,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { GameMap, BIOMES, GRID, TILE, WORLD } from './terrain.js';
+import { GameMap, BIOMES, GRID, TILE, WORLD, MAP_SIZES, setMapSize } from './terrain.js';
 import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
-import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP,
+import { FACTIONS, UPGRADES, NEUTRALS, MONSTERS, RESOURCE_NODES, START_RES, SUPPLY_CAP,
   FIELDS_OF_EVIL, NEUTRAL_UNIT_DEFS, NEUTRAL_BUILDING_DEFS } from './data.js';
 import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats, buildScaffold, buildFireCluster, buildDoodad } from './models.js';
 import { waterNormalMap } from './textures.js';
@@ -378,11 +378,14 @@ export class Unit extends Entity {
           break;
         }
         if (!atk) { this.state = 'idle'; break; }
-        // neutral leash break
-        if (this.owner === 2 && this.leash && Math.hypot(this.pos.x - this.leash.x, this.pos.z - this.leash.z) > 26) {
+        // neutral leash break (bosses roam farther before disengaging + heal home)
+        if (this.owner === 2 && this.leash &&
+            Math.hypot(this.pos.x - this.leash.x, this.pos.z - this.leash.z) > (this.def.leashRange || 26)) {
           this.target = null; this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.5);
           this.state = 'move'; this.dest = { ...this.leash }; this.path = null; break;
         }
+        // world bosses unleash their signature ability on cooldown the moment they fight
+        if (this.owner === 2 && this.def.ability && this.abilityCd <= 0) this.game.useAbility(this);
         const inRange = this.distTo(t) <= this.attackRange(t);
         if (!inRange) {
           // hold stands its ground — wait if the target is still within reach (same
@@ -565,7 +568,7 @@ export class Unit extends Entity {
     const s = this.game.stats;
     if (this.owner === 0) s.lost++;
     else if (attacker && attacker.owner === 0) s.killed++;
-    this.game.removeUnit(this);
+    this.game.removeUnit(this, attacker);
     Sound.death();
   }
 }
@@ -813,7 +816,13 @@ export class Game {
     // a saved game pins the exact map (seed/biome/mood) so it reloads identically
     const load = opts.load || null;
     this.loadedGame = !!load;   // AI skips the opening-stockpile handicap on a restored game
-    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay, difficulty: load.difficulty }; }
+    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay, difficulty: load.difficulty, mapSize: load.mapSize }; }
+    // Battlefield size — pinned by a save, else the player's setting. Must be set
+    // before the map (and WORLD-dependent atmosphere) is built. Live binding means
+    // GRID/WORLD elsewhere pick up the new scale automatically.
+    this.mapSizeKey = (opts.mapSize && MAP_SIZES[opts.mapSize]) ? opts.mapSize
+      : (MAP_SIZES[Settings.get('mapSize')] ? Settings.get('mapSize') : 'standard');
+    setMapSize(this.mapSizeKey);
     // AI difficulty: explicit option wins, else the saved value, else the player's setting
     this.difficulty = opts.difficulty || Settings.get('difficulty') || 'normal';
     // choose the land first, then a sky mood that suits it
@@ -1377,8 +1386,9 @@ export class Game {
       const n = new ResourceNode(this, p.type, p.tx, p.ty);
       this.resources.push(n);
       if (p.guarded) {
+        const mult = this.neutralMult();
         for (let i = 0; i < 2; i++) {
-          const u = new Unit(this, 2, NEUTRALS.devourer, 'devourer',
+          const u = new Unit(this, 2, this.scaleNeutral(NEUTRALS.devourer, mult), 'devourer',
             n.pos.x + Math.cos(i * 2.5) * 4, n.pos.z + Math.sin(i * 2.5) * 4);
           u.leash = { x: u.pos.x, z: u.pos.z };
           this.units.push(u);
@@ -1405,10 +1415,53 @@ export class Game {
         if (grain) u.orderGather(grain);
       }
     }
+    this.spawnMonsterLairs();
     this.recalcSupply();
     // Easter egg: a rare hidden encampment, deterministic per seed (also summonable
     // any match by typing the secret code, or via window.__game.spawnFieldsOfEvil()).
     if (this.map.seed % 100 < 18) this.spawnFieldsOfEvil(Math.floor(GRID * 0.5), Math.floor(GRID * 0.12));
+  }
+
+  // Neutral strength scalar from match difficulty — bosses and guardians hit
+  // harder and last longer on Hard, softer on Easy.
+  neutralMult() {
+    return this.difficulty === 'easy' ? 0.85 : this.difficulty === 'hard' ? 1.25 : 1.0;
+  }
+  // Clone a neutral def with HP and attack damage scaled by `mult`.
+  scaleNeutral(def, mult) {
+    if (mult === 1) return def;
+    const out = { ...def, hp: Math.round(def.hp * mult) };
+    if (def.attack) out.attack = { ...def.attack, dmg: Math.round(def.attack.dmg * mult) };
+    return out;
+  }
+
+  // World bosses: one monster lairs at each mid-field site, guarding a Forbidden
+  // Knowledge obelisk. Felling the beast drops its bounty (see removeUnit). Bigger
+  // maps generate more lairs; Hard difficulty makes each boss meaner.
+  spawnMonsterLairs() {
+    const sites = this.map.lairPlan();
+    if (!sites.length) return;
+    const mult = this.neutralMult();
+    const keys = Object.keys(MONSTERS);
+    let s = (this.map.seed ^ 0x77a5b3c1) >>> 0;
+    const rng = () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    this.lairs = [];
+    for (let i = 0; i < sites.length; i++) {
+      const site = sites[i];
+      // a rich obelisk at the heart of the lair (the boss guards it)
+      const node = new ResourceNode(this, 'knowledge', site.tx, site.ty);
+      this.resources.push(node);
+      const key = keys[Math.floor(rng() * keys.length)];
+      const def = MONSTERS[key];
+      // boss stands a couple of tiles off the obelisk (the lair was cleared with margin 2)
+      const w = findNearestWalkable(this.map, site.tx + 2, site.ty, 4, 1) || { x: site.tx + 2, y: site.ty };
+      const bx = (w.x + 0.5) * TILE, bz = (w.y + 0.5) * TILE;
+      const u = new Unit(this, 2, this.scaleNeutral(def, mult), key, bx, bz);
+      u.leash = { x: node.pos.x, z: node.pos.z };
+      this.units.push(u);
+      this.lairs.push({ x: node.pos.x, z: node.pos.z, boss: u });
+    }
   }
 
   // The Fields of Evil: the House of Greene ringed by feuding Landonian & Boydonian
@@ -1459,7 +1512,7 @@ export class Game {
     for (let i = 0; i < this.map.fog.length; i++) fogStr += String.fromCharCode(this.map.fog[i]);
     return {
       v: 1, t: this.time, timeOfDay: this.timeOfDay, biomeKey: this.biomeKey, seed: this.map.seed,
-      difficulty: this.difficulty,
+      difficulty: this.difficulty, mapSize: this.mapSizeKey,
       pf: this.pfKey, ef: this.efKey,
       players: [0, 1].map(o => { const p = this.players[o]; return {
         res: { ...p.resources }, up: [...p.upgrades], dmgMult: p.dmgMult, armorAdd: p.armorAdd, hpMult: p.hpMult }; }),
@@ -1855,7 +1908,9 @@ export class Game {
     this.emit('damaged', entity, attacker);
   }
 
-  removeUnit(u) {
+  removeUnit(u, attacker) {
+    // felling a world boss: pay out its bounty to the killer and mark the kill
+    if (u.def.bounty) this.onBossSlain(u, attacker);
     // death animation: topple + sink, plus a burst of debris
     u.mesh.scale.setScalar(1);   // clear any mid-flash scale-pop before the corpse falls
     this.effects.push({ mesh: u.mesh, life: 1.0, max: 1.0, type: 'corpse' });
@@ -1877,6 +1932,31 @@ export class Game {
     this._combat = null;
     this.recalcSupply();
     this.emit('selection');
+  }
+
+  // Reward + spectacle when a world boss falls: pay the bounty to its slayer,
+  // shake the earth, and announce it. Killer defaults to the player if a neutral
+  // or environment landed the blow.
+  onBossSlain(boss, attacker) {
+    const owner = attacker && attacker.owner <= 1 ? attacker.owner : 0;
+    const r = this.players[owner].resources;
+    for (const [k, v] of Object.entries(boss.def.bounty)) r[k] = (r[k] || 0) + v;
+    const visible = this.map.fogStateAt(boss.pos.x, boss.pos.z) === 2;
+    if (visible) {
+      const gy = this.map.heightAt(boss.pos.x, boss.pos.z);
+      this.addEffect(boss.pos.x, boss.pos.z, boss.radius * 3.2, glowMat(0xffd56e, 2));
+      for (let i = 0; i < 26; i++) {
+        const a = Math.random() * Math.PI * 2, rr = Math.random() * boss.radius * 2.4;
+        this.fxSpark.spawn(boss.pos.x + Math.cos(a) * rr, gy + 0.8 + Math.random() * 1.5, boss.pos.z + Math.sin(a) * rr,
+          Math.cos(a) * 3, 1.5 + Math.random() * 3, Math.sin(a) * 3, 0.7, 0.18, 1.0);
+      }
+      this.addShake(0.7);
+    }
+    if (owner === 0) {
+      Sound.win();
+      const spoils = Object.entries(boss.def.bounty).map(([k, v]) => `${v} ${k}`).join(', ');
+      this.emit('toast', `☠ ${boss.def.name} is slain! Its hoard — ${spoils} — is yours.`);
+    }
   }
 
   removeBuilding(b, attacker) {

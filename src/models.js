@@ -708,6 +708,84 @@ const unitBuilders = {
     grp.add(cone(0.08, 0.2, mat(BONE), 4, 0, 0.75, -1.3, -1.2));         // tail barb
     return grp;
   },
+
+  // ---- world bosses (rendered at boss scale ~2.6x) ----
+  boss_leviathan(b, g) {                                  // serpent of the drowned world
+    const grp = new THREE.Group();
+    const hide = mat(0x223038, { rough: 0.6, metal: 0.2 });
+    // rearing serpentine body — stacked segments curving up to the head
+    const seg = [[0, 0.4, -1.4, 0.55], [0, 0.7, -0.9, 0.6], [0, 1.05, -0.4, 0.62],
+                 [0, 1.4, 0.05, 0.58], [0, 1.7, 0.5, 0.5]];
+    for (const [x, y, z, r] of seg) grp.add(sph(r, hide, x, y, z));
+    grp.add(box(0.7, 0.55, 0.9, hide, 0, 1.85, 0.95));    // head block
+    grp.add(box(0.66, 0.2, 0.5, mat(DARKER), 0, 1.66, 1.35)); // lower jaw
+    grp.add(box(0.66, 0.22, 0.5, hide, 0, 2.02, 1.38));   // upper jaw
+    for (let i = 0; i < 5; i++) {                          // maw fangs
+      grp.add(cone(0.06, 0.22, mat(BONE), 4, -0.24 + i * 0.12, 1.74, 1.5, Math.PI));
+      grp.add(cone(0.06, 0.22, mat(BONE), 4, -0.24 + i * 0.12, 1.96, 1.5));
+    }
+    grp.add(box(0.5, 0.16, 0.16, g, 0, 1.84, 1.5));        // throat-glow
+    grp.add(sph(0.1, g, -0.22, 2.05, 1.2)); grp.add(sph(0.1, g, 0.22, 2.05, 1.2)); // eyes
+    // crest fins along the spine + flank fins
+    for (let i = 0; i < 5; i++) {
+      const z = -1.4 + i * 0.45;
+      grp.add(cone(0.14, 0.6 - i * 0.04, glowMat(0x2f7f8f, 0.5), 3, 0, 0.5 + i * 0.32, z, 0, 0, 0));
+    }
+    [[-1, 0.6], [1, 0.6]].forEach(([sx, y]) =>
+      grp.add(box(0.06, 0.5, 0.8, glowMat(0x2f7f8f, 0.4), sx * 0.6, y, -0.6, 0, 0, sx * 0.5)));
+    grp.add(sph(0.4, hide, 0, 0.3, -1.8)); grp.add(cone(0.16, 0.5, mat(BONE), 4, 0, 0.4, -2.2, -1.4)); // tail
+    return grp;
+  },
+
+  boss_titan(b, g) {                                       // Nephilim giant
+    const grp = new THREE.Group();
+    const flesh = mat(0x6a5240, { rough: 0.9 });
+    const wrap = mat(0x3a3026);
+    grp.add(box(1.5, 1.6, 0.95, flesh, 0, 2.2, 0));        // huge torso
+    grp.add(box(1.7, 0.5, 1.05, wrap, 0, 1.45, 0));        // gut wrap
+    grp.add(box(1.7, 0.4, 1.1, mat(DARK), 0, 3.0, 0));     // shoulder yoke
+    grp.add(box(0.55, 0.6, 0.55, flesh, 0, 3.55, 0.05));   // small head, hunched
+    grp.add(box(0.6, 0.18, 0.6, mat(BONE), 0, 3.9, 0));    // bone crown
+    for (let i = 0; i < 3; i++) grp.add(cone(0.08, 0.3, mat(BONE), 4, -0.2 + i * 0.2, 4.0, 0));
+    grp.add(sph(0.08, glowMat(0xff5530, 1.2), -0.16, 3.6, 0.32)); // eyes
+    grp.add(sph(0.08, glowMat(0xff5530, 1.2), 0.16, 3.6, 0.32));
+    // massive arms ending in boulder fists
+    [[-1, 1], [1, -1]].forEach(([s]) => {
+      grp.add(cyl(0.34, 0.3, 1.5, flesh, 5, s * 1.0, 2.5, 0, 0, 0, s * 0.25));   // upper arm
+      grp.add(cyl(0.3, 0.26, 1.4, flesh, 5, s * 1.35, 1.4, 0.1, s * 0.2, 0, s * 0.1)); // forearm
+      grp.add(sph(0.45, mat(0x4a4036), s * 1.5, 0.65, 0.18));                     // fist
+      grp.add(prim(new THREE.DodecahedronGeometry(0.34), mat(DARKER), s * 1.5, 0.65, 0.4)); // knuckle rock
+    });
+    // tree-trunk legs
+    [[-0.45], [0.45]].forEach(([x]) => {
+      grp.add(cyl(0.4, 0.34, 1.4, flesh, 5, x, 0.7, 0));
+      grp.add(box(0.55, 0.3, 0.8, mat(DARK), x, 0.15, 0.1));   // foot
+    });
+    grp.add(box(1.6, 0.2, 0.2, g, 0, 2.4, 0.5));            // glowing girdle sigil
+    return grp;
+  },
+
+  boss_sentinel(b, g) {                                    // Watcher construct, hovering
+    const grp = new THREE.Group();
+    const stone = mat(0x2c2e3a, { rough: 0.5, metal: 0.3 });
+    // floating geometric core
+    grp.add(prim(new THREE.OctahedronGeometry(0.95), stone, 0, 2.0, 0));
+    grp.add(prim(new THREE.OctahedronGeometry(0.45), glowMat(0xb07fff, 1.4), 0, 2.0, 0)); // inner eye
+    // stacked rune rings orbiting the core
+    grp.add(torus(1.3, 0.09, glowMat(0x6f8cff, 0.7), 0, 2.0, 0, Math.PI / 2, 0, 0));
+    grp.add(torus(1.1, 0.07, glowMat(0xb07fff, 0.6), 0, 2.0, 0, 0.5, 0.6, 0));
+    grp.add(torus(0.9, 0.06, glowMat(0x6f8cff, 0.6), 0, 2.0, 0, -0.5, -0.6, 0));
+    // crown of shards above, pendant shards below
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      grp.add(box(0.12, 0.6, 0.12, stone, Math.cos(a) * 0.7, 3.0, Math.sin(a) * 0.7, 0, a, 0.2));
+      grp.add(prim(new THREE.OctahedronGeometry(0.16), glowMat(0xb07fff, 1.0),
+        Math.cos(a) * 1.0, 0.9, Math.sin(a) * 1.0));
+    }
+    grp.add(cone(0.5, 1.0, stone, 6, 0, 0.6, 0, Math.PI)); // tapering base spire
+    grp.add(box(0.5, 0.16, 0.5, g, 0, 3.35, 0));           // apex sigil
+    return grp;
+  },
 };
 
 // ---------- buildings ----------
@@ -1178,8 +1256,8 @@ export function buildUnitMesh(modelKey, color, glow, accent, glow2) {
   if (!template) {
     const { b, g, a, g2 } = getFactionMats(color, glow, accent, glow2);
     template = (unitBuilders[modelKey] || unitBuilders.worker)(b, g, a, g2);
-    const heroScale = modelKey.startsWith('hero_') ? 1.9 : 1.35;
-    template.scale.setScalar(heroScale);
+    const scale = modelKey.startsWith('boss_') ? 2.6 : modelKey.startsWith('hero_') ? 1.9 : 1.35;
+    template.scale.setScalar(scale);
     template.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
     unitTemplates.set(key, template);
   }

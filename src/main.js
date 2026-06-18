@@ -1,6 +1,6 @@
 // Entry point: main menu, faction selection, game lifecycle and loop.
 import { FACTIONS } from './data.js';
-import { BIOMES } from './terrain.js';
+import { BIOMES, MAP_SIZES } from './terrain.js';
 import { Game } from './game.js';
 import { AI } from './ai.js';
 import { Controls } from './controls.js';
@@ -99,6 +99,14 @@ function buildMenu() {
       Object.entries(BIOMES).map(([k, b]) => `<option value="${k}">${b.name}</option>`).join('');
     biomeSel.value = Settings.get('biome') || 'random';
     biomeSel.onchange = () => Settings.set('biome', biomeSel.value);
+  }
+  const sizeSel = document.getElementById('sel-mapsize');
+  if (sizeSel) {
+    const labels = { standard: 'Standard', large: 'Large', huge: 'Huge' };
+    sizeSel.innerHTML = Object.keys(MAP_SIZES).map(k =>
+      `<option value="${k}">${labels[k] || k} (${MAP_SIZES[k]}×${MAP_SIZES[k]})</option>`).join('');
+    sizeSel.value = MAP_SIZES[Settings.get('mapSize')] ? Settings.get('mapSize') : 'standard';
+    sizeSel.onchange = () => Settings.set('mapSize', sizeSel.value);
   }
   refreshContinue();
 }

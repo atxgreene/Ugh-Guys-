@@ -381,11 +381,48 @@ export const UPGRADES = {
 // Neutral guardians of forbidden knowledge obelisks.
 export const NEUTRALS = {
   devourer: U({
-    name: 'Devourer', hp: 280, armor: 2,
-    attack: { dmg: 20, range: 1.8, cooldown: 1.2 },
+    name: 'Devourer', hp: 360, armor: 3,
+    attack: { dmg: 24, range: 1.8, cooldown: 1.2 },
     speed: 7.5, model: 'devourer', tags: ['beast', 'massive'], radius: 0.9,
-    aggroRange: 9, sight: 10,
+    aggroRange: 10, sight: 11,
     desc: 'It was left to guard the obelisk. It does not remember by whom.',
+  }),
+};
+
+// ---- World bosses ----
+// Monstrous neutrals that lair in the mid-field guarding a trove. They are meant
+// to break an unprepared army: huge HP, heavy blows, and a signature ability they
+// unleash on cooldown the moment they have prey. Felling one drops a `bounty`.
+export const MONSTERS = {
+  leviathan: U({
+    name: 'Leviathan, the Flood-Wyrm', boss: true, hp: 1800, armor: 4, supply: 0,
+    attack: { dmg: 34, range: 11, cooldown: 2.2, projectile: 'ember', aoe: 3.0 },
+    speed: 6.5, model: 'boss_leviathan', tags: ['beast', 'massive', 'boss'],
+    radius: 1.3, aggroRange: 14, sight: 18, leashRange: 40,
+    ability: { name: 'Deluge', icon: '🌊', cooldown: 14, type: 'aoe_strike', radius: 6.2, dmgMult: 1.9, stunDur: 1.0,
+      desc: 'Calls down the waters of the deep — an engulfing wave that batters and staggers everything near.' },
+    bounty: { knowledge: 280, bronze: 200 },
+    desc: 'A serpent of the drowned world, scaled in basalt and brine. It remembers the Flood, and means to repeat it.',
+  }),
+  nephil_titan: U({
+    name: 'A Nephilim Titan', boss: true, hp: 2600, armor: 6, supply: 0,
+    attack: { dmg: 50, range: 2.8, cooldown: 2.4, bonus: { structure: 2.0, light: 1.3 } },
+    speed: 5.6, model: 'boss_titan', tags: ['massive', 'boss'],
+    radius: 1.55, aggroRange: 13, sight: 16, leashRange: 42,
+    ability: { name: 'Worldbreaker Slam', icon: '💥', cooldown: 12, type: 'aoe_strike', radius: 6.6, dmgMult: 2.2, stunDur: 2.0,
+      desc: 'Brings both fists down like falling mountains — a shockwave that stuns and crushes.' },
+    bounty: { knowledge: 350, grain: 250, favor: 100 },
+    desc: 'One of the giants of old, taller than the gatehouse, older than the kingdom. The ground keeps its footprints.',
+  }),
+  watcher_sentinel: U({
+    name: 'Sentinel of the Watchers', boss: true, hp: 1550, armor: 5, supply: 0,
+    attack: { dmg: 28, range: 13, cooldown: 1.7, projectile: 'sigil' },
+    speed: 6.0, model: 'boss_sentinel', tags: ['massive', 'corrupt', 'boss'],
+    radius: 1.15, aggroRange: 16, sight: 20, leashRange: 38,
+    ability: { name: 'Sigil Barrage', icon: '🔯', cooldown: 13, type: 'multi_shot', count: 5,
+      desc: 'Looses a fan of searing glyph-bolts at everything in range at once.' },
+    bounty: { knowledge: 320, favor: 220 },
+    desc: 'A construct the Watchers left behind — all geometry and judgement, still enforcing a law no one living recalls.',
   }),
 };
 
@@ -444,6 +481,9 @@ export const FIELDS_OF_EVIL = {
 // owner-2 (neutral) lookup tables used when reconstructing a saved game
 export const NEUTRAL_UNIT_DEFS = {
   devourer: NEUTRALS.devourer,
+  leviathan: MONSTERS.leviathan,
+  nephil_titan: MONSTERS.nephil_titan,
+  watcher_sentinel: MONSTERS.watcher_sentinel,
   landonian: FIELDS_OF_EVIL.units.landonian,
   boydonian: FIELDS_OF_EVIL.units.boydonian,
   warwagon: FIELDS_OF_EVIL.units.warwagon,
