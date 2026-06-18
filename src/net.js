@@ -186,8 +186,12 @@ export class WebSocketTransport {
   // Send a control message (lobby control, start, etc.) with queuing support
   sendMessage(msg) {
     const m = JSON.stringify(msg);
-    if (this.ws.readyState === 1) { try { this.ws.send(m); } catch (e) { console.error('Send failed:', e); } }
-    else this.queue.push(m);
+    if (this.ws.readyState === 1) {
+      try { this.ws.send(m); console.log('[relay] sent', msg.kind); } catch (e) { console.error('[relay] send failed:', e); }
+    } else {
+      this.queue.push(m);
+      console.log('[relay] queued', msg.kind, '(socket readyState:', this.ws.readyState, ')');
+    }
   }
   onPacket(cb) { this.cb = cb; for (const p of this.rxbuf) cb(p); this.rxbuf = []; }
   close() { try { this.ws.close(); } catch {} }

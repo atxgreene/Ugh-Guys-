@@ -263,18 +263,25 @@ function lobbyConnect(isHost) {
   let transport;
   try {
     transport = new WebSocketTransport(url, room, {
-      onOpen: () => { status.textContent = isHost ? 'Hosting — waiting for an opponent to join…' : 'Joined — waiting for the host to start…'; },
-      onClose: () => { status.textContent = 'Connection closed.'; startBtn.disabled = true; },
-      onError: () => { status.textContent = 'Could not connect. Is the relay running?  (npm run relay)'; },
+      onOpen: () => {
+        console.log('[lobby] connected, room:', room);
+        status.textContent = isHost ? 'Hosting — waiting for an opponent to join…' : 'Joined — waiting for the host to start…';
+      },
+      onClose: () => { console.log('[lobby] disconnected'); status.textContent = 'Connection closed.'; startBtn.disabled = true; },
+      onError: (e) => { console.error('[lobby] error:', e); status.textContent = 'Could not connect. Is the relay running?  (npm run relay)'; },
     });
   } catch { status.textContent = 'Invalid relay URL.'; return; }
   _mp = { transport, isHost, you: 0, players: [0], room };
   transport.onLobby = (msg) => {
     _mp.you = msg.you; _mp.players = msg.players;
+    console.log('[lobby] players:', msg.players, 'you:', msg.you, msg.left ? '(left)' : '');
     status.textContent = `Room "${room}" — ${msg.players.length} player(s). You are Player ${msg.you + 1}.`;
     startBtn.disabled = !(isHost && msg.players.length >= 2);
   };
-  transport.onStart = (msg) => showLoading(() => startNetGame(transport, msg.header, _mp.you, msg.players));
+  transport.onStart = (msg) => {
+    console.log('[lobby] starting match, players:', msg.players);
+    showLoading(() => startNetGame(transport, msg.header, _mp.you, msg.players));
+  };
 }
 
 function lobbyStart() {
