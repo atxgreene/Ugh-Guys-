@@ -609,5 +609,44 @@ function syncSettingsUI() {
 // test/debug hook: drive deterministic replay playback from a recording object
 window.__startReplay = startReplay;
 
+// Test hooks for headless CI. The art-spec renderer (3072² shadows, bloom) is so
+// heavy under a runner's software-WebGL that the rAF loop can render barely a frame
+// per second, which would starve the fixed-timestep sim of wall-clock time. The sim
+// itself is deterministic and render-independent, so tests step it directly — the
+// same "drive the engine, not the clock" approach the smoke tests already use to
+// skip the intro flyover. This advances the live match's sim without waiting on frames.
+window.__stepSim = (seconds) => {
+  const g = window.__game;
+  if (!g) return 0;
+  const n = Math.max(1, Math.round(seconds * SIM_HZ));
+  for (let i = 0; i < n; i++) g.update(SIM_DT);
+  return g.time;
+};
+
+// Re-run a recorded replay synchronously through a fresh deterministic Game, with the
+// exact same dispatch + per-frame checksum comparison as the live (rAF-driven) replay
+// loop in startReplay — just without rendering, so it can't be starved by a slow GPU.
+// Sets window.__game.replayDone / replayDesync for the smoke test to read.
+window.__runReplaySync = (rep) => {
+  stopGame();
+  const h = rep.header;
+  const container = document.getElementById('game-container');
+  const game = new Game(container, h.pf, h.ef, { seed: h.seed, biome: h.biomeKey,
+    timeOfDay: h.timeOfDay, mapSize: h.mapSize, difficulty: h.difficulty, replay: true });
+  game.ai = new AI(game);              // the AI re-runs deterministically from the seed
+  if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
+  window.__game = game; window.__controls = null;
+  let desynced = false;
+  for (const f of rep.frames) {
+    if (f.c) { const map = buildIdMap(game); for (const rec of f.c) game.dispatchRecorded(rec, map); }
+    if (f.k !== undefined && !desynced && game.checksum() !== f.k) desynced = true;
+    game.update(f.d);
+  }
+  game.replayDesync = desynced;
+  game.replayDone = true;
+  current = { game, ai: game.ai, controls: null, ui: null, raf: 0 };
+  return { desync: desynced, frames: rep.frames.length };
+};
+
 bindShell();
 buildMenu();
