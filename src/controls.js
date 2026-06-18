@@ -145,13 +145,13 @@ export class Controls {
   handleTap(cx, cy) {
     const ent = this.pickEntity(cx, cy);
     const mine = this.selectedUnits();
-    if (ent && ent.owner === 0 && !ent.isResource) {
+    if (ent && ent.owner === this.game.localPlayer && !ent.isResource) {
       this.game.selection = [ent]; Sound.select(); this.game.emit('selection'); return;
     }
     if (mine.length) {
       const p = this.screenToWorld(cx, cy);
       if (p) {
-        this.game.cmd('right', { sel: this.game.selection, x: p.x, z: p.z, ent, q: false });
+        this.game.cmd('right', { sel: this.ownSelection(), x: p.x, z: p.z, ent, q: false });
         if (!ent) this.game.emit('ground-click', p.x, p.z, 'move');
         Sound.command();
       }
@@ -218,7 +218,10 @@ export class Controls {
     }
   }
 
-  selectedUnits() { return this.game.selection.filter(s => s.isUnit && s.owner === 0); }
+  selectedUnits() { return this.game.selection.filter(s => s.isUnit && s.owner === this.game.localPlayer); }
+  // the local seat's own entities in the current selection (units + buildings),
+  // used to issue commands that only the local player may give
+  ownSelection() { return this.game.selection.filter(s => s.owner === this.game.localPlayer); }
 
   screenToWorld(cx, cy) {
     const r = this.dom.getBoundingClientRect();
@@ -279,7 +282,7 @@ export class Controls {
       const ent = this.pickEntity(e.clientX, e.clientY);
       const p = this.screenToWorld(e.clientX, e.clientY);
       if (p) {
-        this.game.cmd('right', { sel: this.game.selection, x: p.x, z: p.z, ent, q: e.shiftKey });
+        this.game.cmd('right', { sel: this.ownSelection(), x: p.x, z: p.z, ent, q: e.shiftKey });
         if (!ent) this.game.emit('ground-click', p.x, p.z, e.shiftKey ? 'queue' : 'move');
       }
     }
@@ -318,7 +321,7 @@ export class Controls {
       const sel = [];
       const v = new THREE.Vector3();
       for (const u of this.game.units) {
-        if (u.owner !== 0) continue;
+        if (u.owner !== this.game.localPlayer) continue;
         v.copy(u.pos); v.y = this.game.map.heightAt(u.pos.x, u.pos.z) + 0.5;
         v.project(this.game.camera);
         const sx = r.left + (v.x + 1) / 2 * r.width, sy = r.top + (-v.y + 1) / 2 * r.height;
@@ -335,7 +338,7 @@ export class Controls {
       // single click select
       const ent = this.pickEntity(e.clientX, e.clientY);
       if (ent && !ent.isResource) {
-        if (shift && ent.owner === 0) {
+        if (shift && ent.owner === this.game.localPlayer) {
           if (this.game.selection.includes(ent)) this.game.selection = this.game.selection.filter(s => s !== ent);
           else this.game.selection = [...this.game.selection, ent];
         } else this.game.selection = [ent];
@@ -383,7 +386,7 @@ export class Controls {
     const cx = (tx + p.def.size / 2) * TILE, cz = (ty + p.def.size / 2) * TILE;
     p.ghost.position.set(cx, this.game.map.heightAt(cx, cz), cz);
     const lp = this.game.localPlayer;
-    p.valid = this.game.canPlace(lp, p.key, tx, ty) && this.game.canAfford(lp, p.def.cost);
+    p.valid = this.game.canPlace(lp, p.key, tx, ty, true) && this.game.canAfford(lp, p.def.cost);
     p.ghost.traverse(o => { if (o.isMesh) o.material.opacity = p.valid ? 0.65 : 0.2; });
   }
 
@@ -515,7 +518,7 @@ export class Controls {
       const r = (e.radius + 0.3) * (1 + 0.04 * Math.sin(this.game.time * 5));
       ring.scale.setScalar(r);
       ring.position.set(e.pos.x, this.game.map.heightAt(e.pos.x, e.pos.z) + 0.08, e.pos.z);
-      ring.material.color.set(e.owner === 0 ? 0x66ff88 : e.owner === 1 ? 0xff5544 : 0xcccc88);
+      ring.material.color.set(e.owner === this.game.localPlayer ? 0x66ff88 : e.owner === 2 ? 0xcccc88 : 0xff5544);
       ring.material.opacity = pulse;
     }
   }

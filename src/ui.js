@@ -113,7 +113,7 @@ export class UI {
       const w = toWorld(e);
       if (e.button === 0) { panning = true; this.controls.moveCameraTo(w.x, w.z); }
       else if (e.button === 2) {
-        const sel = this.game.selection.filter(s => s.isUnit && s.owner === 0);
+        const sel = this.game.selection.filter(s => s.isUnit && s.owner === this.game.localPlayer);
         if (sel.length) { this.game.cmd('formation', { sel, x: w.x, z: w.z, am: false, q: e.shiftKey }); Sound.command(); }
       }
     });
@@ -145,14 +145,14 @@ export class UI {
     }
     // entities
     for (const b of this.game.buildings) {
-      if (b.owner !== 0 && !(b.discovered && this.game.map.fogStateAt(b.pos.x, b.pos.z) >= 1)) continue;
-      ctx.fillStyle = b.owner === 0 ? this.game.players[0].faction.colorCss : '#e03c2c';
+      if (b.owner !== this.game.localPlayer && !(b.discovered && this.game.map.fogStateAt(b.pos.x, b.pos.z) >= 1)) continue;
+      ctx.fillStyle = b.owner === this.game.localPlayer ? this.game.me.faction.colorCss : b.owner === 2 ? '#c9bd92' : '#e03c2c';
       const s = b.size * TILE * k;
       ctx.fillRect(b.pos.x * k - s / 2, b.pos.z * k - s / 2, s, s);
     }
     for (const u of this.game.units) {
-      if (u.owner !== 0 && this.game.map.fogStateAt(u.pos.x, u.pos.z) !== 2) continue;
-      ctx.fillStyle = u.owner === 0 ? '#9be86e' : u.owner === 1 ? '#ff5040' : '#c9bd92';
+      if (u.owner !== this.game.localPlayer && this.game.map.fogStateAt(u.pos.x, u.pos.z) !== 2) continue;
+      ctx.fillStyle = u.owner === this.game.localPlayer ? '#9be86e' : u.owner === 2 ? '#c9bd92' : '#ff5040';
       ctx.fillRect(u.pos.x * k - 1, u.pos.z * k - 1, 2, 2);
     }
     // pings
@@ -192,7 +192,7 @@ export class UI {
 
   // ---------- top bar ----------
   drawResources() {
-    const p = this.game.players[0];
+    const p = this.game.me;
     const r = p.resources;
     let html = '';
     for (const k of ['grain', 'timber', 'bronze', 'favor', 'knowledge']) {
@@ -213,7 +213,7 @@ export class UI {
   }
 
   idleWorkers() {
-    return this.game.units.filter(u => u.owner === 0 && !u.dead && u.def.worker && u.state === 'idle');
+    return this.game.units.filter(u => u.owner === this.game.localPlayer && !u.dead && u.def.worker && u.state === 'idle');
   }
   // select the next idle worker and snap the camera to it (button + '.' hotkey)
   selectIdleWorker() {
@@ -233,7 +233,7 @@ export class UI {
     const cmds = [];
     let info = '';
     if (!sel.length) {
-      info = `<div class="sel-name">${this.game.players[0].faction.name}</div><div class="sel-desc">Select units with left-click / drag. Right-click to command.</div>`;
+      info = `<div class="sel-name">${this.game.me.faction.name}</div><div class="sel-desc">Select units with left-click / drag. Right-click to command.</div>`;
       this.buildMenuOpen = false;
     } else if (sel.length === 1) {
       const e = sel[0];
@@ -260,11 +260,11 @@ export class UI {
     this.elInfo.innerHTML = info;
 
     // commands
-    const own = sel.filter(s => s.owner === 0);
+    const own = sel.filter(s => s.owner === this.game.localPlayer);
     const units = own.filter(s => s.isUnit);
     const workers = units.filter(u => u.def.worker);
     const building = own.length === 1 && own[0].isBuilding ? own[0] : null;
-    const faction = this.game.players[0].faction;
+    const faction = this.game.me.faction;
 
     if (units.length) {
       cmds.push({ icon: '⚔', label: 'Attack-Move (F)', cls: 'cmd-act', fn: () => { this.controls.attackMoveArm = true; } });
@@ -315,14 +315,14 @@ export class UI {
       cmds.push({ icon: '↩', label: 'Back (Esc)', cls: 'cmd-act', fn: () => { this.buildMenuOpen = false; this.refreshPanel(); } });
     }
     if (building && building.def.main && building.complete) {
-      const p = this.game.players[0];
+      const p = this.game.me;
       const ready = p.empowerCd <= 0;
       cmds.push({
         icon: '⛟', label: 'Marshal Stores (G)',
         sub: ready ? '— Ready —' : `${Math.ceil(p.empowerCd)} s`,
         cls: 'cmd-act cmd-ability' + (ready ? ' cmd-ability-ready' : ''),
         tip: 'Marshal the Stores — instant burst of grain & favor and a 10 s surge of gather speed. On a cooldown; keep it up between fights for a macro edge.',
-        fn: () => { if (this.game.cmd('empower', { o: 0 })) Sound.click(); else Sound.error(); this.refreshPanel(); },
+        fn: () => { if (this.game.cmd('empower', { o: this.game.localPlayer })) Sound.click(); else Sound.error(); this.refreshPanel(); },
       });
     }
     if (building && building.complete) {
@@ -338,7 +338,7 @@ export class UI {
       }
       for (const upKey of building.def.upgrades || []) {
         const up = UPGRADES[upKey];
-        if (this.game.players[0].upgrades.has(upKey)) continue;
+        if (this.game.me.upgrades.has(upKey)) continue;
         cmds.push({
           icon: '⬆', label: up.name, sub: costStr(up.cost),
           tip: `${up.name} — ${costStr(up.cost)}\n${up.desc}`,
@@ -381,8 +381,8 @@ export class UI {
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
       ctx.fillRect(sx - w / 2 - 1, sy - 1, w + 2, h + 2);
       const frac = Math.max(0, e.hp / e.maxHp);
-      ctx.fillStyle = e.owner === 0 ? (frac > 0.5 ? '#7ee06a' : frac > 0.25 ? '#e0c14a' : '#e05540')
-        : e.owner === 1 ? '#e05540' : '#c9bd92';
+      ctx.fillStyle = e.owner === this.game.localPlayer ? (frac > 0.5 ? '#7ee06a' : frac > 0.25 ? '#e0c14a' : '#e05540')
+        : e.owner === 2 ? '#c9bd92' : '#e05540';
       ctx.fillRect(sx - w / 2, sy, w * frac, h);
       if (constructing) {
         ctx.fillStyle = 'rgba(120,180,255,0.9)';

@@ -1601,7 +1601,7 @@ export class Game {
       b.complete = true; b.progress = 1; b.hp = b.maxHp; b.mesh.scale.y = 1;
       b.removeScaffold();
       this.buildings.push(b);
-      if (owner === 0) this.playerMain = b; else this.enemyMain = b;
+      if (owner === this.localPlayer) this.playerMain = b; else if (owner !== 2) this.enemyMain = b;
       // starting workers
       const wKey = p.faction.worker;
       for (let i = 0; i < 5; i++) {
@@ -1744,7 +1744,7 @@ export class Game {
       b.trainQueue = (bs.q || []).map(j => ({ key: j.key, t: j.t, total: j.total, upgrade: j.up }));
       b.rally = bs.rally || null;
       this.buildings.push(b);
-      if (def.main) { if (bs.o === 0) this.playerMain = b; else if (bs.o === 1) this.enemyMain = b; }
+      if (def.main) { if (bs.o === this.localPlayer) this.playerMain = b; else if (bs.o !== 2) this.enemyMain = b; }
     }
     for (const us of d.units || []) {
       const def = this.defFor(us.o, 'unit', us.k); if (!def) continue;
@@ -1883,7 +1883,8 @@ export class Game {
     return best;
   }
   playerViewers() {
-    return [...this.units.filter(u => u.owner === 0), ...this.buildings.filter(b => b.owner === 0)]
+    const lp = this.localPlayer;
+    return [...this.units.filter(u => u.owner === lp), ...this.buildings.filter(b => b.owner === lp)]
       .map(e => ({ pos: e.pos, sight: e.def.sight }));
   }
 
@@ -1987,13 +1988,17 @@ export class Game {
   }
 
   // ---------- building placement ----------
-  canPlace(owner, key, tx, ty) {
+  // checkFog is an input-layer affordance only (don't let the player place into
+  // unexplored ground). It must NOT gate the actual placement: fog is per-client, so
+  // a fog test inside the simulation would let clients diverge. placeBuilding calls
+  // this WITHOUT checkFog; only the placement ghost passes it.
+  canPlace(owner, key, tx, ty, checkFog = false) {
     const def = this.players[owner].faction.buildings[key];
     if (!def) return false;
     for (let y = 0; y < def.size; y++) for (let x = 0; x < def.size; x++) {
       if (!this.map.inBounds(tx + x, ty + y)) return false;
       if (this.map.blocked[this.map.idx(tx + x, ty + y)]) return false;
-      if (owner === 0 && this.map.fog[this.map.idx(tx + x, ty + y)] === 0) return false;
+      if (checkFog && this.map.fog[this.map.idx(tx + x, ty + y)] === 0) return false;
     }
     // keep clear of units
     const cx = (tx + def.size / 2) * TILE, cz = (ty + def.size / 2) * TILE;
@@ -2157,7 +2162,7 @@ export class Game {
 
   onDamaged(entity, attacker) {
     this.combatHeat = Math.min(1, this.combatHeat + 0.05);   // feeds the combat music layer
-    if (entity.owner === 0 && (this.time - (this.lastAlert || -99)) > 12) {
+    if (entity.owner === this.localPlayer && (this.time - (this.lastAlert || -99)) > 12) {
       const anySelectedNear = false;
       if (this.map.fogStateAt(entity.pos.x, entity.pos.z) !== 2 || entity.isBuilding) {
         this.lastAlert = this.time;
@@ -2295,24 +2300,30 @@ export class Game {
   }
 
   // ---------- commands from UI ----------
+  // `targets` are the commanding player's own entities (the input layer filters the
+  // selection to the local seat; a net-applied command's ids resolve to the issuer's
+  // units). The commander is derived from them so this is owner-agnostic — the same
+  // path serves the local player and a remote player's relayed command. Only the
+  // local seat's commands click.
   commandRightClick(targets, wx, wz, entity, queue = false) {
-    const units = targets.filter(t => t.isUnit && t.owner === 0);
-    const buildings = targets.filter(t => t.isBuilding && t.owner === 0);
+    const units = targets.filter(t => t.isUnit);
+    const buildings = targets.filter(t => t.isBuilding);
+    const cmdr = units[0]?.owner ?? buildings[0]?.owner;
     for (const b of buildings) {
       b.rally = { x: wx, z: wz };
       b.rallyNode = entity && entity.isResource ? entity : null;
     }
     if (!units.length) return;
-    Sound.command();
+    if (cmdr === this.localPlayer) Sound.command();
     if (entity && entity.isResource) {
       for (const u of units) u.command(u.def.worker ? { type: 'gather', node: entity, x: wx, z: wz } : { type: 'move', x: wx, z: wz }, queue);
       return;
     }
-    if (entity && !entity.dead && entity.owner !== 0 && !entity.isResource) {
+    if (entity && !entity.dead && entity.owner !== cmdr && !entity.isResource) {
       for (const u of units) u.command(u.def.attack ? { type: 'attack', target: entity, x: wx, z: wz } : { type: 'move', x: wx, z: wz }, queue);
       return;
     }
-    if (entity && entity.isBuilding && entity.owner === 0 && !entity.complete) {
+    if (entity && entity.isBuilding && entity.owner === cmdr && !entity.complete) {
       for (const u of units) u.command(u.def.worker ? { type: 'build', site: entity, x: wx, z: wz } : { type: 'move', x: wx, z: wz }, queue);
       return;
     }
@@ -2320,12 +2331,12 @@ export class Game {
     this.formationMove(units, wx, wz, false, queue);
   }
 
-  // Patrol: each selected unit walks a beat between where it stands and the point,
-  // engaging what wanders into range. Shift appends it as a queued order.
+  // Patrol: each unit walks a beat between where it stands and the point, engaging
+  // what wanders into range. Shift appends it as a queued order. Owner-agnostic.
   commandPatrol(units, wx, wz, queue = false) {
-    const us = units.filter(u => u.isUnit && u.owner === 0);
+    const us = units.filter(u => u.isUnit);
     if (!us.length) return;
-    Sound.command();
+    if (us[0].owner === this.localPlayer) Sound.command();
     for (const u of us) u.command({ type: 'patrol', x: wx, z: wz }, queue);
   }
 
@@ -2369,12 +2380,13 @@ export class Game {
 
   // ---------- fog ----------
   applyFogVisibility() {
+    const lp = this.localPlayer;
     for (const u of this.units) {
-      if (u.owner === 0) { u.mesh.visible = true; continue; }
+      if (u.owner === lp) { u.mesh.visible = true; continue; }
       u.mesh.visible = this.map.fogStateAt(u.pos.x, u.pos.z) === 2;
     }
     for (const b of this.buildings) {
-      if (b.owner === 0) { b.mesh.visible = true; continue; }
+      if (b.owner === lp) { b.mesh.visible = true; continue; }
       const st = this.map.fogStateAt(b.pos.x, b.pos.z);
       if (st === 2) b.discovered = true;
       b.mesh.visible = b.discovered && st >= 1;

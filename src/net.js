@@ -161,6 +161,7 @@ export class WebSocketTransport {
   constructor(url, room, { onOpen, onClose, onError } = {}) {
     this.cb = null;
     this.queue = [];
+    this.rxbuf = [];   // packets that arrive before a session attaches its handler
     this.ws = new WebSocket(url);
     this.ws.onopen = () => {
       this.ws.send(JSON.stringify({ kind: 'join', room }));
@@ -168,10 +169,12 @@ export class WebSocketTransport {
       this.queue.length = 0;
       onOpen && onOpen();
     };
+    this.onLobby = null; this.onStart = null;
     this.ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
-      if (msg.kind === 'packet' && this.cb) this.cb(msg.packet);
+      if (msg.kind === 'packet') { if (this.cb) this.cb(msg.packet); else this.rxbuf.push(msg.packet); }
       else if (msg.kind === 'lobby' && this.onLobby) this.onLobby(msg);
+      else if (msg.kind === 'start' && this.onStart) this.onStart(msg);
     };
     this.ws.onclose = () => onClose && onClose();
     this.ws.onerror = (err) => onError && onError(err);
@@ -180,6 +183,6 @@ export class WebSocketTransport {
     const m = JSON.stringify({ kind: 'packet', packet });
     if (this.ws.readyState === 1) this.ws.send(m); else this.queue.push(m);
   }
-  onPacket(cb) { this.cb = cb; }
+  onPacket(cb) { this.cb = cb; for (const p of this.rxbuf) cb(p); this.rxbuf = []; }
   close() { try { this.ws.close(); } catch {} }
 }
