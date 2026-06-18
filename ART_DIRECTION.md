@@ -214,9 +214,11 @@ The deep pass on making the core fight incredible before scaling depth:
 - ✅ Combat stances (aggressive / defensive / hold)
 - ✅ AI overhaul (staging, group commit, retreat-to-regroup, harassment, counter-composition)
 - ✅ Adaptive combat music layer
-- ✅ Skirmish setup (opponent + land), idle-worker selector
-- ⏳ Next (needs playtest): god-rays/cloud-shadow atmosphere pass, ability/active-skill layer,
-   ranged kiting micro, AI expansion to new resource sites
+- ✅ Skirmish setup (opponent + land + map size), idle-worker selector
+- ✅ World bosses + monster lairs (3 bosses w/ signature abilities + bounties),
+   selectable map size (standard/large/huge), difficulty-scaled neutrals
+- ⏳ Next (needs playtest): boss/lair tuning + telegraphs, AI expansion to new
+   resource sites, per-zone storm-glow/point-light pools
 
 ## 15. Code map
 `game.js` engine + combat (targeting/stances/impact) + atmosphere/lighting/FX + exposure/

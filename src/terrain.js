@@ -396,8 +396,11 @@ export class GameMap {
         if (BLOCKS.has(type)) { const t = this.tileOf(wx, wz); this.blocked[this.idx(t.x, t.y)] = 1; }
       }
     };
-    place(150, 13, 0);     // dense ground cover keeps clear of bases
-    place(20, 11, -0.05);  // a few extra landmarks closer in
+    // scale clutter with map area so bigger battlefields stay dressed (cheap: it
+    // all merges into the same handful of batched draw calls)
+    const areaScale = (GRID / 96) ** 2;
+    place(Math.round(150 * areaScale), 13, 0);     // dense ground cover keeps clear of bases
+    place(Math.round(20 * areaScale), 11, -0.05);  // a few extra landmarks closer in
 
     for (const { mat, geoms } of buckets.values()) {
       let merged;
