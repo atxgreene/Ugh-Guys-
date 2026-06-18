@@ -277,7 +277,10 @@ function appendChat(logEl, { from, text, sys }, youSeat) {
 
 // The hosted relay players reach by default — no setup, no URLs. Overridable via the
 // Advanced panel (e.g. ws://localhost:8787 for dev) or a ?relay= query param.
-const DEFAULT_RELAY = 'wss://sotw-relay.fly.dev';
+//
+// ⤵ AFTER YOU DEPLOY: replace YOUR-SUBDOMAIN with the hostname wrangler prints
+//   (server/cloudflare). Until then the game points players at the setup hint below.
+const DEFAULT_RELAY = 'wss://sotw-relay.YOUR-SUBDOMAIN.workers.dev';
 const CODE_WORDS = ['RAVEN', 'ASHEN', 'IRON', 'GRAVE', 'WOLF', 'EMBER', 'STORM', 'THORN',
   'DUSK', 'FROST', 'BONE', 'OMEN', 'RUIN', 'VEIL', 'WRAITH', 'TIDE'];
 
@@ -293,6 +296,13 @@ function relayUrl() {
   let url = document.getElementById('mp-url').value.trim() || DEFAULT_RELAY;
   if (!/^wss?:\/\//.test(url)) url = /^https?:\/\//.test(url) ? url.replace(/^https?/, 'ws') : 'ws://' + url;
   return url;
+}
+// True only once a real relay is set (default deployed, ?relay=, or a saved/Advanced URL).
+function relayReady() {
+  if (!relayUrl().includes('YOUR-SUBDOMAIN')) return true;
+  mpStatus('No relay configured yet. Deploy server/cloudflare (free) and set DEFAULT_RELAY, ' +
+    'or run a local relay and paste ws://localhost:8787 into Advanced.');
+  return false;
 }
 function mpStatus(t) { const s = document.getElementById('mp-status'); if (s) s.textContent = t || ''; }
 function setStage(stage) {
@@ -370,6 +380,16 @@ function ensureTransport(room) {
   transport.onChat = (msg) => appendChat(chatLog, { from: msg.from, text: msg.text }, _mp.you);
   transport.onStart = (msg) => { if (_mp.started) return; _mp.started = true; beginNetMatch(transport, msg.header, _mp.you, msg.players); };
   transport.onPong = (msg) => updatePing(Date.now() - msg.t);
+  transport.onReject = (msg) => {
+    const why = msg.reason === 'full' ? 'That room is already full (1v1).'
+      : msg.reason === 'busy' ? 'The relay is at capacity — try again shortly.'
+      : 'The relay refused the connection.';
+    mpStatus(why);
+    try { transport.close(); } catch {}
+    if (_mp.pingTimer) { clearInterval(_mp.pingTimer); _mp.pingTimer = null; }
+    _mp.transport = null;
+    setStage('choose');
+  };
 
   // chat input (bound once per connect)
   const chatInput = document.getElementById('lobby-chat-input');
@@ -391,6 +411,7 @@ function ensureTransport(room) {
 }
 
 function lobbyHost() {
+  if (!relayReady()) return;
   const code = genCode();
   _mp.code = code; _mp.isAuto = false;
   ensureTransport(codeToRoom(code));
@@ -403,6 +424,7 @@ function lobbyHost() {
 }
 
 function lobbyJoin(code) {
+  if (!relayReady()) return;
   code = code || document.getElementById('mp-code').value;
   if (!code || !code.trim()) { mpStatus('Enter an invite code to join.'); return; }
   _mp.code = codeToRoom(code); _mp.isAuto = false;
@@ -414,6 +436,7 @@ function lobbyJoin(code) {
 }
 
 function lobbyQuickMatch() {
+  if (!relayReady()) return;
   _mp.isAuto = true;
   // a throwaway holding room; the relay pulls us into the queue and pairs us elsewhere
   ensureTransport('__lobby_' + Math.random().toString(36).slice(2, 8));

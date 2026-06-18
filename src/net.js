@@ -167,7 +167,7 @@ export class WebSocketTransport {
     this.rxbuf = [];   // packets that arrive before a session attaches its handler
     // channel callbacks (assigned by the lobby / match code)
     this.onLobby = null; this.onStart = null; this.onChat = null;
-    this.onQm = null; this.onPong = null; this.onStatus = null;
+    this.onQm = null; this.onPong = null; this.onStatus = null; this.onReject = null;
     this._userOpen = onOpen; this._userClose = onClose; this._userError = onError;
     this._closed = false;     // set by close() to suppress reconnection
     this._reconnects = 0;
@@ -197,6 +197,11 @@ export class WebSocketTransport {
         case 'chat':  this.onChat && this.onChat(msg); break;
         case 'qm':    this.onQm && this.onQm(msg); break;
         case 'pong':  this.onPong && this.onPong(msg); break;
+        case 'reject':
+          // the relay refused us (room full/busy) — don't fight it with reconnects
+          this._closed = true; clearTimeout(this._reconnectT);
+          this.onReject && this.onReject(msg);
+          break;
       }
     };
     ws.onclose = () => {
