@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shadow of the Watchers — Patch Notes</title>
+<style>
+  :root {
+    --gold:   #e8b33a;
+    --gold2:  #ffd56e;
+    --violet: #9a5cff;
+    --violet2:#c08bff;
+    --red:    #e05533;
+    --ember:  #ff7a4d;
+    --stone:  #c9ad7a;
+    --linen:  #f1e5c8;
+    --cedar:  #7a5631;
+    --obsid:  #15111f;
+    --void:   #1b2a4a;
+    --ash:    #6d625c;
+    --charcoal:#211715;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--obsid);
+    color: var(--linen);
+    font-family: 'Georgia', serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Animated sky backdrop ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 140% 60% at 50% 0%, #2a1a3a 0%, transparent 60%),
+      radial-gradient(ellipse 80% 40% at 80% 20%, #1b0a2e 0%, transparent 50%),
+      linear-gradient(180deg, #0d0715 0%, #15111f 30%, #1b0f0a 70%, #0a0806 100%);
+    z-index: -2;
+  }
+
+  /* Drifting "cloud" layers */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(ellipse 300px 80px at 20% 15%, rgba(80,40,120,0.18) 0%, transparent 70%),
+      radial-gradient(ellipse 500px 100px at 70% 8%,  rgba(60,30,90, 0.14) 0%, transparent 70%),
+      radial-gradient(ellipse 200px 60px at 50% 25%, rgba(100,50,150,0.10) 0%, transparent 70%);
+    animation: cloudDrift 40s linear infinite;
+    z-index: -1;
+  }
+
+  @keyframes cloudDrift {
+    from { transform: translateX(0); }
+    to   { transform: translateX(120px); }
+  }
+
+  /* ── Header ── */
+  header {
+    text-align: center;
+    padding: 4rem 2rem 2rem;
+    position: relative;
+  }
+
+  .eyebrow {
+    letter-spacing: 0.35em;
+    font-size: 0.75rem;
+    color: var(--ash);
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+  }
+
+  h1 {
+    font-size: clamp(2.2rem, 6vw, 4.5rem);
+    font-weight: normal;
+    letter-spacing: 0.06em;
+    background: linear-gradient(160deg, var(--gold2) 0%, var(--gold) 40%, #b8831a 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.1;
+    text-shadow: none;
+    filter: drop-shadow(0 0 18px rgba(232,179,58,0.35));
+  }
+
+  .subtitle {
+    margin-top: 0.9rem;
+    color: var(--stone);
+    font-size: 1.05rem;
+    font-style: italic;
+    letter-spacing: 0.04em;
+  }
+
+  .divider {
+    margin: 1.8rem auto 0;
+    width: min(480px, 80%);
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity: 0.5;
+  }
+
+  /* ── Build tag ── */
+  .build-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(232,179,58,0.08);
+    border: 1px solid rgba(232,179,58,0.3);
+    border-radius: 4px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    color: var(--gold);
+    margin-top: 1.4rem;
+    text-transform: uppercase;
+  }
+
+  /* ── Main layout ── */
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 6rem;
+  }
+
+  /* ── Section header ── */
+  .section {
+    margin-top: 3rem;
+  }
+
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.4rem;
+  }
+
+  .section-title h2 {
+    font-size: 1.1rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-weight: normal;
+    color: var(--stone);
+  }
+
+  .section-title .icon {
+    font-size: 1.4rem;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 6px currentColor);
+  }
+
+  .section-title .line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(201,173,122,0.4), transparent);
+  }
+
+  /* ── Feature cards grid ── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.2rem;
+  }
+
+  .card {
+    background: rgba(255,255,255,0.028);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 6px;
+    padding: 1.4rem 1.5rem;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s, border-color 0.2s;
+  }
+
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(232,179,58,0.22);
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--card-accent, var(--gold));
+    opacity: 0.7;
+  }
+
+  .card-icon {
+    font-size: 1.8rem;
+    display: block;
+    margin-bottom: 0.7rem;
+    filter: drop-shadow(0 0 8px var(--card-accent, var(--gold)));
+  }
+
+  .card h3 {
+    font-size: 1rem;
+    letter-spacing: 0.06em;
+    color: var(--card-accent, var(--gold));
+    margin-bottom: 0.5rem;
+    font-weight: normal;
+  }
+
+  .card p {
+    font-size: 0.88rem;
+    color: var(--stone);
+    line-height: 1.65;
+  }
+
+  .card .tag {
+    display: inline-block;
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--card-accent, var(--gold));
+    opacity: 0.7;
+    margin-bottom: 0.6rem;
+  }
+
+  /* ── Boss showcase ── */
+  .boss-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.4rem;
+  }
+
+  .boss-card {
+    border-radius: 8px;
+    padding: 1.6rem;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .boss-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--boss-bg);
+    opacity: 0.06;
+    pointer-events: none;
+  }
+
+  .boss-card .boss-name {
+    font-size: 1.05rem;
+    margin-bottom: 0.25rem;
+    letter-spacing: 0.04em;
+  }
+
+  .boss-card .boss-title {
+    font-size: 0.75rem;
+    color: var(--ash);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+
+  .boss-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .stat {
+    font-size: 0.8rem;
+    color: var(--stone);
+  }
+
+  .stat strong {
+    display: block;
+    font-size: 1rem;
+    color: var(--linen);
+    font-family: 'Georgia', serif;
+  }
+
+  .ability-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    border: 1px solid var(--boss-accent);
+    color: var(--boss-accent);
+    letter-spacing: 0.05em;
+    margin-bottom: 0.9rem;
+    background: rgba(255,255,255,0.04);
+  }
+
+  .bounty-row {
+    font-size: 0.8rem;
+    color: var(--ash);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding-top: 0.75rem;
+    margin-top: 0.25rem;
+  }
+
+  .bounty-row span {
+    color: var(--gold2);
+    font-style: normal;
+  }
+
+  /* ── Map size comparison ── */
+  .map-compare {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.2rem;
+  }
+
+  @media (max-width: 560px) {
+    .map-compare { grid-template-columns: 1fr; }
+  }
+
+  .map-tier {
+    text-align: center;
+    padding: 1.4rem 1rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.025);
+    position: relative;
+  }
+
+  .map-tier.featured {
+    border-color: rgba(232,179,58,0.3);
+    background: rgba(232,179,58,0.04);
+  }
+
+  .map-badge {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--gold);
+    color: var(--obsid);
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.6rem;
+    border-radius: 10px;
+    font-weight: bold;
+  }
+
+  .map-grid-vis {
+    margin: 0.8rem auto;
+    position: relative;
+  }
+
+  .map-grid-vis svg {
+    display: block;
+    margin: 0 auto;
+  }
+
+  .map-tier h3 {
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+    color: var(--gold);
+    font-weight: normal;
+  }
+
+  .map-tier .dim {
+    font-size: 0.85rem;
+    color: var(--stone);
+    margin: 0.25rem 0 0.1rem;
+  }
+
+  .map-tier .desc {
+    font-size: 0.78rem;
+    color: var(--ash);
+    line-height: 1.55;
+    margin-top: 0.6rem;
+  }
+
+  /* ── Stat pill row ── */
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 0.9rem;
+  }
+
+  .pill {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    padding: 0.3rem 0.75rem;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--stone);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .pill.gold   { border-color: rgba(232,179,58,0.4); color: var(--gold2); }
+  .pill.violet { border-color: rgba(154,92,255,0.4); color: var(--violet2); }
+  .pill.red    { border-color: rgba(224,85,51,0.4);  color: var(--ember); }
+  .pill.green  { border-color: rgba(80,200,100,0.4); color: #7de89a; }
+
+  /* ── Tech banner ── */
+  .tech-banner {
+    background: rgba(27,42,74,0.4);
+    border: 1px solid rgba(47,111,159,0.3);
+    border-radius: 6px;
+    padding: 1.2rem 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+  }
+
+  .tech-item {
+    font-size: 0.82rem;
+    color: var(--stone);
+    line-height: 1.55;
+  }
+
+  .tech-item strong {
+    display: block;
+    color: #6ab4e8;
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.2rem;
+    font-weight: normal;
+  }
+
+  /* ── Full-width feature rows ── */
+  .feature-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 2rem;
+    align-items: center;
+    padding: 1.8rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.02);
+    margin-bottom: 1.2rem;
+  }
+
+  @media (max-width: 600px) {
+    .feature-row { grid-template-columns: 1fr; }
+  }
+
+  .feature-row .visual { text-align: center; }
+
+  .feature-row .visual .big-icon {
+    font-size: 4rem;
+    filter: drop-shadow(0 0 16px currentColor);
+    display: block;
+  }
+
+  .feature-row h3 {
+    font-size: 1.05rem;
+    color: var(--gold);
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+    font-weight: normal;
+  }
+
+  .feature-row p {
+    font-size: 0.88rem;
+    color: var(--stone);
+    line-height: 1.7;
+  }
+
+  /* ── River diagram ── */
+  .river-diagram {
+    width: 100%;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #0d0a12;
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+
+  /* ── Lightning flash on header ── */
+  @keyframes lightningFlash {
+    0%, 97%, 100% { opacity: 0; }
+    98%            { opacity: 0.12; }
+    99%            { opacity: 0; }
+    99.5%          { opacity: 0.08; }
+  }
+
+  .lightning-bg {
+    position: fixed;
+    inset: 0;
+    background: white;
+    pointer-events: none;
+    z-index: 0;
+    animation: lightningFlash 8s ease-in-out infinite;
+  }
+
+  /* ── Scroll animations ── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--ash);
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    border-top: 1px solid rgba(255,255,255,0.05);
+  }
+
+  footer em {
+    color: var(--stone);
+    font-style: normal;
+  }
+</style>
+</head>
+<body>
+
+<div class="lightning-bg"></div>
+
+<!-- ════════════════════════════════ HEADER ════════════════════════════════ -->
+<header>
+  <p class="eyebrow">Shadow of the Watchers</p>
+  <h1>The World Breaks</h1>
+  <p class="subtitle">Update — The Ancient Deeps</p>
+  <div class="divider"></div>
+  <div class="build-tag">▪ Build 2026.06 ▪ Pre-Flood Epoch ▪</div>
+</header>
+
+<!-- ════════════════════════════════ MAIN ════════════════════════════════ -->
+<main>
+
+  <!-- ── LEAD SUMMARY ── -->
+  <section class="section reveal">
+    <div class="section-title">
+      <span class="icon" style="color:var(--gold)">⚡</span>
+      <h2>What's New</h2>
+      <div class="line"></div>
+    </div>
+    <div class="cards">
+
+      <div class="card" style="--card-accent: var(--ember)">
+        <span class="card-icon" style="color:var(--ember)">🐉</span>
+        <span class="tag">World Bosses</span>
+        <h3>Three Ancient Horrors</h3>
+        <p>Leviathan, the Nephilim Titan, and the Watcher Sentinel now prowl the mid-field. Kill them. Claim their bounty. Try to survive.</p>
+      </div>
+
+      <div class="card" style="--card-accent: var(--stone)">
+        <span class="card-icon" style="color:var(--stone)">🗺</span>
+        <span class="tag">Map Scale</span>
+        <h3>Standard · Large · Huge</h3>
+        <p>Maps now span up to 160×160 tiles. Huge maps generate more lairs, wider rivers, and thicker prop dressing. Room to maneuver — and to lose your army in.</p>
+      </div>
+
+      <div class="card" style="--card-accent: #6ab4e8">
+        <span class="card-icon" style="color:#6ab4e8">🌊</span>
+        <span class="tag">Terrain</span>
+        <h3>Carved Rivers &amp; Ancient Roads</h3>
+        <p>Meander-walked rivers carved into the heightfield, fords for crossing, and ancient stone roads linking ruins. Each tile modifies unit speed.</p>
+      </div>
+
+      <div class="card" style="--card-accent: var(--violet2)">
+        <span class="card-icon" style="color:var(--violet2)">🌤</span>
+        <span class="tag">Atmosphere</span>
+        <h3>God-Rays &amp; Cloud Shadows</h3>
+        <p>Additive light-shaft slabs fan across the map from the key sun. A scrolling shadow plane drifts cloud-darkness over the ground at mood-scaled opacity.</p>
+      </div>
+
+      <div class="card" style="--card-accent: #7de89a">
+        <span class="card-icon" style="color:#7de89a">⚙</span>
+        <span class="tag">Performance</span>
+        <h3>Instancing &amp; LOD Pass</h3>
+        <p>Static doodad clutter merged into per-material geometry batches. Hundreds of draw calls collapsed to a handful. Fog and shadows handled in the shader.</p>
+      </div>
+
+      <div class="card" style="--card-accent: var(--red)">
+        <span class="card-icon" style="color:var(--red)">💀</span>
+        <span class="tag">Balance</span>
+        <h3>Harder Guardians</h3>
+        <p>Devourer HP +29%, armor +50%, damage +20%. Neutral HP and damage now scale with difficulty — guardians on Hard hit like they mean it.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── WORLD BOSSES ── -->
+  <section class="section reveal">
+    <div class="section-title">
+      <span class="icon" style="color:var(--ember)">☠</span>
+      <h2>World Bosses</h2>
+      <div class="line"></div>
+    </div>
+    <p style="color:var(--ash);font-size:0.88rem;margin-bottom:1.4rem;line-height:1.7;">
+      Monster lairs seed across the mid-field at match start — count scales with map size. Each boss has a leash range:
+      pull it too far from home and it returns. Kill it for rare bounties that fund your next push.
+      On Hard difficulty, guardians are significantly tougher.
+    </p>
+    <div class="boss-grid">
+
+      <!-- LEVIATHAN -->
+      <div class="boss-card" style="--boss-bg:var(--void);--boss-accent:#6ab4e8;border-color:rgba(106,180,232,0.25);">
+        <div class="boss-name" style="color:#6ab4e8">Leviathan</div>
+        <div class="boss-title">The Flood-Wyrm</div>
+        <div class="boss-stats">
+          <div class="stat"><strong>1 800</strong> Hit Points</div>
+          <div class="stat"><strong>4</strong> Armor</div>
+          <div class="stat"><strong>34</strong> Dmg / 2.2 s</div>
+          <div class="stat"><strong>Ranged 11</strong> w/ AoE 3</div>
+        </div>
+        <div class="ability-pill" style="border-color:rgba(106,180,232,0.5);color:#6ab4e8;">
+          ⬡ Deluge — AoE strike r6.2 · ×1.9 dmg · 1 s stun · CD 14 s
+        </div>
+        <div class="bounty-row">
+          Bounty: <span>280 Knowledge · 200 Bronze</span>
+        </div>
+      </div>
+
+      <!-- NEPHILIM TITAN -->
+      <div class="boss-card" style="--boss-bg:var(--charcoal);--boss-accent:var(--ember);border-color:rgba(255,122,77,0.25);">
+        <div class="boss-name" style="color:var(--ember)">The Nephilim Titan</div>
+        <div class="boss-title">A Nephilim Titan</div>
+        <div class="boss-stats">
+          <div class="stat"><strong>2 600</strong> Hit Points</div>
+          <div class="stat"><strong>6</strong> Armor</div>
+          <div class="stat"><strong>50</strong> Dmg / 2.4 s</div>
+          <div class="stat"><strong>Melee 2.8</strong> anti-struct ×2</div>
+        </div>
+        <div class="ability-pill" style="border-color:rgba(255,122,77,0.5);color:var(--ember);">
+          🪨 Worldbreaker Slam — AoE r6.6 · ×2.2 dmg · 2 s stun · CD 12 s
+        </div>
+        <div class="bounty-row">
+          Bounty: <span>350 Knowledge · 250 Grain · 100 Favor</span>
+        </div>
+      </div>
+
+      <!-- WATCHER SENTINEL -->
+      <div class="boss-card" style="--boss-bg:#1b0a2e;--boss-accent:var(--violet2);border-color:rgba(192,139,255,0.25);">
+        <div class="boss-name" style="color:var(--violet2)">Sentinel of the Watchers</div>
+        <div class="boss-title">Forbidden Construct</div>
+        <div class="boss-stats">
+          <div class="stat"><strong>1 550</strong> Hit Points</div>
+          <div class="stat"><strong>5</strong> Armor</div>
+          <div class="stat"><strong>28</strong> Dmg / 1.7 s</div>
+          <div class="stat"><strong>Ranged 13</strong> sigil bolts</div>
+        </div>
+        <div class="ability-pill" style="border-color:rgba(192,139,255,0.5);color:var(--violet2);">
+          ✦ Sigil Barrage — 5-shot burst · CD 13 s
+        </div>
+        <div class="bounty-row">
+          Bounty: <span>320 Knowledge · 220 Favor</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── MAP SIZES ── -->
+  <section class="section reveal">
+    <div class="section-title">
+      <span class="icon" style="color:var(--stone)">🗺</span>
+      <h2>Map Scale</h2>
+      <div class="line"></div>
+    </div>
+    <div class="map-compare">
+
+      <div class="map-tier">
+        <h3>Standard</h3>
+        <div class="dim">96 × 96 tiles</div>
+        <div class="map-grid-vis">
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <rect x="10" y="10" width="60" height="60" fill="none" stroke="rgba(201,173,122,0.3)" stroke-width="1.5"/>
+            <rect x="20" y="20" width="16" height="16" rx="2" fill="rgba(232,179,58,0.25)" stroke="rgba(232,179,58,0.5)" stroke-width="1"/>
+            <rect x="44" y="44" width="16" height="16" rx="2" fill="rgba(224,85,51,0.2)" stroke="rgba(224,85,51,0.4)" stroke-width="1"/>
+            <circle cx="40" cy="40" r="2" fill="rgba(201,173,122,0.4)"/>
+            <path d="M 18 52 Q 35 42 50 55" stroke="rgba(106,180,232,0.4)" stroke-width="2" fill="none"/>
+          </svg>
+        </div>
+        <div class="desc">The classic skirmish. Two bases, one river crossing, tight flanks. Ideal for quick decisive battles.</div>
+      </div>
+
+      <div class="map-tier featured">
+        <div class="map-badge">New</div>
+        <h3>Large</h3>
+        <div class="dim">128 × 128 tiles</div>
+        <div class="map-grid-vis">
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <rect x="5" y="5" width="70" height="70" fill="none" stroke="rgba(232,179,58,0.4)" stroke-width="1.5"/>
+            <rect x="10" y="10" width="16" height="16" rx="2" fill="rgba(232,179,58,0.25)" stroke="rgba(232,179,58,0.5)" stroke-width="1"/>
+            <rect x="54" y="54" width="16" height="16" rx="2" fill="rgba(224,85,51,0.2)" stroke="rgba(224,85,51,0.4)" stroke-width="1"/>
+            <circle cx="40" cy="40" r="3" fill="rgba(255,122,77,0.6)"/>
+            <circle cx="27" cy="53" r="2" fill="rgba(192,139,255,0.5)"/>
+            <path d="M 15 60 Q 40 45 60 62" stroke="rgba(106,180,232,0.45)" stroke-width="2.5" fill="none"/>
+            <path d="M 22 20 Q 38 30 35 48" stroke="rgba(106,180,232,0.3)" stroke-width="1.5" fill="none"/>
+          </svg>
+        </div>
+        <div class="desc">Room for flanks and expansion. More lair sites, wider rivers, greater prop density. Best for strategic play.</div>
+      </div>
+
+      <div class="map-tier featured">
+        <div class="map-badge">New</div>
+        <h3>Huge</h3>
+        <div class="dim">160 × 160 tiles</div>
+        <div class="map-grid-vis">
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <rect x="2" y="2" width="76" height="76" fill="none" stroke="rgba(232,179,58,0.35)" stroke-width="1.5"/>
+            <rect x="7" y="7" width="14" height="14" rx="2" fill="rgba(232,179,58,0.25)" stroke="rgba(232,179,58,0.5)" stroke-width="1"/>
+            <rect x="59" y="59" width="14" height="14" rx="2" fill="rgba(224,85,51,0.2)" stroke="rgba(224,85,51,0.4)" stroke-width="1"/>
+            <circle cx="40" cy="40" r="3.5" fill="rgba(255,122,77,0.7)"/>
+            <circle cx="22" cy="55" r="2.5" fill="rgba(192,139,255,0.55)"/>
+            <circle cx="58" cy="25" r="2.5" fill="rgba(106,180,232,0.55)"/>
+            <path d="M 10 65 Q 35 50 55 68" stroke="rgba(106,180,232,0.5)" stroke-width="3" fill="none"/>
+            <path d="M 18 15 Q 32 35 30 55" stroke="rgba(106,180,232,0.3)" stroke-width="2" fill="none"/>
+            <path d="M 60 18 Q 48 32 52 50" stroke="rgba(106,180,232,0.25)" stroke-width="1.5" fill="none"/>
+          </svg>
+        </div>
+        <div class="desc">Epic campaigns. Multiple river crossings, road networks, five+ lair sites. Not for the faint of heart.</div>
+      </div>
+
+    </div>
+    <div class="pills" style="margin-top:1rem;">
+      <div class="pill gold">Monster lair count scales with map area</div>
+      <div class="pill">Clutter density scales proportionally</div>
+      <div class="pill">Ridge passes remain proportional</div>
+      <div class="pill green">All map sizes CI-tested</div>
+    </div>
+  </section>
+
+  <!-- ── TERRAIN ── -->
+  <section class="section reveal">
+    <div class="section-title">
+      <span class="icon" style="color:#6ab4e8">🌊</span>
+      <h2>Terrain — Rivers, Fords &amp; Roads</h2>
+      <div class="line"></div>
+    </div>
+
+    <div class="feature-row">
+      <div class="visual">
+        <svg width="140" height="120" viewBox="0 0 140 120">
+          <!-- Ground -->
+          <rect x="0" y="0" width="140" height="120" fill="#1a1208"/>
+          <!-- River channel -->
+          <path d="M 20 20 Q 50 35 45 55 Q 40 75 70 90 Q 90 100 120 95"
+                stroke="rgba(50,100,180,0.7)" stroke-width="14" fill="none" stroke-linecap="round"/>
+          <path d="M 20 20 Q 50 35 45 55 Q 40 75 70 90 Q 90 100 120 95"
+                stroke="rgba(80,140,220,0.4)" stroke-width="10" fill="none" stroke-linecap="round"/>
+          <!-- Ford crossing -->
+          <ellipse cx="60" cy="62" rx="10" ry="6" fill="rgba(201,173,122,0.5)" stroke="rgba(201,173,122,0.8)" stroke-width="1.5"/>
+          <!-- Road -->
+          <path d="M 0 75 Q 30 70 60 62 Q 90 54 140 50"
+                stroke="rgba(122,86,49,0.6)" stroke-width="3" fill="none" stroke-dasharray="6 3"/>
+          <!-- Labels -->
+          <text x="72" y="58" fill="rgba(201,173,122,0.9)" font-size="8" font-family="Georgia">Ford</text>
+          <text x="5" y="85" fill="rgba(122,86,49,0.9)" font-size="7" font-family="Georgia">Road</text>
+          <text x="80" y="30" fill="rgba(80,140,220,0.9)" font-size="8" font-family="Georgia">River</text>
+        </svg>
+      </div>
+      <div>
+        <h3>Carved Waterways</h3>
+        <p>Rivers meander-walk from source to basin, carving the heightfield as they go. A water mesh sits in the channel with sky-tinted sheen. <strong style="color:var(--stone)">Crossing slows units to 0.45×</strong> — unless they find a ford (0.85×). Ancient roads connect ruins and fords, granting <strong style="color:var(--stone)">1.28× speed</strong> to any unit on the path. Each tile's speed modifier feeds directly into the pathfinder's cost function.</p>
+        <div class="pills">
+          <div class="pill" style="color:#6ab4e8;border-color:rgba(106,180,232,0.4);">River: 0.45× speed</div>
+          <div class="pill" style="color:#c9ad7a;border-color:rgba(201,173,122,0.4);">Ford: 0.85× speed</div>
+          <div class="pill gold">Road: 1.28× speed</div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ── ATMOSPHERE ── -->
+  <section class="section reveal">
+    <div class="section-title">
+      <span class="icon" style="color:var(--violet2)">✦</span>
+      <h2>Atmosphere — God-Rays &amp; Cloud Shadows</h2>
+      <div class="line"></div>
+    </div>
+
+    <div class="cards">
+
+      <div class="card" style="--card-accent:var(--gold);">
+        <span class="card-icon" style="color:var(--gold)">🌅</span>
+        <span class="tag">God-Rays</span>
+        <h3>Light Shafts</h3>
+        <p>Additive plane-slabs fan from the key sun across the map. Shimmer-animated via UV scroll. Opacity scales with the time-of-day mood — storm and dusk make them dramatic. Lightning frames flare them white.</p>
+      </div>
+
+      <div class="card" style="--card-accent:var(--ash);">
+        <span class="card-icon" style="color:var(--ash)">☁</span>
+        <span class="tag">Cloud Shadows</span>
+        <h3>Drifting Darkness</h3>
+        <p>A canvas-generated cloud texture scrolls over a large plane above the ground. Soft-edged blobs of shadow drift with the storm — mood-scaled opacity, always moving.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── PERFORMANCE ── -->
+  <section class="section reveal">
+    <div class="section-title">
+      <span class="icon" style="color:#7de89a">⚡</span>
+      <h2>Performance — Instancing &amp; LOD</h2>
+      <div class="line"></div>
+    </div>
+
+    <div class="tech-banner">
+      <div class="tech-item">
+        <strong>Geometry Merging</strong>
+        Static doodads (obelisks, bones, tablets, trees) batched per material bucket using <code>mergeGeometries()</code> — one draw call per material type.
+      </div>
+      <div class="tech-item">
+        <strong>Shader-Baked Fog</strong>
+        Merged batches inject per-fragment fog via <code>onBeforeCompile</code>. Fog of war applied to the batch group, not per-doodad.
+      </div>
+      <div class="tech-item">
+        <strong>Shadow Pass Skip</strong>
+        Merged clutter geometry casts no shadows — saves an entire depth pass on dense maps.
+      </div>
+      <div class="tech-item">
+        <strong>Result</strong>
+        Hundreds of draw calls on a Huge map collapsed to a handful of batch draws. Significant frame-time savings on mid-range GPUs.
+      </div>
+    </div>
+  </section>
+
+  <!-- ── BALANCE ── -->
+  <section class="section reveal">
+    <div class="section-title">
+      <span class="icon" style="color:var(--red)">⚖</span>
+      <h2>Balance Changes</h2>
+      <div class="line"></div>
+    </div>
+    <div class="cards">
+
+      <div class="card" style="--card-accent:var(--red);">
+        <span class="tag">Devourer</span>
+        <h3>Buffed Neutral Threat</h3>
+        <p>The Hexapod Devourer is no longer a speed bump. Scouts should think twice before pulling one solo.</p>
+        <div style="margin-top:0.9rem;display:grid;grid-template-columns:1fr 1fr;gap:0.4rem 0.8rem;font-size:0.8rem;">
+          <div style="color:var(--ash)">HP <span style="color:var(--ember)">280 → 360</span></div>
+          <div style="color:var(--ash)">Armor <span style="color:var(--ember)">2 → 3</span></div>
+          <div style="color:var(--ash)">Dmg <span style="color:var(--ember)">20 → 24</span></div>
+          <div style="color:var(--ash)">+29% effective HP</div>
+        </div>
+      </div>
+
+      <div class="card" style="--card-accent:var(--stone);">
+        <span class="tag">Difficulty Scaling</span>
+        <h3>Neutral Strength Scales</h3>
+        <p>All neutral units (including bosses) now apply a difficulty multiplier to HP and damage. Easy makes exploration viable. Hard makes lairs lethal.</p>
+        <div class="pills" style="margin-top:0.8rem;">
+          <div class="pill">Easy: 0.7× HP/dmg</div>
+          <div class="pill">Normal: 1.0×</div>
+          <div class="pill red">Hard: 1.5× HP/dmg</div>
+        </div>
+      </div>
+
+      <div class="card" style="--card-accent:var(--gold);">
+        <span class="tag">Boss Abilities</span>
+        <h3>Active Auto-Fire</h3>
+        <p>Bosses fire their signature abilities on cooldown without player input. No wind-up telegraphs — they hit when the timer says go. React fast or get caught.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── WHAT'S NEXT ── -->
+  <section class="section reveal" style="margin-top:3.5rem;">
+    <div class="section-title">
+      <span class="icon" style="color:var(--ash)">⏳</span>
+      <h2>On the Horizon</h2>
+      <div class="line"></div>
+    </div>
+    <div class="cards">
+      <div class="card" style="--card-accent:var(--ash);opacity:0.75;">
+        <span class="tag">Planned</span>
+        <h3>AI Expansion</h3>
+        <p>The enemy AI will contest new resource sites and push multi-front pressure rather than a single wave.</p>
+      </div>
+      <div class="card" style="--card-accent:var(--ash);opacity:0.75;">
+        <span class="tag">Planned</span>
+        <h3>Storm-Glow Zones</h3>
+        <p>Corrupted Watcher-dominant zones bathed in localized red storm-glow with real point-light pools.</p>
+      </div>
+      <div class="card" style="--card-accent:var(--ash);opacity:0.75;">
+        <span class="tag">Planned</span>
+        <h3>Boss Telegraphs</h3>
+        <p>Visual charge indicators before big ability activations — concentric ground rings and audio cues.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <em>Shadow of the Watchers</em> &nbsp;·&nbsp; The Ancient Deeps Update &nbsp;·&nbsp; 2026.06<br>
+  <span style="color:#3a3030;margin-top:0.4rem;display:block;">For the last age before the Flood.</span>
+</footer>
+
+<script>
+  // Scroll-reveal
+  const observer = new IntersectionObserver(entries => {
+    for (const e of entries) {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    }
+  }, { threshold: 0.08 });
+
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
