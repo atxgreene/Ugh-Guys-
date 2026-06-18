@@ -155,48 +155,80 @@ export class LocalTransport {
 
 // ---- networked transport (browser) ----
 // Talks JSON command packets to the relay (server/relay.mjs), which rebroadcasts
-// them to the room. Queues sends until the socket is open. Browser-only (uses the
-// global WebSocket); kept out of the Node test path.
+// them to the room. Queues sends until the socket is open, auto-reconnects on an
+// unexpected drop, and exposes lobby/chat/quick-match/ping channels alongside the
+// lockstep packet stream. Browser-only (uses the global WebSocket); kept out of the
+// Node test path.
 export class WebSocketTransport {
-  constructor(url, room, { onOpen, onClose, onError } = {}) {
+  constructor(url, room, { onOpen, onClose, onError, name = '', faction = '' } = {}) {
+    this.url = url; this.room = room; this.name = name; this.faction = faction;
     this.cb = null;
     this.queue = [];
     this.rxbuf = [];   // packets that arrive before a session attaches its handler
-    this.ws = new WebSocket(url);
-    this.ws.onopen = () => {
-      this.ws.send(JSON.stringify({ kind: 'join', room }));
-      for (const m of this.queue) this.ws.send(m);
-      this.queue.length = 0;
-      onOpen && onOpen();
-    };
+    // channel callbacks (assigned by the lobby / match code)
     this.onLobby = null; this.onStart = null; this.onChat = null;
-    this.ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.kind === 'packet') { if (this.cb) this.cb(msg.packet); else this.rxbuf.push(msg.packet); }
-      else if (msg.kind === 'lobby' && this.onLobby) this.onLobby(msg);
-      else if (msg.kind === 'start' && this.onStart) this.onStart(msg);
-      else if (msg.kind === 'chat' && this.onChat) this.onChat(msg);
+    this.onQm = null; this.onPong = null; this.onStatus = null;
+    this._userOpen = onOpen; this._userClose = onClose; this._userError = onError;
+    this._closed = false;     // set by close() to suppress reconnection
+    this._reconnects = 0;
+    this._reconnectT = null;
+    this._connect(true);
+  }
+
+  _connect(first) {
+    let ws;
+    try { ws = new WebSocket(this.url); }
+    catch (e) { this._userError && this._userError(e); return; }
+    this.ws = ws;
+    ws.onopen = () => {
+      this._reconnects = 0;
+      ws.send(JSON.stringify({ kind: 'join', room: this.room, name: this.name, faction: this.faction }));
+      for (const m of this.queue) ws.send(m);
+      this.queue.length = 0;
+      this.onStatus && this.onStatus(first ? 'open' : 'reconnected');
+      if (first) this._userOpen && this._userOpen();
     };
-    this.ws.onclose = () => onClose && onClose();
-    this.ws.onerror = (err) => onError && onError(err);
+    ws.onmessage = (e) => {
+      let msg; try { msg = JSON.parse(e.data); } catch { return; }
+      switch (msg.kind) {
+        case 'packet': if (this.cb) this.cb(msg.packet); else this.rxbuf.push(msg.packet); break;
+        case 'lobby': this.room = msg.room; this.onLobby && this.onLobby(msg); break;   // track room for reconnects
+        case 'start': this.onStart && this.onStart(msg); break;
+        case 'chat':  this.onChat && this.onChat(msg); break;
+        case 'qm':    this.onQm && this.onQm(msg); break;
+        case 'pong':  this.onPong && this.onPong(msg); break;
+      }
+    };
+    ws.onclose = () => {
+      if (this._closed) { this.onStatus && this.onStatus('closed'); this._userClose && this._userClose(); return; }
+      // unexpected drop — surface it and retry with exponential backoff (capped)
+      this.onStatus && this.onStatus('reconnecting');
+      this._userClose && this._userClose();
+      const delay = Math.min(8000, 500 * 2 ** this._reconnects);
+      this._reconnects++;
+      clearTimeout(this._reconnectT);
+      this._reconnectT = setTimeout(() => { if (!this._closed) this._connect(false); }, delay);
+    };
+    ws.onerror = (err) => { this._userError && this._userError(err); };
   }
-  send(packet) {
-    const m = JSON.stringify({ kind: 'packet', packet });
-    if (this.ws.readyState === 1) this.ws.send(m); else this.queue.push(m);
-  }
-  // Send a control message (lobby control, start, etc.) with queuing support
-  sendMessage(msg) {
+
+  send(packet) { this._raw({ kind: 'packet', packet }); }
+  sendMessage(msg) { this._raw(msg); }
+  // Free-text chat — rides next to the lockstep stream (never through it), so it can't
+  // affect the deterministic sim regardless of when it arrives.
+  sendChat(text) { this._raw({ kind: 'chat', text: String(text).slice(0, 240) }); }
+  sendReady(ready) { this._raw({ kind: 'ready', ready: !!ready }); }
+  setName(name) { this.name = String(name).slice(0, 24); this._raw({ kind: 'name', name: this.name }); }
+  setFaction(faction) { this.faction = String(faction).slice(0, 24); this._raw({ kind: 'faction', faction: this.faction }); }
+  quickMatch(name) { if (name) this.name = String(name).slice(0, 24); this._raw({ kind: 'quickmatch', name: this.name }); }
+  cancelQuickMatch() { this._raw({ kind: 'cancelqm' }); }
+  ping() { this._raw({ kind: 'ping', t: Date.now() }); }
+
+  _raw(msg) {
     const m = JSON.stringify(msg);
-    if (this.ws.readyState === 1) {
-      try { this.ws.send(m); console.log('[relay] sent', msg.kind); } catch (e) { console.error('[relay] send failed:', e); }
-    } else {
-      this.queue.push(m);
-      console.log('[relay] queued', msg.kind, '(socket readyState:', this.ws.readyState, ')');
-    }
+    if (this.ws && this.ws.readyState === 1) { try { this.ws.send(m); } catch {} }
+    else this.queue.push(m);
   }
-  // Send a free-text chat line. Rides next to the lockstep stream (never through it),
-  // so it can't affect the deterministic sim regardless of when it arrives.
-  sendChat(text) { this.sendMessage({ kind: 'chat', text: String(text).slice(0, 240) }); }
   onPacket(cb) { this.cb = cb; for (const p of this.rxbuf) cb(p); this.rxbuf = []; }
-  close() { try { this.ws.close(); } catch {} }
+  close() { this._closed = true; clearTimeout(this._reconnectT); try { this.ws.close(); } catch {} }
 }

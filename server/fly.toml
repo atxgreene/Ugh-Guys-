@@ -1,0 +1,29 @@
+# Fly.io deployment for the lockstep relay.
+#
+# Deploy (from this server/ directory):
+#   fly launch --no-deploy        # first time: creates the app; accept the name or edit below
+#   fly deploy                    # build + ship the image
+#
+# The relay must stay warm — a cold start would drop an in-progress lobby — so we keep
+# one machine always running. That's a small always-on cost; it's the price of "no one
+# runs a server." If the app name you pick isn't "sotw-relay", update DEFAULT_RELAY in
+# src/main.js to match your "<app>.fly.dev" hostname.
+
+app = "sotw-relay"
+primary_region = "iad"
+
+[build]
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/"

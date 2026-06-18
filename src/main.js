@@ -101,10 +101,25 @@ function buildMenu() {
   if (mpb) {
     mpb.style.display = 'inline-block';
     mpb.onclick = () => { Sound.click(); openLobby(); };
-    document.getElementById('mp-host').onclick = () => { Sound.click(); lobbyConnect(true); };
-    document.getElementById('mp-join').onclick = () => { Sound.click(); lobbyConnect(false); };
+    document.getElementById('mp-quick').onclick = () => { Sound.click(); lobbyQuickMatch(); };
+    document.getElementById('mp-host2').onclick = () => { Sound.click(); lobbyHost(); };
+    document.getElementById('mp-join2').onclick = () => { Sound.click(); lobbyJoin(); };
+    document.getElementById('mp-code').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); lobbyJoin(); } };
+    document.getElementById('mp-ready').onclick = () => { Sound.click(); lobbyToggleReady(); };
     document.getElementById('mp-start').onclick = () => { Sound.click(); lobbyStart(); };
+    document.getElementById('mp-copy').onclick = () => { Sound.click(); lobbyCopyInvite(); };
+    document.getElementById('mp-cancel-qm').onclick = () => { Sound.click(); lobbyCancelQuickMatch(); };
     document.getElementById('mp-close').onclick = () => { Sound.click(); closeLobby(); };
+    document.getElementById('mp-cl-quit').onclick = () => { Sound.click(); returnToMenu(); };
+    const nameInput = document.getElementById('mp-name');
+    if (nameInput) {
+      nameInput.value = Settings.get('mpName') || '';
+      nameInput.onchange = () => { Settings.set('mpName', nameInput.value.trim()); _mp.transport?.setName?.(nameInput.value.trim()); };
+    }
+    document.getElementById('mp-faction').onchange = () => {
+      const f = document.getElementById('mp-faction').value;
+      Settings.set('mpFaction', f); _mp.transport?.setFaction?.(f);
+    };
   }
   // difficulty picker (persisted; applied to new games via Settings → game.difficulty)
   const diffWrap = document.getElementById('menu-diff');
@@ -260,86 +275,230 @@ function appendChat(logEl, { from, text, sys }, youSeat) {
   return div;
 }
 
-function openLobby() {
-  const opts = Object.values(FACTIONS).map(f => `<option value="${f.key}">${f.name}</option>`).join('');
-  const fSel = document.getElementById('mp-faction'), foeSel = document.getElementById('mp-foe');
-  fSel.innerHTML = opts; foeSel.innerHTML = opts;
-  fSel.value = 'covenant'; foeSel.value = 'watchers';
-  document.getElementById('mp-start').disabled = true;
-  document.getElementById('lobby').classList.add('show');
+// The hosted relay players reach by default — no setup, no URLs. Overridable via the
+// Advanced panel (e.g. ws://localhost:8787 for dev) or a ?relay= query param.
+const DEFAULT_RELAY = 'wss://sotw-relay.fly.dev';
+const CODE_WORDS = ['RAVEN', 'ASHEN', 'IRON', 'GRAVE', 'WOLF', 'EMBER', 'STORM', 'THORN',
+  'DUSK', 'FROST', 'BONE', 'OMEN', 'RUIN', 'VEIL', 'WRAITH', 'TIDE'];
+
+function genCode() {
+  const w = CODE_WORDS[Math.floor(Math.random() * CODE_WORDS.length)];
+  const n = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `${w}-${n}`;
 }
+// A code is also the relay room name; normalize so "raven 7f2a" and "RAVEN-7F2A" match.
+function codeToRoom(code) { return String(code).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-'); }
+
+function relayUrl() {
+  let url = document.getElementById('mp-url').value.trim() || DEFAULT_RELAY;
+  if (!/^wss?:\/\//.test(url)) url = /^https?:\/\//.test(url) ? url.replace(/^https?/, 'ws') : 'ws://' + url;
+  return url;
+}
+function mpStatus(t) { const s = document.getElementById('mp-status'); if (s) s.textContent = t || ''; }
+function setStage(stage) {
+  _mp.stage = stage;
+  for (const s of ['choose', 'search', 'room'])
+    document.getElementById('mp-stage-' + s).style.display = s === stage ? 'block' : 'none';
+}
+
+function openLobby(prefillCode) {
+  const fSel = document.getElementById('mp-faction');
+  fSel.innerHTML = Object.values(FACTIONS).map(f => `<option value="${f.key}">${f.name}</option>`).join('');
+  fSel.value = Settings.get('mpFaction') && FACTIONS[Settings.get('mpFaction')] ? Settings.get('mpFaction') : 'covenant';
+  const nameInput = document.getElementById('mp-name');
+  if (nameInput && !nameInput.value) nameInput.value = Settings.get('mpName') || '';
+  // relay: query override > saved > default; shown only inside Advanced
+  const qsRelay = new URLSearchParams(location.search).get('relay');
+  document.getElementById('mp-url').value = qsRelay || Settings.get('mpRelay') || DEFAULT_RELAY;
+  document.getElementById('lobby-chat').style.display = 'none';
+  document.getElementById('lobby-chat-log').innerHTML = '';
+  document.getElementById('mp-start').disabled = true;
+  document.getElementById('mp-ready').classList.remove('on');
+  document.getElementById('mp-invite').style.display = 'none';
+  mpStatus('');
+  setStage('choose');
+  document.getElementById('lobby').classList.add('show');
+  _mp = { stage: 'choose' };
+  if (prefillCode) {
+    document.getElementById('mp-code').value = prefillCode;
+    lobbyJoin(prefillCode);
+  }
+}
+
+function hideLobbyPanel() { document.getElementById('lobby').classList.remove('show'); }
+
 function closeLobby() {
-  document.getElementById('lobby').classList.remove('show');
+  hideLobbyPanel();
+  if (_mp.pingTimer) { clearInterval(_mp.pingTimer); _mp.pingTimer = null; }
+  try { _mp.transport?.cancelQuickMatch?.(); } catch {}
   try { _mp.transport?.close?.(); } catch {}
   _mp = {};
 }
 
-function lobbyConnect(isHost) {
-  let url = document.getElementById('mp-url').value.trim();
-  const room = (document.getElementById('mp-room').value.trim() || 'default');
-  const status = document.getElementById('mp-status');
-  const startBtn = document.getElementById('mp-start');
+function localName() {
+  return (document.getElementById('mp-name').value.trim() || 'Commander');
+}
+function localFaction() { return document.getElementById('mp-faction').value; }
 
-  // Auto-correct common URL mistakes
-  if (url && !url.match(/^wss?:\/\//)) {
-    if (url.match(/^https?:\/\//)) url = url.replace(/^https?/, 'ws');
-    else url = 'ws://' + url;
-  }
-
-  status.textContent = `Connecting to ${url} …`;
-
-  const chatWrap = document.getElementById('lobby-chat');
+// Connect (once) to the relay for a given room and wire every channel. Reused by host,
+// join, and quick match — they differ only in the room and which stage they show.
+function ensureTransport(room) {
+  if (_mp.transport) { try { _mp.transport.close(); } catch {} }
+  Settings.set('mpRelay', document.getElementById('mp-url').value.trim());
   const chatLog = document.getElementById('lobby-chat-log');
-  const chatInput = document.getElementById('lobby-chat-input');
-  if (chatLog) chatLog.innerHTML = '';
-  if (chatWrap) chatWrap.style.display = 'none';
+  const transport = new WebSocketTransport(relayUrl(), room, {
+    name: localName(), faction: localFaction(),
+    onError: () => mpStatus('Could not reach the relay. Check the address in Advanced, or try again.'),
+  });
+  _mp.transport = transport;
 
-  let transport;
-  try {
-    transport = new WebSocketTransport(url, room, {
-      onOpen: () => {
-        console.log('[lobby] connected, room:', room);
-        status.textContent = isHost ? 'Hosting — waiting for an opponent to join…' : 'Joined — waiting for the host to start…';
-        if (chatWrap) chatWrap.style.display = 'block';
-      },
-      onClose: () => { console.log('[lobby] disconnected'); status.textContent = 'Connection closed.'; startBtn.disabled = true; },
-      onError: (e) => { console.error('[lobby] error:', e); status.textContent = 'Could not connect. Is the relay running?  (npm run relay)'; },
-    });
-  } catch { status.textContent = 'Invalid relay URL.'; return; }
-  _mp = { transport, isHost, you: 0, players: [0], room };
+  transport.onStatus = (st) => {
+    if (st === 'reconnecting') mpStatus('Connection lost — reconnecting…');
+    else if (st === 'reconnected') mpStatus('Reconnected.');
+  };
   transport.onLobby = (msg) => {
-    const grew = msg.players.length > _mp.players.length;
-    _mp.you = msg.you; _mp.players = msg.players;
-    console.log('[lobby] players:', msg.players, 'you:', msg.you, msg.left ? '(left)' : '');
-    status.textContent = `Room "${room}" — ${msg.players.length} player(s). You are Player ${msg.you + 1}.`;
-    startBtn.disabled = !(isHost && msg.players.length >= 2);
-    if (grew) appendChat(chatLog, { sys: true, text: 'An opponent joined the room.' });
-    else if (msg.left) appendChat(chatLog, { sys: true, text: 'A player left the room.' });
+    const grew = (_mp.players?.length || 0) < msg.players.length;
+    const left = msg.left;
+    Object.assign(_mp, { you: msg.you, players: msg.players, names: msg.names || [],
+      readies: msg.readies || [], factions: msg.factions || [] });
+    if (msg.auto && _mp.stage !== 'room') onQuickMatched();   // paired → drop into a room
+    renderPlayers();
+    document.getElementById('lobby-chat').style.display = 'block';
+    if (grew && _mp.stage === 'room') appendChat(chatLog, { sys: true, text: `${(msg.names||[])[msg.players.length-1] || 'A player'} joined.` });
+    if (left) appendChat(chatLog, { sys: true, text: 'A player left.' });
   };
-  // chat lines from the peer (the relay never echoes our own back)
   transport.onChat = (msg) => appendChat(chatLog, { from: msg.from, text: msg.text }, _mp.you);
-  // send on Enter; render our own line locally since the relay won't echo it
-  if (chatInput) {
-    chatInput.onkeydown = (e) => {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      const text = chatInput.value.trim();
-      if (!text) return;
-      transport.sendChat(text);
-      appendChat(chatLog, { from: _mp.you, text }, _mp.you);
-      chatInput.value = '';
-    };
-  }
-  transport.onStart = (msg) => {
-    console.log('[lobby] starting match, players:', msg.players);
-    showLoading(() => startNetGame(transport, msg.header, _mp.you, msg.players));
+  transport.onStart = (msg) => { if (_mp.started) return; _mp.started = true; beginNetMatch(transport, msg.header, _mp.you, msg.players); };
+  transport.onPong = (msg) => updatePing(Date.now() - msg.t);
+
+  // chat input (bound once per connect)
+  const chatInput = document.getElementById('lobby-chat-input');
+  chatInput.onkeydown = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) return;
+    transport.sendChat(text);
+    appendChat(chatLog, { from: _mp.you, text }, _mp.you);
+    chatInput.value = '';
   };
+
+  // liveness ping for the connection indicator
+  if (_mp.pingTimer) clearInterval(_mp.pingTimer);
+  _mp.pingTimer = setInterval(() => transport.ping(), 2500);
+  transport.ping();
+  return transport;
+}
+
+function lobbyHost() {
+  const code = genCode();
+  _mp.code = code; _mp.isAuto = false;
+  ensureTransport(codeToRoom(code));
+  document.getElementById('mp-code-display').textContent = code;
+  document.getElementById('mp-invite').style.display = 'flex';
+  document.getElementById('mp-copy').classList.remove('done');
+  document.getElementById('mp-copy').textContent = '⧉ Copy link';
+  setStage('room');
+  mpStatus('Share the code or link. The match starts when both players ready up.');
+}
+
+function lobbyJoin(code) {
+  code = code || document.getElementById('mp-code').value;
+  if (!code || !code.trim()) { mpStatus('Enter an invite code to join.'); return; }
+  _mp.code = codeToRoom(code); _mp.isAuto = false;
+  ensureTransport(_mp.code);
+  document.getElementById('mp-code-display').textContent = _mp.code;
+  document.getElementById('mp-invite').style.display = 'flex';
+  setStage('room');
+  mpStatus('Joined. Ready up when you are set.');
+}
+
+function lobbyQuickMatch() {
+  _mp.isAuto = true;
+  // a throwaway holding room; the relay pulls us into the queue and pairs us elsewhere
+  ensureTransport('__lobby_' + Math.random().toString(36).slice(2, 8));
+  _mp.transport.quickMatch(localName());
+  setStage('search');
+  mpStatus('Looking for an opponent…');
+}
+function lobbyCancelQuickMatch() {
+  try { _mp.transport?.cancelQuickMatch?.(); _mp.transport?.close?.(); } catch {}
+  _mp.transport = null;
+  if (_mp.pingTimer) { clearInterval(_mp.pingTimer); _mp.pingTimer = null; }
+  setStage('choose');
+  mpStatus('');
+}
+
+// Quick match paired us: show the room, auto-ready, and let seat 0 auto-launch.
+function onQuickMatched() {
+  document.getElementById('mp-invite').style.display = 'none';
+  setStage('room');
+  mpStatus('Opponent found! Locking in…');
+  _mp.ready = true;
+  document.getElementById('mp-ready').classList.add('on');
+  _mp.transport.sendReady(true);
+}
+
+function lobbyToggleReady() {
+  _mp.ready = !_mp.ready;
+  document.getElementById('mp-ready').classList.toggle('on', _mp.ready);
+  _mp.transport?.sendReady(_mp.ready);
+}
+
+function lobbyCopyInvite() {
+  const link = `${location.origin}${location.pathname}?join=${encodeURIComponent(_mp.code)}`;
+  const btn = document.getElementById('mp-copy');
+  const done = () => { btn.classList.add('done'); btn.textContent = '✓ Copied'; };
+  navigator.clipboard?.writeText(link).then(done, () => {
+    // fallback for non-secure contexts
+    const t = document.createElement('textarea'); t.value = link; document.body.appendChild(t);
+    t.select(); try { document.execCommand('copy'); done(); } catch {} t.remove();
+  });
+}
+
+// Render the seat list with names, factions, and ready state, and gate the Start button.
+function renderPlayers() {
+  const wrap = document.getElementById('mp-players');
+  if (!wrap) return;
+  const n = _mp.players?.length || 0;
+  wrap.innerHTML = '';
+  for (let i = 0; i < Math.max(2, n); i++) {
+    const present = i < n;
+    const name = present ? (_mp.names[i] || `Player ${i + 1}`) : 'Waiting for opponent…';
+    const fac = present && _mp.factions[i] && FACTIONS[_mp.factions[i]] ? FACTIONS[_mp.factions[i]].name : '';
+    const ready = present && _mp.readies[i];
+    const row = document.createElement('div');
+    row.className = `mp-player p${i}` + (i === _mp.you ? ' you' : '') + (present ? '' : ' empty');
+    row.innerHTML = `<span class="mp-seat"></span><span class="mp-pname">${name}${fac ? ' · ' + fac : ''}</span>` +
+      (present ? `<span class="mp-rs ${ready ? 'on' : 'off'}">${ready ? '● Ready' : '○ Not ready'}</span>` : '<span class="mp-rs off">—</span>');
+    wrap.appendChild(row);
+  }
+  const allReady = n >= 2 && _mp.readies.slice(0, n).every(Boolean);
+  // seat 0 owns the launch; everyone else just readies up
+  document.getElementById('mp-start').disabled = !(_mp.you === 0 && allReady);
+  if (_mp.isAuto && _mp.you === 0 && allReady && !_mp.started) lobbyStart();   // quick match auto-launches
+}
+
+function updatePing(ms) {
+  _mp.pingMs = ms;
+  const el = document.getElementById('mp-ping');
+  if (el) {
+    el.className = 'mp-ping ' + (ms < 80 ? 'good' : ms < 160 ? 'ok' : 'bad');
+    el.innerHTML = `ping <b>${Math.round(ms)}ms</b>`;
+  }
+  const nel = document.getElementById('net-ping');
+  if (nel && current && current.game && current.game.net) {
+    nel.style.display = 'block';
+    nel.className = ms < 80 ? 'good' : ms < 160 ? 'ok' : 'bad';
+    nel.textContent = `▲ ${Math.round(ms)}ms`;
+  }
 }
 
 function lobbyStart() {
-  if (!_mp.transport || !_mp.isHost) return;
-  const pf = document.getElementById('mp-faction').value;
-  const ef = document.getElementById('mp-foe').value;
+  if (!_mp.transport || _mp.you !== 0 || _mp.startSent) return;
+  _mp.startSent = true;
+  const pf = _mp.factions[0] || localFaction() || 'covenant';
+  const ef = _mp.factions[1] || 'watchers';
   const bsel = Settings.get('biome');
   const biomeKeys = Object.keys(BIOMES);
   const biomeKey = bsel && bsel !== 'random' ? bsel : biomeKeys[Math.floor(Math.random() * biomeKeys.length)];
@@ -351,8 +510,35 @@ function lobbyStart() {
     mapSize: MAP_SIZES[msel] ? msel : 'standard',
     difficulty: 'normal', pf, ef,
   };
-  // the relay echoes 'start' back to the host too, so both clients begin via onStart
+  // the relay echoes 'start' back to seat 0 too, so both clients begin via onStart
   _mp.transport.sendMessage({ kind: 'start', header });
+}
+
+// A 3-2-1 launch countdown over the menu, then drop into the match. Both clients run it
+// when the 'start' packet arrives, so they enter together (the lockstep prime keeps the
+// sim itself frame-exact regardless of a few ms of skew here).
+function runCountdown(then) {
+  const ov = document.getElementById('mp-countdown');
+  const num = document.getElementById('mp-cd-num');
+  if (!ov || !num) { then(); return; }
+  hideLobbyPanel();
+  ov.classList.add('show');
+  let n = 3;
+  num.textContent = n;
+  const tick = () => {
+    n--;
+    if (n > 0) { num.textContent = n; num.style.animation = 'none'; void num.offsetWidth; num.style.animation = ''; setTimeout(tick, 1000); }
+    else if (n === 0) { num.textContent = 'GO'; setTimeout(tick, 700); }
+    else { ov.classList.remove('show'); then(); }
+  };
+  setTimeout(tick, 1000);
+}
+
+function beginNetMatch(transport, header, you, players) {
+  if (_mp.pingTimer) { clearInterval(_mp.pingTimer); _mp.pingTimer = null; }
+  runCountdown(() => showLoading(() => startNetGame(transport, header, you, players)));
+  // keep a light ping going during the match for the HUD indicator
+  _mp.pingTimer = setInterval(() => { try { transport.ping(); } catch {} }, 2500);
 }
 
 // In-match chat overlay. Enter opens a one-line composer; Enter again sends, Escape
@@ -454,18 +640,31 @@ function startNetGame(transport, header, you, players) {
 
   setupMatchChat(transport, you);
 
-  let last = performance.now(), acc = 0, tickInTurn = 0;
+  // connection overlay: shown when the socket drops or the sim stalls waiting on a peer
+  const conn = document.getElementById('mp-connlost');
+  const connTitle = document.getElementById('mp-cl-title');
+  const connSub = document.getElementById('mp-cl-sub');
+  let socketDown = false;
+  const showConn = (on, title, sub) => {
+    if (conn) { conn.classList.toggle('show', on); if (on && title) { connTitle.textContent = title; connSub.textContent = sub || ''; } }
+  };
+  transport.onStatus = (st) => {
+    if (st === 'reconnecting') { socketDown = true; showConn(true, 'Connection lost', 'Reconnecting to the relay…'); }
+    else if (st === 'reconnected') { socketDown = false; showConn(false); ui.toast('✓ Reconnected.'); }
+  };
+
+  let last = performance.now(), acc = 0, tickInTurn = 0, stallStart = 0;
   const loop = (now) => {
     current.raf = requestAnimationFrame(loop);
     const rawDt = (now - last) / 1000;
     const dt = Math.min(0.05, rawDt);
     last = now;
     acc = Math.min(MAX_FRAME, acc + rawDt);
-    let steps = 0;
+    let steps = 0, stalled = false;
     while (acc >= SIM_DT && steps < MAX_STEPS) {
       // a turn spans turnLength ticks; commands for the turn apply at its first tick
       if (tickInTurn === 0) {
-        if (!session.ready()) break;   // stall until every peer's packet for this turn arrives
+        if (!session.ready()) { stalled = true; break; }   // hold until every peer's packet arrives
         const cmds = session.commandsForCurrentTurn();
         if (cmds.length) { const map = buildIdMap(game); for (const c of cmds) game.dispatchRecorded(c.cmd, map); }
       }
@@ -474,6 +673,14 @@ function startNetGame(transport, header, you, players) {
       if (++tickInTurn >= session.ticksPerTurn) { tickInTurn = 0; session.advance(game.checksum()); }
     }
     if (steps >= MAX_STEPS) acc = 0;
+    // Surface a waiting-on-opponent overlay if we've been blocked a beat (but not while
+    // the socket itself is reconnecting — that message takes precedence).
+    if (stalled && !socketDown) {
+      if (!stallStart) stallStart = now;
+      if (now - stallStart > 900) showConn(true, 'Waiting for opponent…', 'Their game has fallen behind or dropped.');
+    } else if (!socketDown) {
+      stallStart = 0; showConn(false);
+    }
     Music.setIntensity(game.over ? 0 : game.combatHeat);
     controls.updateCamera(dt);
     ui.update(dt);
@@ -576,6 +783,8 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
 
 function stopGame() {
   if (_chatCleanup) { try { _chatCleanup(); } catch {} _chatCleanup = null; }
+  document.getElementById('mp-connlost')?.classList.remove('show');
+  const np = document.getElementById('net-ping'); if (np) np.style.display = 'none';
   if (!current) return;
   cancelAnimationFrame(current.raf);
   current.game.dispose();
@@ -585,6 +794,7 @@ function stopGame() {
 function returnToMenu() {
   saveGame(true);   // autosave on abandon (no-op if the match is already over)
   stopGame();
+  if (_mp.pingTimer) { clearInterval(_mp.pingTimer); _mp.pingTimer = null; }
   try { _mp.transport?.close?.(); } catch {}
   _mp = {};
   document.getElementById('lobby')?.classList.remove('show');
@@ -781,3 +991,9 @@ window.__runReplaySync = (rep) => {
 
 bindShell();
 buildMenu();
+
+// Deep-link: opening an invite link (?join=CODE) drops you straight into that lobby.
+(() => {
+  const code = new URLSearchParams(location.search).get('join');
+  if (code) { try { history.replaceState(null, '', location.pathname); } catch {} openLobby(code); }
+})();

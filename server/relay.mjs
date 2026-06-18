@@ -5,14 +5,19 @@
 // trivial NAT traversal. Pair it with WebSocketTransport in src/net.js.
 //
 // Protocol (JSON text frames):
-//   client → { kind:'join', room }        join/create a room
-//   client → { kind:'start', header }      broadcast the agreed match config (seed…)
-//   client → { kind:'packet', packet }     a lockstep turn packet → relayed to peers
-//   client → { kind:'chat', text }          free-text chat → relayed to peers
-//   server → { kind:'lobby', room, you, players, left? }
+//   client → { kind:'join', room, name? }    join/create a room (name = display label)
+//   client → { kind:'ready', ready }          toggle this seat's ready state
+//   client → { kind:'start', header }         broadcast the agreed match config (seed…)
+//   client → { kind:'packet', packet }        a lockstep turn packet → relayed to peers
+//   client → { kind:'chat', text }            free-text chat → relayed to peers
+//   client → { kind:'quickmatch' }            enter the matchmaking queue
+//   client → { kind:'cancelqm' }              leave the matchmaking queue
+//   client → { kind:'ping', t }               liveness probe (relay echoes a pong)
+//   server → { kind:'lobby', room, you, players, names, readies, auto?, left? }
 //   server → { kind:'start', header, players }
 //   server → { kind:'packet', packet }
 //   server → { kind:'chat', from, text }
+//   server → { kind:'pong', t }
 //
 // This is intentionally small (in-memory rooms, index-based player ids). A production
 // relay would add stable ids, auth, reconnect tokens, and room lifecycle limits.
@@ -22,8 +27,13 @@ import crypto from 'node:crypto';
 const PORT = process.env.PORT || 8787;
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const rooms = new Map();   // room -> Set<socket>
+const queue = [];          // sockets waiting for a quick match
 
-const server = http.createServer((req, res) => { res.writeHead(200); res.end('SotW lockstep relay\n'); });
+const server = http.createServer((req, res) => {
+  // a tiny health endpoint so Fly.io (and curl) can confirm the relay is alive
+  res.writeHead(200, { 'content-type': 'text/plain' });
+  res.end('SotW lockstep relay — ok\n');
+});
 
 server.on('upgrade', (req, socket) => {
   const key = req.headers['sec-websocket-key'];
@@ -33,7 +43,7 @@ server.on('upgrade', (req, socket) => {
     'HTTP/1.1 101 Switching Protocols\r\n' +
     'Upgrade: websocket\r\nConnection: Upgrade\r\n' +
     `Sec-WebSocket-Accept: ${accept}\r\n\r\n`);
-  socket.room = null; socket.buf = Buffer.alloc(0);
+  socket.room = null; socket.ready = false; socket.name = ''; socket.faction = ''; socket.buf = Buffer.alloc(0);
   socket.on('data', (chunk) => {
     socket.buf = Buffer.concat([socket.buf, chunk]);
     let f;
@@ -43,18 +53,52 @@ server.on('upgrade', (req, socket) => {
   socket.on('error', () => leave(socket));
 });
 
+// Build the canonical lobby snapshot for a room: seat order, names, ready flags.
+function lobbyState(set) {
+  const arr = [...set];
+  return {
+    players: arr.map((_, i) => i),
+    names: arr.map(s => s.name || ''),
+    readies: arr.map(s => !!s.ready),
+    factions: arr.map(s => s.faction || ''),
+  };
+}
+function broadcastLobby(room, extra = {}) {
+  const set = rooms.get(room);
+  if (!set) return;
+  const arr = [...set];
+  const st = lobbyState(set);
+  for (const c of set) send(c, { kind: 'lobby', room, you: arr.indexOf(c), ...st, ...extra });
+}
+
+function joinRoom(sock, room) {
+  sock.room = String(room || 'default');
+  sock.ready = false;
+  let set = rooms.get(sock.room);
+  if (!set) { set = new Set(); rooms.set(sock.room, set); }
+  set.add(sock);
+  return set;
+}
+
 function handle(sock, frame) {
   if (frame.opcode === 0x8) { leave(sock); try { sock.end(); } catch {} return; }  // close
   if (frame.opcode === 0x9 || frame.opcode === 0xa) return;                          // ping/pong
   let msg; try { msg = JSON.parse(frame.payload.toString('utf8')); } catch { return; }
 
   if (msg.kind === 'join') {
-    sock.room = String(msg.room || 'default');
-    let set = rooms.get(sock.room);
-    if (!set) { set = new Set(); rooms.set(sock.room, set); }
-    set.add(sock);
-    const arr = [...set];
-    for (const c of set) send(c, { kind: 'lobby', room: sock.room, you: arr.indexOf(c), players: arr.map((_, i) => i) });
+    if (msg.name) sock.name = String(msg.name).slice(0, 24);
+    if (msg.faction) sock.faction = String(msg.faction).slice(0, 24);
+    joinRoom(sock, msg.room);
+    broadcastLobby(sock.room);
+  } else if (msg.kind === 'name') {
+    sock.name = String(msg.name || '').slice(0, 24);
+    if (sock.room) broadcastLobby(sock.room);
+  } else if (msg.kind === 'faction') {
+    sock.faction = String(msg.faction || '').slice(0, 24);
+    if (sock.room) broadcastLobby(sock.room);
+  } else if (msg.kind === 'ready') {
+    sock.ready = !!msg.ready;
+    if (sock.room) broadcastLobby(sock.room);
   } else if (msg.kind === 'start') {
     const set = rooms.get(sock.room);
     if (set) for (const c of set) send(c, { kind: 'start', header: msg.header, players: [...set].map((_, i) => i) });
@@ -66,17 +110,50 @@ function handle(sock, frame) {
     const set = rooms.get(sock.room);
     const you = set ? [...set].indexOf(sock) : -1;
     broadcast(sock.room, { kind: 'chat', from: you, text: String(msg.text || '').slice(0, 240) }, sock);
+  } else if (msg.kind === 'quickmatch') {
+    enterQueue(sock, msg.name);
+  } else if (msg.kind === 'cancelqm') {
+    dequeue(sock);
+  } else if (msg.kind === 'ping') {
+    send(sock, { kind: 'pong', t: msg.t });
   }
 }
 
-function leave(sock) {
+// ---- quick match: pair the first two waiting sockets into a fresh private room ----
+function enterQueue(sock, name) {
+  if (name) sock.name = String(name).slice(0, 24);
+  dequeue(sock);                 // never double-queue
+  // if the socket was already in a room (e.g. the lobby), pull it out first
+  if (sock.room) leave(sock, true);
+  queue.push(sock);
+  send(sock, { kind: 'qm', state: 'searching' });
+  pairUp();
+}
+function dequeue(sock) {
+  const i = queue.indexOf(sock);
+  if (i >= 0) queue.splice(i, 1);
+}
+function pairUp() {
+  while (queue.length >= 2) {
+    const a = queue.shift(), b = queue.shift();
+    // a stale/closed socket may linger in the queue — skip it
+    if (a.destroyed) { if (!b.destroyed) queue.unshift(b); continue; }
+    if (b.destroyed) { if (!a.destroyed) queue.unshift(a); continue; }
+    const room = 'qm-' + crypto.randomBytes(4).toString('hex');
+    joinRoom(a, room); joinRoom(b, room);
+    broadcastLobby(room, { auto: true });
+  }
+}
+
+function leave(sock, keepQueue) {
+  if (!keepQueue) dequeue(sock);
   const set = sock.room && rooms.get(sock.room);
+  const room = sock.room;
+  sock.room = null; sock.ready = false;
   if (!set) return;
   set.delete(sock);
-  if (set.size === 0) { rooms.delete(sock.room); return; }
-  const arr = [...set];
-  for (const c of set) send(c, { kind: 'lobby', room: sock.room, you: arr.indexOf(c), players: arr.map((_, i) => i), left: true });
-  sock.room = null;
+  if (set.size === 0) { rooms.delete(room); return; }
+  broadcastLobby(room, { left: true });
 }
 
 function broadcast(room, obj, except) {
