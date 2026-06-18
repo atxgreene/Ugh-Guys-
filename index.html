@@ -159,6 +159,13 @@
       border: 1px solid #b88a3e; padding: 12px 30px; font-size: 16px; cursor: pointer; font-family: inherit;
       letter-spacing: 2px; border-radius: 4px; box-shadow: 0 0 20px rgba(232,179,58,0.25); }
     #btn-continue:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); }
+    #btn-replay { margin-top: 2px; background: linear-gradient(180deg, #232a3a, #161a22); color: #9fc6ff;
+      border: 1px solid #4a5e8a; padding: 10px 26px; font-size: 14px; cursor: pointer; font-family: inherit;
+      letter-spacing: 2px; border-radius: 4px; }
+    #btn-replay:hover { background: linear-gradient(180deg, #2e3850, #1c2230); border-color: #9fc6ff; }
+    #btn-dlreplay { margin-left: 12px; background: #1c2230; color: #9fc6ff; border: 1px solid #4a5e8a;
+      padding: 12px 24px; font-size: 14px; cursor: pointer; font-family: inherit; letter-spacing: 1px; border-radius: 4px; }
+    #btn-dlreplay:hover { background: #2a3346; border-color: #9fc6ff; }
 
     /* first-contact dialogue box */
     #dialogue { left: 50%; bottom: 152px; transform: translateX(-50%); z-index: 30; display: none;
@@ -358,10 +365,14 @@
         <label><span class="md-label">Map Size</span><select id="sel-mapsize"></select></label>
       </div>
       <button id="btn-continue" style="display:none">Continue Campaign</button>
+      <button id="btn-replay" style="display:none">▶ Watch a Replay</button>
+      <input id="replay-file" type="file" accept=".json,application/json" style="display:none" />
       <div class="hint">
         <b>WASD / arrows / screen edge</b> pan · <b>Q/E or middle-drag</b> rotate · <b>Wheel</b> zoom ·
         <b>Left-click / drag</b> select · <b>Right-click</b> move, gather, attack ·
-        <b>F</b> attack-move · <b>X</b> stop · <b>B</b> build · <b>Ctrl+1-9</b> control groups · <b>H</b> go home<br/>
+        <b>F</b> attack-move · <b>R</b> patrol · <b>Shift+command</b> queue waypoints · <b>X</b> stop ·
+        <b>B</b> build · <b>Q</b> ability · <b>G</b> marshal stores · <b>Ctrl+1-9</b> set group ·
+        <b>1-9</b> (double-tap to center) · <b>Space</b> jump to alert · <b>H</b> go home<br/>
         Destroy the enemy's seat of power before they destroy yours. Beware what guards the obelisks.
       </div>
     </div>
@@ -440,7 +451,7 @@
       <span class="tn-x" id="touchnote-x">✕</span>
     </div>
     <div id="selbox"></div>
-    <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button></div>
+    <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button><button id="btn-dlreplay" style="display:none">⭳ Download Replay</button></div>
     <div id="pausemenu">
       <h1>PAUSED</h1>
       <div class="pm-buttons">

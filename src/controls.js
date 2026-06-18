@@ -133,7 +133,7 @@ export class Controls {
     if (mine.length) {
       const p = this.screenToWorld(cx, cy);
       if (p) {
-        this.game.commandRightClick(this.game.selection, p.x, p.z, ent);
+        this.game.cmd('right', { sel: this.game.selection, x: p.x, z: p.z, ent, q: false });
         if (!ent) this.game.emit('ground-click', p.x, p.z, 'move');
         Sound.command();
       }
@@ -154,20 +154,20 @@ export class Controls {
     // WASD pan the camera, so unit commands live on F (attack-move) and X (stop)
     if (k === 'f' && !this.placement) { if (this.selectedUnits().length) { this.attackMoveArm = true; this.patrolArm = false; } }
     if (k === 'r' && !this.placement) { if (this.selectedUnits().length) { this.patrolArm = true; this.attackMoveArm = false; } }
-    if (k === 'x') { this.selectedUnits().forEach(u => u.stop()); this.attackMoveArm = false; this.patrolArm = false; }
-    if (k === 'g') { this.game.marshalStores(0); this.ui.refreshPanel?.(); }
+    if (k === 'x') { if (this.selectedUnits().length) this.game.cmd('stop', { sel: this.selectedUnits() }); this.attackMoveArm = false; this.patrolArm = false; }
+    if (k === 'g') { this.game.cmd('empower', { o: 0 }); this.ui.refreshPanel?.(); }
     if (k === ' ') { const a = this.game.lastAlertPos; if (a) { this.focusT.x = a.x; this.focusT.z = a.z; } e.preventDefault(); }
     if (k === 'y') {   // cycle combat stance for the selected fighters
       const order = ['aggressive', 'defensive', 'hold'];
       const fighters = this.selectedUnits().filter(u => u.def.attack && !u.def.worker);
       if (fighters.length) {
         const next = order[(order.indexOf(fighters[0].stance) + 1) % order.length];
-        fighters.forEach(u => u.setStance(next));
+        this.game.cmd('stance', { sel: fighters, s: next });
         this.ui.toast?.(`Stance: ${next[0].toUpperCase() + next.slice(1)}`);
         this.ui.refreshPanel?.();
       }
     }
-    if (k === 'q') { this.game.useSelectedAbility?.(); }
+    if (k === 'q') { for (const u of this.selectedUnits()) if (u.def.ability) this.game.cmd('ability', { u }); }
     if (k === 'p') { this.onPause?.(); }
     // secret code: type "greene" to summon the Fields of Evil near your city
     this._code = ((this._code || '') + k).slice(-6);
@@ -235,7 +235,7 @@ export class Controls {
       if (this.attackMoveArm) {
         const p = this.screenToWorld(e.clientX, e.clientY);
         if (p) {
-          this.game.formationMove(this.selectedUnits(), p.x, p.z, true, e.shiftKey);
+          this.game.cmd('formation', { sel: this.selectedUnits(), x: p.x, z: p.z, am: true, q: e.shiftKey });
           this.game.emit('ground-click', p.x, p.z, 'attack');
           Sound.command();
         }
@@ -245,7 +245,7 @@ export class Controls {
       if (this.patrolArm) {
         const p = this.screenToWorld(e.clientX, e.clientY);
         if (p) {
-          this.game.commandPatrol(this.selectedUnits(), p.x, p.z, e.shiftKey);
+          this.game.cmd('patrol', { sel: this.selectedUnits(), x: p.x, z: p.z, q: e.shiftKey });
           this.game.emit('ground-click', p.x, p.z, 'attack');
         }
         this.patrolArm = false;
@@ -261,7 +261,7 @@ export class Controls {
       const ent = this.pickEntity(e.clientX, e.clientY);
       const p = this.screenToWorld(e.clientX, e.clientY);
       if (p) {
-        this.game.commandRightClick(this.game.selection, p.x, p.z, ent, e.shiftKey);
+        this.game.cmd('right', { sel: this.game.selection, x: p.x, z: p.z, ent, q: e.shiftKey });
         if (!ent) this.game.emit('ground-click', p.x, p.z, e.shiftKey ? 'queue' : 'move');
       }
     }
@@ -371,7 +371,7 @@ export class Controls {
     const p = this.placement;
     if (!p || !p.valid) { Sound.error(); return; }
     const workers = this.selectedUnits().filter(u => u.def.worker);
-    const b = this.game.placeBuilding(0, p.key, p.tx, p.ty, workers);
+    const b = this.game.cmd('build', { o: 0, key: p.key, tx: p.tx, ty: p.ty, w: workers });
     if (b) {
       if (!e.shiftKey) this.cancelPlacement();
       this.ui.refreshPanel();

@@ -114,7 +114,7 @@ export class UI {
       if (e.button === 0) { panning = true; this.controls.moveCameraTo(w.x, w.z); }
       else if (e.button === 2) {
         const sel = this.game.selection.filter(s => s.isUnit && s.owner === 0);
-        if (sel.length) { this.game.formationMove(sel, w.x, w.z, false); Sound.command(); }
+        if (sel.length) { this.game.cmd('formation', { sel, x: w.x, z: w.z, am: false, q: e.shiftKey }); Sound.command(); }
       }
     });
     window.addEventListener('mousemove', e => {
@@ -268,7 +268,7 @@ export class UI {
 
     if (units.length) {
       cmds.push({ icon: '⚔', label: 'Attack-Move (F)', cls: 'cmd-act', fn: () => { this.controls.attackMoveArm = true; } });
-      cmds.push({ icon: '✋', label: 'Stop (X)', cls: 'cmd-act', fn: () => units.forEach(u => u.stop()) });
+      cmds.push({ icon: '✋', label: 'Stop (X)', cls: 'cmd-act', fn: () => this.game.cmd('stop', { sel: units }) });
       // combat stance — shared value highlighted when the whole selection agrees
       const fighters = units.filter(u => u.def.attack && !u.def.worker);
       if (fighters.length) {
@@ -279,7 +279,7 @@ export class UI {
             icon, label, cls: 'cmd-act' + (allSame(s) ? ' cmd-on' : ''),
             tip: `${label} stance — ${s === 'aggressive' ? 'hunt freely within sight'
               : s === 'defensive' ? 'engage nearby but return to position' : 'stand ground; strike only what comes in range'}`,
-            fn: () => { fighters.forEach(u => u.setStance(s)); Sound.click(); this.refreshPanel(); },
+            fn: () => { this.game.cmd('stance', { sel: fighters, s }); Sound.click(); this.refreshPanel(); },
           });
         }
       }
@@ -294,7 +294,7 @@ export class UI {
         sub: ready ? '— Ready —' : `${u.abilityCd.toFixed(1)} s`,
         cls: 'cmd-act cmd-ability' + (ready ? ' cmd-ability-ready' : ''),
         tip: ab.desc,
-        fn: () => { this.game.useAbility(u); Sound.click(); this.refreshPanel(); },
+        fn: () => { this.game.cmd('ability', { u }); Sound.click(); this.refreshPanel(); },
       });
     }
     if (workers.length && !this.buildMenuOpen) {
@@ -322,7 +322,7 @@ export class UI {
         sub: ready ? '— Ready —' : `${Math.ceil(p.empowerCd)} s`,
         cls: 'cmd-act cmd-ability' + (ready ? ' cmd-ability-ready' : ''),
         tip: 'Marshal the Stores — instant burst of grain & favor and a 10 s surge of gather speed. On a cooldown; keep it up between fights for a macro edge.',
-        fn: () => { if (this.game.marshalStores(0)) Sound.click(); else Sound.error(); this.refreshPanel(); },
+        fn: () => { if (this.game.cmd('empower', { o: 0 })) Sound.click(); else Sound.error(); this.refreshPanel(); },
       });
     }
     if (building && building.complete) {
@@ -333,7 +333,7 @@ export class UI {
           icon: UNIT_ICONS[key] || '⚔', label: def.name, sub: costStr(def.cost),
           disabled: !avail,
           tip: `${def.name} — ${costStr(def.cost)} ⌂${def.supply}${def.requires ? ` (requires ${faction.buildings[def.requires].name})` : ''}\n${def.desc}`,
-          fn: () => { if (!this.game.queueTrain(building, key)) Sound.error(); else Sound.click(); this.refreshPanel(); },
+          fn: () => { if (!this.game.cmd('train', { b: building, key })) Sound.error(); else Sound.click(); this.refreshPanel(); },
         });
       }
       for (const upKey of building.def.upgrades || []) {
@@ -342,7 +342,7 @@ export class UI {
         cmds.push({
           icon: '⬆', label: up.name, sub: costStr(up.cost),
           tip: `${up.name} — ${costStr(up.cost)}\n${up.desc}`,
-          fn: () => { if (!this.game.queueUpgrade(building, upKey)) Sound.error(); else Sound.click(); this.refreshPanel(); },
+          fn: () => { if (!this.game.cmd('upgrade', { b: building, key: upKey })) Sound.error(); else Sound.click(); this.refreshPanel(); },
         });
       }
     }
@@ -449,6 +449,13 @@ export class UI {
         `<span>☩ razed <b>${s.razed}</b></span><span>🕯 lost <b>${s.lost}</b></span>` +
         `<span>⛏ raised <b>${s.trained}</b></span>`;
       document.getElementById('btn-restart').onclick = () => this.onRestart();
+      // offer the deterministic replay of the match just played
+      const dl = document.getElementById('btn-dlreplay');
+      if (dl) {
+        const has = !!this.game.rec;
+        dl.style.display = has ? 'inline-block' : 'none';
+        if (has) dl.onclick = () => this.onDownloadReplay?.();
+      }
     }, 2200);
   }
 

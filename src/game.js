@@ -16,6 +16,8 @@ import { ParticlePool } from './fx.js';
 import { Sound } from './audio.js';
 import { Settings } from './settings.js';
 
+// Entity ids must be deterministic per match (a replay reconstructs the same id
+// space), so this counter is reset at the start of every Game construction.
 let nextId = 1;
 
 const NEUTRAL_COLOR = 0x808078, NEUTRAL_GLOW = 0xc2b89a;
@@ -68,6 +70,42 @@ const TIME_PRESETS = {
            rim: 0x6a7cc0, rimI: 1.0, fog: 0x2a313f, fogD: 0.0052, bg: 0x232836, env: 0.74,
            skyTop: '#10141e', skyHorizon: '#3a4150', skyGround: '#0c0e14', exposure: 1.5, storm: 1.0, lightning: true },
 };
+
+// ---- replay command (de)serialization: entities ↔ stable ids ----
+const _ids = a => (a || []).map(e => e.id);
+const _id = e => (e ? e.id : null);
+function serCmd(name, p) {
+  switch (name) {
+    case 'right':     return { sel: _ids(p.sel), x: p.x, z: p.z, ent: _id(p.ent), q: !!p.q };
+    case 'formation': return { sel: _ids(p.sel), x: p.x, z: p.z, am: !!p.am, q: !!p.q };
+    case 'patrol':    return { sel: _ids(p.sel), x: p.x, z: p.z, q: !!p.q };
+    case 'stop':      return { sel: _ids(p.sel) };
+    case 'stance':    return { sel: _ids(p.sel), s: p.s };
+    case 'ability':   return { u: _id(p.u) };
+    case 'train':     return { b: _id(p.b), key: p.key };
+    case 'upgrade':   return { b: _id(p.b), key: p.key };
+    case 'build':     return { o: p.o, key: p.key, tx: p.tx, ty: p.ty, w: _ids(p.w) };
+    case 'empower':   return { o: p.o };
+  }
+  return {};
+}
+function deserCmd(name, s, map) {
+  const e = id => (id == null ? null : map.get(id) || null);
+  const es = arr => (arr || []).map(id => map.get(id)).filter(Boolean);
+  switch (name) {
+    case 'right':     return { sel: es(s.sel), x: s.x, z: s.z, ent: e(s.ent), q: s.q };
+    case 'formation': return { sel: es(s.sel), x: s.x, z: s.z, am: s.am, q: s.q };
+    case 'patrol':    return { sel: es(s.sel), x: s.x, z: s.z, q: s.q };
+    case 'stop':      return { sel: es(s.sel) };
+    case 'stance':    return { sel: es(s.sel), s: s.s };
+    case 'ability':   return { u: e(s.u) };
+    case 'train':     return { b: e(s.b), key: s.key };
+    case 'upgrade':   return { b: e(s.b), key: s.key };
+    case 'build':     return { o: s.o, key: s.key, tx: s.tx, ty: s.ty, w: es(s.w) };
+    case 'empower':   return { o: s.o };
+  }
+  return {};
+}
 
 export class Entity {
   constructor(game, owner, def, key, x, z) {
@@ -864,6 +902,7 @@ export class ResourceNode extends Entity {
 // ---------------- Game ----------------
 export class Game {
   constructor(container, playerFactionKey, enemyFactionKey, opts = {}) {
+    nextId = 1;   // deterministic per-match entity id space (replay reconstructs it)
     this.container = container;
     this.pfKey = playerFactionKey; this.efKey = enemyFactionKey;
     this.time = 0;
@@ -924,6 +963,20 @@ export class Game {
     else this.spawnInitial();
     this.map.updateFog(this.playerViewers());
     this.applyFogVisibility();
+
+    // ---- replay recorder ----
+    // Every fresh match records its seed + the player command stream so it can be
+    // replayed deterministically. Playback runs with replayMode=true (no recording,
+    // live input ignored; the Replay driver feeds the recorded frames instead).
+    // Saved-game restores are not recorded (their mid-match state isn't reproducible
+    // from a seed alone).
+    this.replayMode = !!opts.replay;
+    this.rec = (this.replayMode || load) ? null : {
+      v: 1, frame: 0, frames: [],
+      pending: [],
+      header: { seed: this.map.seed, biomeKey: this.biomeKey, timeOfDay: this.timeOfDay,
+        mapSize: this.mapSizeKey, difficulty: this.difficulty, pf: this.pfKey, ef: this.efKey },
+    };
   }
 
   on(ev, fn) { (this.listeners[ev] ||= []).push(fn); }
@@ -1743,6 +1796,55 @@ export class Game {
     return true;
   }
 
+  // ---------- player command bus (recorded for replays) ----------
+  // EVERY sim-mutating player action funnels through cmd(): it logs a serialized
+  // form (entities → stable ids) then executes live with the real refs. The AI calls
+  // the raw methods directly and is never logged — it re-runs deterministically from
+  // the seeded RNG + recorded player inputs. During playback cmd() is inert; the
+  // Replay driver calls runCmd() with rehydrated refs instead.
+  cmd(name, refs) {
+    if (this.replayMode) return null;
+    if (this.rec) this.rec.pending.push({ n: name, p: serCmd(name, refs) });
+    return this.runCmd(name, refs);
+  }
+  // Execute a command with live entity references. Shared by live play and playback.
+  runCmd(name, p) {
+    switch (name) {
+      case 'right':     return this.commandRightClick(p.sel, p.x, p.z, p.ent, p.q);
+      case 'formation': return this.formationMove(p.sel, p.x, p.z, p.am, p.q);
+      case 'patrol':    return this.commandPatrol(p.sel, p.x, p.z, p.q);
+      case 'stop':      for (const u of p.sel) u.stop(); return;
+      case 'stance':    for (const u of p.sel) u.setStance(p.s); return;
+      case 'ability':   return p.u ? this.useAbility(p.u) : null;
+      case 'train':     return p.b ? this.queueTrain(p.b, p.key) : null;
+      case 'upgrade':   return p.b ? this.queueUpgrade(p.b, p.key) : null;
+      case 'build':     return this.placeBuilding(p.o, p.key, p.tx, p.ty, p.w);
+      case 'empower':   return this.marshalStores(p.o);
+    }
+  }
+  // Rehydrate a logged command's ids back into live entities, then run it (playback).
+  dispatchRecorded(rec, idMap) { this.runCmd(rec.n, deserCmd(rec.n, rec.p, idMap)); }
+
+  // Deterministic state fingerprint — order-independent, integer-only — used to
+  // verify a replay is tracking the original simulation frame-for-frame.
+  checksum() {
+    let h = 0x811c9dc5 >>> 0;
+    const mix = (e) => {
+      let v = (Math.imul(e.id, 2654435761) ^ (Math.round(e.hp) | 0) ^
+        (Math.round(e.pos.x * 4) << 3) ^ (Math.round(e.pos.z * 4) << 11)) >>> 0;
+      h = (h ^ v) >>> 0; h = Math.imul(h, 16777619) >>> 0;
+    };
+    for (const u of this.units) if (!u.dead) mix(u);
+    for (const b of this.buildings) if (!b.dead) mix(b);
+    return h >>> 0;
+  }
+
+  // Snapshot the recording for download. Frames are already compact; JSON-friendly.
+  exportReplay() {
+    if (!this.rec) return null;
+    return { v: this.rec.v, app: 'sotw', header: this.rec.header, frames: this.rec.frames };
+  }
+
   // ---------- queries ----------
   allCombatants() { return this._combat || (this._combat = [...this.units, ...this.buildings]); }
   unitsNear(pos, r, exclude) {
@@ -2271,6 +2373,15 @@ export class Game {
   // ---------- main update ----------
   update(dt) {
     if (this.over) dt *= 0.3; // slow-mo end
+    // record this tick: its dt, the commands issued since the last tick, and a
+    // periodic state checksum so playback can detect (and report) any desync.
+    if (this.rec && !this.over) {
+      const f = { d: +dt.toFixed(5) };
+      if (this.rec.pending.length) { f.c = this.rec.pending; this.rec.pending = []; }
+      if ((this.rec.frame % 120) === 0) f.k = this.checksum();
+      this.rec.frames.push(f);
+      this.rec.frame++;
+    }
     this.time += dt;
     this.combatHeat = Math.max(0, this.combatHeat - dt * 0.14);   // cools between clashes
     this._combat = null;

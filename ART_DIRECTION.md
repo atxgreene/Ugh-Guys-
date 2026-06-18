@@ -217,8 +217,14 @@ The deep pass on making the core fight incredible before scaling depth:
 - ✅ Skirmish setup (opponent + land + map size), idle-worker selector
 - ✅ World bosses + monster lairs (3 bosses w/ signature abilities + bounties),
    selectable map size (standard/large/huge), difficulty-scaled neutrals
-- ⏳ Next (needs playtest): boss/lair tuning + telegraphs, AI expansion to new
-   resource sites, per-zone storm-glow/point-light pools
+- ✅ Competitive depth pass (skill-ceiling): worker saturation + active economy
+   ability ("Marshal the Stores", G); shift-queued orders, patrol (R), double-tap
+   control-group camera snap, Space-to-alert; dodgeable telegraphed boss AoE;
+   deterministic seeded sim RNG + full replay system (record/download/watch with
+   desync-checked playback) — the foundation for lockstep multiplayer
+- ⏳ Next (needs playtest): boss/lair + economy-ability tuning, AI expansion to new
+   resource sites, per-zone storm-glow/point-light pools, networked 1v1 on the
+   replay/lockstep foundation
 
 ## 15. Code map
 `game.js` engine + combat (targeting/stances/impact) + atmosphere/lighting/FX + exposure/

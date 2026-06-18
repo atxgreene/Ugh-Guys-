@@ -79,6 +79,30 @@ test('combat runs without errors and the AI fights (no crash over a longer match
   expect(errors, `console errors during combat:\n${errors.join('\n')}`).toEqual([]);
 });
 
+test('replay reproduces the recorded match deterministically (no desync)', async ({ page }) => {
+  const errors = watchErrors(page);
+  await startMatch(page);
+  await page.keyboard.press('Space');   // skip the intro so the sim runs at full pace
+  // issue a real player command through the recorded bus, then let the sim accrue
+  await page.evaluate(() => {
+    const g = window.__game;
+    const w = g.units.find(u => u.owner === 0 && u.def.worker);
+    if (w) g.cmd('formation', { sel: [w], x: w.pos.x + 8, z: w.pos.z + 8, am: false, q: false });
+  });
+  await page.waitForTimeout(4000);
+  // snapshot the recording so far (deep-copied across the bridge)
+  const rep = await page.evaluate(() => window.__game.exportReplay());
+  expect(rep && rep.frames && rep.frames.length).toBeGreaterThan(60);
+  expect(rep.frames.some(f => f.k !== undefined)).toBe(true);   // checksums were captured
+
+  // re-run those exact frames in a fresh, deterministic playback
+  await page.evaluate((r) => window.__startReplay(r), rep);
+  await page.waitForFunction(() => window.__game && window.__game.replayDone, null, { timeout: 25_000 });
+  const desync = await page.evaluate(() => window.__game.replayDesync);
+  expect(desync, 'replay simulation diverged from the recording').toBe(false);
+  expect(errors, `console errors during replay:\n${errors.join('\n')}`).toEqual([]);
+});
+
 test('stances: a selected fighter cycles aggressive → defensive → hold', async ({ page }) => {
   await startMatch(page);
   await page.keyboard.press('Space');

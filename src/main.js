@@ -76,6 +76,14 @@ function buildMenu() {
   }
   const cont = document.getElementById('btn-continue');
   if (cont) cont.onclick = () => { Sound.click(); loadSavedGame(); };
+  // watch-a-replay: pick a .json the player previously downloaded
+  const rb = document.getElementById('btn-replay');
+  const rf = document.getElementById('replay-file');
+  if (rb && rf) {
+    rb.style.display = 'inline-block';
+    rb.onclick = () => { Sound.click(); rf.value = ''; rf.click(); };
+    rf.onchange = () => { if (rf.files && rf.files[0]) loadReplayFile(rf.files[0]); };
+  }
   // difficulty picker (persisted; applied to new games via Settings → game.difficulty)
   const diffWrap = document.getElementById('menu-diff');
   if (diffWrap) {
@@ -109,6 +117,86 @@ function buildMenu() {
     sizeSel.onchange = () => Settings.set('mapSize', sizeSel.value);
   }
   refreshContinue();
+}
+
+// ---------- replays ----------
+// Download the just-played match as a deterministic replay file (seed + the player
+// command stream). Re-watched via startReplay, which re-runs the sim in lockstep.
+function downloadReplay() {
+  const rep = current?.game?.exportReplay?.();
+  if (!rep) { current?.ui.toast('No replay available for this match.'); return; }
+  const blob = new Blob([JSON.stringify(rep)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const t = Math.floor(rep.frames.length / 60);
+  a.href = url; a.download = `sotw-replay-${rep.header.pf}-vs-${rep.header.ef}-${t}s.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+function loadReplayFile(file) {
+  const fr = new FileReader();
+  fr.onload = () => {
+    let rep; try { rep = JSON.parse(fr.result); } catch { alert('Not a valid replay file.'); return; }
+    if (!rep || rep.app !== 'sotw' || !rep.header || !rep.frames) { alert('Not a Shadow of the Watchers replay.'); return; }
+    showLoading(() => startReplay(rep));
+  };
+  fr.readAsText(file);
+}
+
+function buildIdMap(game) {
+  const m = new Map();
+  for (const u of game.units) m.set(u.id, u);
+  for (const b of game.buildings) m.set(b.id, b);
+  for (const r of game.resources) m.set(r.id, r);
+  return m;
+}
+
+function startReplay(rep) {
+  stopGame();
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('topbar').style.display = 'flex';
+  document.getElementById('minimap-wrap').style.display = 'block';
+  document.getElementById('panel').style.display = 'flex';
+  document.getElementById('gameover').style.display = 'none';
+
+  const h = rep.header;
+  const container = document.getElementById('game-container');
+  const game = new Game(container, h.pf, h.ef, { seed: h.seed, biome: h.biomeKey,
+    timeOfDay: h.timeOfDay, mapSize: h.mapSize, difficulty: h.difficulty, replay: true });
+  const ui = new UI(game, returnToMenu);
+  const controls = new Controls(game, ui);
+  ui.controls = controls; game.controls = controls;
+  game.ai = new AI(game);              // the AI re-runs deterministically from the seed
+  controls.onPause = () => { game.paused = !game.paused; ui.setPaused(game.paused, false); };
+  ui.onPause = controls.onPause; ui.onResume = () => { game.paused = false; ui.setPaused(false, false); };
+  if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
+  window.__game = game; window.__controls = controls;
+  controls.intro = 0; ui.hideIntroCard();
+  ui.toast(`▶ Replay — ${game.map.biome.name}. ${FACTIONS[h.pf].name} vs ${FACTIONS[h.ef].name}.`);
+
+  const frames = rep.frames;
+  let fi = 0, desynced = false, done = false;
+  const loop = () => {
+    current.raf = requestAnimationFrame(loop);
+    if (!game.paused && !done) {
+      if (fi < frames.length) {
+        const f = frames[fi++];
+        if (f.c) { const map = buildIdMap(game); for (const rec of f.c) game.dispatchRecorded(rec, map); }
+        if (f.k !== undefined && !desynced && game.checksum() !== f.k) {
+          desynced = true; ui.toast('⚠ Replay desynced — the simulation diverged from the recording.');
+        }
+        game.update(f.d);
+      }
+      game.replayDesync = desynced;
+      if (fi >= frames.length) { done = true; game.replayDone = true; ui.toast(desynced ? 'Replay ended (desynced).' : '▣ Replay complete.'); }
+    }
+    Music.setIntensity(0);
+    controls.updateCamera(1 / 60);
+    ui.update(1 / 60);
+    game.render();
+  };
+  current = { game, ai: game.ai, controls, ui, raf: requestAnimationFrame(loop) };
 }
 
 function showLoading(then) {
@@ -156,6 +244,7 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   ui.onSave = () => saveGame();
   ui.onLoad = () => { togglePause(false); loadSavedGame(); };
   ui.onSaveAvailable = hasSave;
+  ui.onDownloadReplay = downloadReplay;
   game.ai = new AI(game);
   if (loading && game._aiState) Object.assign(game.ai, game._aiState);
   // pin quality if the player chose a fixed level (auto leaves the loop in charge)
@@ -349,6 +438,9 @@ function syncSettingsUI() {
   syncSeg('set-quality', 'q', Settings.get('quality'));
   syncSeg('set-music', 'm', Settings.get('music') ? 'on' : 'off');
 }
+
+// test/debug hook: drive deterministic replay playback from a recording object
+window.__startReplay = startReplay;
 
 bindShell();
 buildMenu();
