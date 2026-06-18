@@ -18,6 +18,17 @@ let current = null; // { game, ai, controls, ui, raf }
 const SAVE_KEY = 'sotw_save_v1';
 const AUTOSAVE_SECONDS = 45;
 
+// Fixed-timestep simulation. The sim advances in deterministic SIM_DT ticks
+// decoupled from the render framerate — the prerequisite for lockstep multiplayer
+// (every client must step the sim identically regardless of its refresh rate) and
+// for bit-exact replays. Rendering, camera and HUD still run once per animation
+// frame on real time. MAX_STEPS caps catch-up after a stall so we drop backlog
+// instead of spiralling; MAX_FRAME clamps a single huge gap (e.g. a backgrounded tab).
+const SIM_HZ = 60;
+const SIM_DT = 1 / SIM_HZ;
+const MAX_STEPS = 5;
+const MAX_FRAME = 0.25;
+
 function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch { return false; } }
 
 function saveGame(silent) {
@@ -177,23 +188,32 @@ function startReplay(rep) {
 
   const frames = rep.frames;
   let fi = 0, desynced = false, done = false;
-  const loop = () => {
+  let last = performance.now(), acc = 0;
+  const loop = (now) => {
     current.raf = requestAnimationFrame(loop);
+    const rawDt = (now - last) / 1000;
+    const dt = Math.min(0.05, rawDt);
+    last = now;
+    // consume recorded ticks at the pace they were recorded (real-time on any
+    // display refresh), advancing the deterministic sim one logged frame at a time
     if (!game.paused && !done) {
-      if (fi < frames.length) {
+      acc += Math.min(MAX_FRAME, rawDt);
+      let steps = 0;
+      while (acc >= SIM_DT && fi < frames.length && steps < MAX_STEPS * 4) {
         const f = frames[fi++];
         if (f.c) { const map = buildIdMap(game); for (const rec of f.c) game.dispatchRecorded(rec, map); }
         if (f.k !== undefined && !desynced && game.checksum() !== f.k) {
           desynced = true; ui.toast('⚠ Replay desynced — the simulation diverged from the recording.');
         }
         game.update(f.d);
+        acc -= f.d; steps++;
       }
       game.replayDesync = desynced;
       if (fi >= frames.length) { done = true; game.replayDone = true; ui.toast(desynced ? 'Replay ended (desynced).' : '▣ Replay complete.'); }
     }
     Music.setIntensity(0);
-    controls.updateCamera(1 / 60);
-    ui.update(1 / 60);
+    controls.updateCamera(dt);
+    ui.update(dt);
     game.render();
   };
   current = { game, ai: game.ai, controls, ui, raf: requestAnimationFrame(loop) };
@@ -261,11 +281,12 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   }
 
   let last = performance.now();
+  let acc = 0;
   let slowFrames = 0, totalFrames = 0, autosaveT = AUTOSAVE_SECONDS;
   const loop = (now) => {
     current.raf = requestAnimationFrame(loop);
     const rawDt = (now - last) / 1000;
-    const dt = Math.min(0.05, rawDt);
+    const dt = Math.min(0.05, rawDt);   // clamped, for non-sim per-frame work
     last = now;
     // auto quality: after warmup, sustained slow frames drop bloom + pixel ratio
     totalFrames++;
@@ -278,7 +299,17 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
       autosaveT -= dt;
       if (autosaveT <= 0) { autosaveT = AUTOSAVE_SECONDS; saveGame(true); }
     }
-    if (!game.paused) game.update(dt);   // pause freezes the simulation only
+    // fixed-timestep simulation (pause freezes only the sim, not camera/HUD)
+    if (!game.paused) {
+      acc += Math.min(MAX_FRAME, rawDt);
+      let steps = 0;
+      while (acc >= SIM_DT && steps < MAX_STEPS) {
+        game.update(SIM_DT);
+        acc -= SIM_DT; steps++;
+        if (game.over) { acc = 0; break; }
+      }
+      if (steps >= MAX_STEPS) acc = 0;   // drop backlog rather than spiral
+    }
     Music.setIntensity(game.paused || game.over ? 0 : game.combatHeat);  // score swells with battle
     controls.updateCamera(dt);           // camera + HUD stay responsive while paused
     ui.update(dt);
