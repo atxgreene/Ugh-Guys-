@@ -1,0 +1,44 @@
+# Deploy the lockstep relay to Fly.io straight from GitHub — no local terminal needed.
+# GitHub's runner builds the image on Fly's remote builders and ships it; the relay then
+# runs on Fly, independent of any of your devices.
+#
+# ONE-TIME SETUP (all in the browser):
+#   1. Fly.io dashboard → Account (top-right) → Access Tokens → create a token.
+#        (CLI equivalent: `fly tokens create deploy`)
+#   2. This repo → Settings → Secrets and variables → Actions → New repository secret:
+#        FLY_API_TOKEN = <the token>
+#   3. Actions tab → "Deploy relay (Fly.io)" → Run workflow.
+#
+# If the app name "sotw-relay" is already taken on Fly (names are global), change `app`
+# in server/fly.toml AND DEFAULT_RELAY in src/main.js to a unique name first.
+#
+# Lock the relay to your game's origin after the first deploy (browser): Fly dashboard →
+# your app → Secrets → set ALLOWED_ORIGINS = https://your-game-domain
+name: Deploy relay (Fly.io)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'server/Dockerfile'
+      - 'server/fly.toml'
+      - 'server/relay.mjs'
+      - '.github/workflows/deploy-relay-fly.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Create the app if it doesn't exist yet
+        working-directory: server
+        run: flyctl apps create sotw-relay --org personal || true
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Deploy
+        working-directory: server
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
