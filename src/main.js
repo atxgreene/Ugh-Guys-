@@ -293,7 +293,7 @@ function lobbyStart() {
     difficulty: 'normal', pf, ef,
   };
   // the relay echoes 'start' back to the host too, so both clients begin via onStart
-  _mp.transport.ws.send(JSON.stringify({ kind: 'start', header }));
+  _mp.transport.sendMessage({ kind: 'start', header });
 }
 
 // A networked, human-vs-human lockstep match. Both clients run the identical

@@ -183,6 +183,12 @@ export class WebSocketTransport {
     const m = JSON.stringify({ kind: 'packet', packet });
     if (this.ws.readyState === 1) this.ws.send(m); else this.queue.push(m);
   }
+  // Send a control message (lobby control, start, etc.) with queuing support
+  sendMessage(msg) {
+    const m = JSON.stringify(msg);
+    if (this.ws.readyState === 1) { try { this.ws.send(m); } catch (e) { console.error('Send failed:', e); } }
+    else this.queue.push(m);
+  }
   onPacket(cb) { this.cb = cb; for (const p of this.rxbuf) cb(p); this.rxbuf = []; }
   close() { try { this.ws.close(); } catch {} }
 }
