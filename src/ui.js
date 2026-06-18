@@ -492,6 +492,9 @@ export class UI {
       const s = this.game.selection;
       if (s.length === 1 && (s[0].isBuilding || (s[0].isUnit && s[0].def.ability))) this.refreshPanel();
     }
-    this.drawHealthBars();
+    // health-bar overlay is the heaviest per-frame 2D work; cap it to ~33 Hz so it
+    // costs the same on a 60/120/144 Hz display (it tracks slow-moving units fine).
+    this.hbT = (this.hbT || 0) - dt;
+    if (this.hbT <= 0) { this.hbT = 1 / 33; this.drawHealthBars(); }
   }
 }

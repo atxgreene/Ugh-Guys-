@@ -1234,6 +1234,7 @@ export class Game {
 
     this.buildGodRays();
     this.buildCloudShadows();
+    this.buildDustMotes();
 
     // particle pools: marching/footstep dust, building & damage smoke, foundry sparks
     this.fxDust = new ParticlePool(this.scene, { capacity: 360, color: 0xb9a98a, gravity: -1.2 });
@@ -1573,6 +1574,52 @@ export class Game {
         y = this.map.heightAt(x, a.getZ(i)) + 0.5;
       }
       a.setX(i, x); a.setY(i, y);
+    }
+    a.needsUpdate = true;
+  }
+
+  // Faint dust motes drifting in the air near the camera — adds atmospheric depth
+  // and catches the bloom. One draw call; recycled within a moving window so they're
+  // always around the player's view. Purely cosmetic.
+  buildDustMotes() {
+    const M = 120;
+    this.moteSpan = 64;
+    const pos = new Float32Array(M * 3);
+    this.moteVel = new Float32Array(M * 3);
+    const c = WORLD / 2;
+    for (let i = 0; i < M; i++) {
+      pos[i * 3] = c + (Math.random() - 0.5) * this.moteSpan;
+      pos[i * 3 + 1] = 0.5 + Math.random() * 15;
+      pos[i * 3 + 2] = c + (Math.random() - 0.5) * this.moteSpan;
+      this.moteVel[i * 3] = (Math.random() - 0.5) * 0.5;
+      this.moteVel[i * 3 + 1] = (Math.random() - 0.35) * 0.22;
+      this.moteVel[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const tint = new THREE.Color(this.preset.skyHorizon || '#cdbf9a').lerp(new THREE.Color(0xffffff), 0.25);
+    this.dustMotes = new THREE.Points(geo, new THREE.PointsMaterial({
+      color: tint, size: 0.11, sizeAttenuation: true, transparent: true,
+      opacity: 0.30, blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    this.dustMotes.frustumCulled = false;
+    this.scene.add(this.dustMotes);
+  }
+
+  updateDustMotes(dt) {
+    if (!this.dustMotes) return;
+    const f = this.controls && this.controls.focus;
+    if (!f) return;
+    const a = this.dustMotes.geometry.attributes.position;
+    const span = this.moteSpan, half = span / 2;
+    for (let i = 0; i < a.count; i++) {
+      let x = a.getX(i) + this.moteVel[i * 3] * dt + Math.sin(this.time * 0.5 + i) * dt * 0.12;
+      let y = a.getY(i) + this.moteVel[i * 3 + 1] * dt;
+      let z = a.getZ(i) + this.moteVel[i * 3 + 2] * dt;
+      if (x < f.x - half) x += span; else if (x > f.x + half) x -= span;
+      if (z < f.z - half) z += span; else if (z > f.z + half) z -= span;
+      if (y < 0.4) y += 15; else if (y > 15.4) y -= 15;
+      a.setX(i, x); a.setY(i, y); a.setZ(i, z);
     }
     a.needsUpdate = true;
   }
@@ -2513,6 +2560,7 @@ export class Game {
   }
 
   updateSky(dt) {
+    this.updateDustMotes(dt);
     if (this.stormBand) this.stormBand.rotation.y += dt * 0.012;
     // drifting cloud shadows scroll slowly across the ground
     if (this.cloudShadow) {

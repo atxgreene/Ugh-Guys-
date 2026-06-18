@@ -494,8 +494,68 @@ export class Controls {
       rim.target.position.set(this.focus.x, 0, this.focus.z);
     }
 
-    // selection rings
+    // selection rings + hover highlight + rally marker (all render-only)
     this.syncSelectionRings();
+    // hover pick is a raycast, so rate-limit it rather than run every frame
+    this.hoverT = (this.hoverT || 0) - dt;
+    if (this.hoverT <= 0) {
+      this.hoverT = 0.05;
+      this.hoverEnt = (this.mouse.inside && !this.dragStart && !this.placement)
+        ? this.pickEntity(this.mouse.x, this.mouse.y) : null;
+    }
+    this.syncHoverRing();
+    this.syncRallyMarker();
+  }
+
+  // a soft ring under whatever the cursor is over (skipped for already-selected)
+  syncHoverRing() {
+    if (!this.hoverRing) {
+      this.hoverRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.86, 1.0, 28),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false })
+      );
+      this.hoverRing.rotation.x = -Math.PI / 2;
+      this.game.scene.add(this.hoverRing);
+    }
+    const e = this.hoverEnt;
+    const show = e && !e.dead && !this.game.selection.includes(e);
+    this.hoverRing.visible = !!show;
+    if (!show) return;
+    const r = (e.radius + 0.45) * (1 + 0.03 * Math.sin(this.game.time * 7));
+    this.hoverRing.scale.setScalar(r);
+    this.hoverRing.position.set(e.pos.x, this.game.map.heightAt(e.pos.x, e.pos.z) + 0.07, e.pos.z);
+    this.hoverRing.material.color.set(
+      e.isResource ? 0xd8b75a : e.owner === this.game.localPlayer ? 0x9be86e : e.owner === 2 ? 0xcccc88 : 0xff7066);
+    this.hoverRing.material.opacity = 0.42;
+  }
+
+  // a banner + beam at the rally point of the selected production building, so you
+  // can see where trained units will gather
+  syncRallyMarker() {
+    if (!this.rallyMarker) {
+      const g = new THREE.Group();
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffd56e, transparent: true, opacity: 0.5, depthWrite: false }));
+      beam.position.y = 1.1;
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.5, 0.7, 20),
+        new THREE.MeshBasicMaterial({ color: 0xffd56e, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06;
+      g.add(beam); g.add(ring);
+      this.rallyMarker = g; this.game.scene.add(g);
+    }
+    const sel = this.game.selection;
+    const b = sel.length === 1 && sel[0].isBuilding && sel[0].owner === this.game.localPlayer
+      && sel[0].rally ? sel[0] : null;
+    this.rallyMarker.visible = !!b;
+    if (!b) return;
+    const { x, z } = b.rally;
+    this.rallyMarker.position.set(x, this.game.map.heightAt(x, z), z);
+    const t = 0.45 + 0.2 * Math.sin(this.game.time * 4);
+    this.rallyMarker.children[0].material.opacity = t;
+    this.rallyMarker.children[1].material.opacity = t + 0.15;
+    this.rallyMarker.children[1].scale.setScalar(1 + 0.06 * Math.sin(this.game.time * 4));
   }
 
   syncSelectionRings() {
