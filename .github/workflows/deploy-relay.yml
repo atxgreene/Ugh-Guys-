@@ -1,0 +1,37 @@
+# Deploy the lockstep relay (Cloudflare Worker + Durable Object) straight from GitHub —
+# no local machine involved. GitHub's runner builds and ships it to Cloudflare's edge,
+# where it runs always-on, independent of any of your devices.
+#
+# ONE-TIME SETUP (you must do this — it needs your Cloudflare credentials):
+#   1. Create a Cloudflare API token with the "Edit Cloudflare Workers" template:
+#        https://dash.cloudflare.com/profile/api-tokens
+#   2. In this repo: Settings → Secrets and variables → Actions → New repository secret
+#        CLOUDFLARE_API_TOKEN   = <the token>
+#        CLOUDFLARE_ACCOUNT_ID  = <your account id, from the Cloudflare dashboard URL>
+#   3. Run it: Actions tab → "Deploy relay" → Run workflow  (or push a change under
+#      server/cloudflare/ on main).
+#
+# After the first deploy, copy the workers.dev URL from the run log into DEFAULT_RELAY
+# in src/main.js (replace YOUR-SUBDOMAIN), and set ALLOWED_ORIGINS in
+# server/cloudflare/wrangler.toml to your game's origin, then re-run.
+name: Deploy relay
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'server/cloudflare/**'
+      - '.github/workflows/deploy-relay.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: server/cloudflare
