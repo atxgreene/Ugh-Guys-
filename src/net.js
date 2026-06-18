@@ -169,12 +169,13 @@ export class WebSocketTransport {
       this.queue.length = 0;
       onOpen && onOpen();
     };
-    this.onLobby = null; this.onStart = null;
+    this.onLobby = null; this.onStart = null; this.onChat = null;
     this.ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       if (msg.kind === 'packet') { if (this.cb) this.cb(msg.packet); else this.rxbuf.push(msg.packet); }
       else if (msg.kind === 'lobby' && this.onLobby) this.onLobby(msg);
       else if (msg.kind === 'start' && this.onStart) this.onStart(msg);
+      else if (msg.kind === 'chat' && this.onChat) this.onChat(msg);
     };
     this.ws.onclose = () => onClose && onClose();
     this.ws.onerror = (err) => onError && onError(err);
@@ -193,6 +194,9 @@ export class WebSocketTransport {
       console.log('[relay] queued', msg.kind, '(socket readyState:', this.ws.readyState, ')');
     }
   }
+  // Send a free-text chat line. Rides next to the lockstep stream (never through it),
+  // so it can't affect the deterministic sim regardless of when it arrives.
+  sendChat(text) { this.sendMessage({ kind: 'chat', text: String(text).slice(0, 240) }); }
   onPacket(cb) { this.cb = cb; for (const p of this.rxbuf) cb(p); this.rxbuf = []; }
   close() { try { this.ws.close(); } catch {} }
 }

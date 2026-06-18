@@ -239,6 +239,26 @@ function showLoading(then) {
 
 // ---------- multiplayer lobby + lockstep match ----------
 let _mp = {};   // { transport, isHost, you, players }
+let _chatCleanup = null;   // tears down in-match chat key listeners between games
+
+// Append one line to a chat log. `from` is the sender's seat; `youSeat` is the local
+// seat, so we can colour our own lines differently. `sys` marks a system notice.
+function appendChat(logEl, { from, text, sys }, youSeat) {
+  if (!logEl) return null;
+  const div = document.createElement('div');
+  if (sys) { div.className = 'cm cm-sys'; div.textContent = text; }
+  else {
+    const mine = from === youSeat;
+    div.className = 'cm ' + (mine ? 'cm-me' : 'cm-them');
+    const who = document.createElement('b');
+    who.textContent = (mine ? 'You' : `Player ${(from ?? 0) + 1}`) + ': ';
+    div.appendChild(who);
+    div.appendChild(document.createTextNode(text));
+  }
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+  return div;
+}
 
 function openLobby() {
   const opts = Object.values(FACTIONS).map(f => `<option value="${f.key}">${f.name}</option>`).join('');
@@ -267,12 +287,20 @@ function lobbyConnect(isHost) {
   }
 
   status.textContent = `Connecting to ${url} …`;
+
+  const chatWrap = document.getElementById('lobby-chat');
+  const chatLog = document.getElementById('lobby-chat-log');
+  const chatInput = document.getElementById('lobby-chat-input');
+  if (chatLog) chatLog.innerHTML = '';
+  if (chatWrap) chatWrap.style.display = 'none';
+
   let transport;
   try {
     transport = new WebSocketTransport(url, room, {
       onOpen: () => {
         console.log('[lobby] connected, room:', room);
         status.textContent = isHost ? 'Hosting — waiting for an opponent to join…' : 'Joined — waiting for the host to start…';
+        if (chatWrap) chatWrap.style.display = 'block';
       },
       onClose: () => { console.log('[lobby] disconnected'); status.textContent = 'Connection closed.'; startBtn.disabled = true; },
       onError: (e) => { console.error('[lobby] error:', e); status.textContent = 'Could not connect. Is the relay running?  (npm run relay)'; },
@@ -280,11 +308,28 @@ function lobbyConnect(isHost) {
   } catch { status.textContent = 'Invalid relay URL.'; return; }
   _mp = { transport, isHost, you: 0, players: [0], room };
   transport.onLobby = (msg) => {
+    const grew = msg.players.length > _mp.players.length;
     _mp.you = msg.you; _mp.players = msg.players;
     console.log('[lobby] players:', msg.players, 'you:', msg.you, msg.left ? '(left)' : '');
     status.textContent = `Room "${room}" — ${msg.players.length} player(s). You are Player ${msg.you + 1}.`;
     startBtn.disabled = !(isHost && msg.players.length >= 2);
+    if (grew) appendChat(chatLog, { sys: true, text: 'An opponent joined the room.' });
+    else if (msg.left) appendChat(chatLog, { sys: true, text: 'A player left the room.' });
   };
+  // chat lines from the peer (the relay never echoes our own back)
+  transport.onChat = (msg) => appendChat(chatLog, { from: msg.from, text: msg.text }, _mp.you);
+  // send on Enter; render our own line locally since the relay won't echo it
+  if (chatInput) {
+    chatInput.onkeydown = (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const text = chatInput.value.trim();
+      if (!text) return;
+      transport.sendChat(text);
+      appendChat(chatLog, { from: _mp.you, text }, _mp.you);
+      chatInput.value = '';
+    };
+  }
   transport.onStart = (msg) => {
     console.log('[lobby] starting match, players:', msg.players);
     showLoading(() => startNetGame(transport, msg.header, _mp.you, msg.players));
@@ -308,6 +353,68 @@ function lobbyStart() {
   };
   // the relay echoes 'start' back to the host too, so both clients begin via onStart
   _mp.transport.sendMessage({ kind: 'start', header });
+}
+
+// In-match chat overlay. Enter opens a one-line composer; Enter again sends, Escape
+// cancels. Messages ride the relay's chat channel (never the lockstep stream, so they
+// can't desync the sim) and fade after a few seconds so they don't clutter the field.
+function setupMatchChat(transport, youSeat) {
+  const wrap = document.getElementById('match-chat');
+  const log = document.getElementById('match-chat-log');
+  const input = document.getElementById('match-chat-input');
+  if (!wrap || !log || !input) return;
+  log.innerHTML = '';
+  wrap.style.display = 'flex';
+  wrap.classList.remove('typing');
+
+  const FADE_MS = 9000;
+  const add = (m) => {
+    const div = appendChat(log, m, youSeat);
+    if (!div) return;
+    div.style.transition = 'opacity 1.2s';
+    setTimeout(() => { div.style.opacity = '0'; setTimeout(() => div.remove(), 1300); }, FADE_MS);
+  };
+
+  transport.onChat = (msg) => add({ from: msg.from, text: msg.text });
+
+  const openComposer = () => {
+    wrap.classList.add('typing');
+    input.focus();
+    // surface any faded lines while composing so you can read the thread
+    for (const c of log.children) { c.style.transition = ''; c.style.opacity = '1'; }
+  };
+  const closeComposer = () => { wrap.classList.remove('typing'); input.value = ''; input.blur(); };
+
+  const onKey = (e) => {
+    if (e.key === 'Enter' && document.activeElement !== input) {
+      // don't hijack Enter while another field (settings, etc.) is focused
+      if (e.target && e.target.tagName === 'INPUT') return;
+      e.preventDefault();
+      openComposer();
+    }
+  };
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (text) { transport.sendChat(text); add({ from: youSeat, text }); }
+      closeComposer();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeComposer();
+    }
+    e.stopPropagation();
+  };
+  window.addEventListener('keydown', onKey);
+
+  // tear down when the match ends so listeners don't leak into the next game
+  _chatCleanup = () => {
+    window.removeEventListener('keydown', onKey);
+    input.onkeydown = null;
+    wrap.style.display = 'none';
+    wrap.classList.remove('typing');
+    log.innerHTML = '';
+  };
 }
 
 // A networked, human-vs-human lockstep match. Both clients run the identical
@@ -342,8 +449,10 @@ function startNetGame(transport, header, you, players) {
   game.net = session;     // game.cmd now defers commands to the session
   session.start();
   controls.intro = 0; ui.hideIntroCard();
-  ui.toast(`⚔ Networked match — you are Player ${you + 1} (${FACTIONS[you === 0 ? header.pf : header.ef].name}).`);
+  ui.toast(`⚔ Networked match — you are Player ${you + 1} (${FACTIONS[you === 0 ? header.pf : header.ef].name}). Press Enter to chat.`);
   if (Settings.get('music')) Music.start();
+
+  setupMatchChat(transport, you);
 
   let last = performance.now(), acc = 0, tickInTurn = 0;
   const loop = (now) => {
@@ -466,6 +575,7 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
 }
 
 function stopGame() {
+  if (_chatCleanup) { try { _chatCleanup(); } catch {} _chatCleanup = null; }
   if (!current) return;
   cancelAnimationFrame(current.raf);
   current.game.dispose();

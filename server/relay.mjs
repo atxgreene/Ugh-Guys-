@@ -8,9 +8,11 @@
 //   client → { kind:'join', room }        join/create a room
 //   client → { kind:'start', header }      broadcast the agreed match config (seed…)
 //   client → { kind:'packet', packet }     a lockstep turn packet → relayed to peers
+//   client → { kind:'chat', text }          free-text chat → relayed to peers
 //   server → { kind:'lobby', room, you, players, left? }
 //   server → { kind:'start', header, players }
 //   server → { kind:'packet', packet }
+//   server → { kind:'chat', from, text }
 //
 // This is intentionally small (in-memory rooms, index-based player ids). A production
 // relay would add stable ids, auth, reconnect tokens, and room lifecycle limits.
@@ -58,6 +60,12 @@ function handle(sock, frame) {
     if (set) for (const c of set) send(c, { kind: 'start', header: msg.header, players: [...set].map((_, i) => i) });
   } else if (msg.kind === 'packet') {
     broadcast(sock.room, { kind: 'packet', packet: msg.packet }, sock);
+  } else if (msg.kind === 'chat') {
+    // free-text chat — rides alongside the lockstep stream, never through it, so it
+    // can't perturb the deterministic sim. Tag with the sender's seat for display.
+    const set = rooms.get(sock.room);
+    const you = set ? [...set].indexOf(sock) : -1;
+    broadcast(sock.room, { kind: 'chat', from: you, text: String(msg.text || '').slice(0, 240) }, sock);
   }
 }
 

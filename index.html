@@ -269,6 +269,32 @@
     .lobby-status { margin-top: 14px; font-size: 12px; color: #8a90a0; line-height: 1.5; min-height: 18px; }
     .lobby-status code { color: #b0a4be; background: #0e0b14; padding: 1px 5px; border-radius: 3px; }
 
+    /* multiplayer chat — shared styling for the lobby panel and the in-match overlay */
+    .lobby-chat { margin-top: 12px; }
+    .chat-log { font-size: 12px; line-height: 1.55; color: #c4b8d0; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 2px; }
+    .lobby-chat .chat-log { height: 110px; background: #0b0810; border: 1px solid #322c3e;
+      border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; }
+    .chat-log .cm-me b { color: #7fc4e8; font-weight: normal; }
+    .chat-log .cm-them b { color: #e8c074; font-weight: normal; }
+    .chat-log .cm-sys { color: #7a7488; font-style: italic; }
+    .chat-log .cm b { font-weight: normal; }
+    .chat-input { width: 100%; box-sizing: border-box; background: #0e0b14; color: #e6cf94;
+      border: 1px solid #4a4458; border-radius: 4px; padding: 7px 9px; font-family: inherit;
+      font-size: 16px; outline: none; }
+    .chat-input:focus { border-color: #7a6a92; }
+
+    /* in-match chat overlay — bottom-left, above the unit panel */
+    #match-chat { position: absolute; left: 12px; bottom: 132px; width: min(360px, 44vw);
+      z-index: 34; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+    #match-chat .chat-log { max-height: 168px; pointer-events: none;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.95); }
+    #match-chat .chat-log .cm { background: rgba(10,8,16,0.55); border-radius: 3px;
+      padding: 1px 6px; align-self: flex-start; max-width: 100%; }
+    #match-chat .chat-input { display: none; pointer-events: auto;
+      background: rgba(14,11,20,0.94); box-shadow: 0 4px 18px rgba(0,0,0,0.6); }
+    #match-chat.typing .chat-input { display: block; }
+
     /* onboarding: controls/hotkey reference (repurposed #help) */
     #help { right: 10px; top: 46px; width: 264px; padding: 14px 16px; font-size: 12px; color: #b0a890;
       background: linear-gradient(180deg, rgba(28,23,16,0.96), rgba(14,11,7,0.96));
@@ -498,6 +524,10 @@
           <button id="mp-join">Join</button>
         </div>
         <div id="mp-status" class="lobby-status">Run <code>npm run relay</code> locally, or point Relay at a deployed <code>wss://</code> server.</div>
+        <div id="lobby-chat" class="lobby-chat" style="display:none">
+          <div id="lobby-chat-log" class="chat-log"></div>
+          <input id="lobby-chat-input" class="chat-input" type="text" maxlength="240" placeholder="Chat with your opponent… (Enter to send)" spellcheck="false">
+        </div>
         <div class="lobby-actions">
           <button id="mp-start" disabled>Start Match</button>
           <button id="mp-close" class="lobby-ghost">Back</button>
@@ -517,6 +547,10 @@
       <div class="pm-hint">P resumes · the flood waits while you deliberate</div>
     </div>
     <div id="introcard"><div class="ic-rule"></div><h2 id="ic-name"></h2><div class="ic-sub" id="ic-sub"></div><div class="ic-rule"></div></div>
+    <div id="match-chat" style="display:none">
+      <div id="match-chat-log" class="chat-log"></div>
+      <input id="match-chat-input" class="chat-input" type="text" maxlength="240" placeholder="Message your opponent…" spellcheck="false">
+    </div>
     <div id="loading"><div class="load-glyph">✦</div><div>Shaping the world before the flood…</div></div>
   </div>
   <script type="module" src="/src/main.js"></script>

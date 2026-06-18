@@ -171,8 +171,8 @@ export class Controls {
 
   onKeyDown(e) {
     const k = e.key.toLowerCase();
+    if (e.target.tagName === 'INPUT') return;   // typing in chat/lobby — don't drive the camera or hotkeys
     this.keys[k] = true;
-    if (e.target.tagName === 'INPUT') return;
     this.skipIntro();
     // WASD pan the camera, so unit commands live on F (attack-move) and X (stop)
     if (k === 'f' && !this.placement) { if (this.selectedUnits().length) { this.attackMoveArm = true; this.patrolArm = false; } }
