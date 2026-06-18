@@ -145,7 +145,12 @@ export class Controls {
   handleTap(cx, cy) {
     const ent = this.pickEntity(cx, cy);
     const mine = this.selectedUnits();
-    if (ent && ent.owner === this.game.localPlayer && !ent.isResource) {
+    const lp = this.game.localPlayer;
+    // tapping your own UNFINISHED building with workers selected should (re)assign
+    // them to build it — fall through to the command path instead of just reselecting
+    // (so a worker pulled off mid-build can be put back on touch, matching right-click)
+    const assignBuild = ent && ent.isBuilding && ent.owner === lp && !ent.complete && mine.length > 0;
+    if (ent && ent.owner === lp && !ent.isResource && !assignBuild) {
       this.game.selection = [ent]; Sound.select(); this.game.emit('selection'); return;
     }
     if (mine.length) {
