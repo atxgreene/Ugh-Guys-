@@ -85,6 +85,15 @@ export class Controls {
       const tc = this.touch; if (!tc) return;
       if (tc.mode === 'one' && e.touches.length === 1) {
         const p = pt(e.touches[0]);
+        // placing a building: the finger drags the ghost instead of panning, so the
+        // player can see exactly where it will land before lifting to drop it.
+        if (this.placement) {
+          tc.moved += Math.abs(p.x - tc.lx) + Math.abs(p.y - tc.ly);
+          tc.lx = p.x; tc.ly = p.y;
+          this.mouse.x = p.x; this.mouse.y = p.y;
+          this.updateGhost();
+          return;
+        }
         const dx = p.x - tc.lx, dy = p.y - tc.ly;
         tc.moved += Math.abs(dx) + Math.abs(dy);
         tc.lx = p.x; tc.ly = p.y;
@@ -107,6 +116,15 @@ export class Controls {
     d.addEventListener('touchend', e => {
       e.preventDefault();
       const tc = this.touch;
+      // placing a building: lift to drop it at the ghost's spot (positioned by the
+      // last touch). A tap with no drag also works — the ghost sits under the finger.
+      if (this.placement && tc && tc.mode === 'one') {
+        this.mouse.x = tc.lx; this.mouse.y = tc.ly;
+        this.updateGhost();
+        this.tryPlaceTouch();
+        this.touch = e.touches.length ? this.touch : null;
+        return;
+      }
       // a quick, near-stationary single touch is a tap → select or command
       if (tc && tc.mode === 'one' && tc.moved < 14 && performance.now() - tc.t0 < 350) {
         this.handleTap(tc.sx, tc.sy);
@@ -127,13 +145,13 @@ export class Controls {
   handleTap(cx, cy) {
     const ent = this.pickEntity(cx, cy);
     const mine = this.selectedUnits();
-    if (ent && ent.owner === 0 && !ent.isResource) {
+    if (ent && ent.owner === this.game.localPlayer && !ent.isResource) {
       this.game.selection = [ent]; Sound.select(); this.game.emit('selection'); return;
     }
     if (mine.length) {
       const p = this.screenToWorld(cx, cy);
       if (p) {
-        this.game.commandRightClick(this.game.selection, p.x, p.z, ent);
+        this.game.cmd('right', { sel: this.ownSelection(), x: p.x, z: p.z, ent, q: false });
         if (!ent) this.game.emit('ground-click', p.x, p.z, 'move');
         Sound.command();
       }
@@ -152,18 +170,22 @@ export class Controls {
     if (e.target.tagName === 'INPUT') return;
     this.skipIntro();
     // WASD pan the camera, so unit commands live on F (attack-move) and X (stop)
-    if (k === 'f' && !this.placement) { if (this.selectedUnits().length) this.attackMoveArm = true; }
-    if (k === 'x') { this.selectedUnits().forEach(u => u.stop()); this.attackMoveArm = false; }
+    if (k === 'f' && !this.placement) { if (this.selectedUnits().length) { this.attackMoveArm = true; this.patrolArm = false; } }
+    if (k === 'r' && !this.placement) { if (this.selectedUnits().length) { this.patrolArm = true; this.attackMoveArm = false; } }
+    if (k === 'x') { if (this.selectedUnits().length) this.game.cmd('stop', { sel: this.selectedUnits() }); this.attackMoveArm = false; this.patrolArm = false; }
+    if (k === 'g') { this.game.cmd('empower', { o: 0 }); this.ui.refreshPanel?.(); }
+    if (k === ' ') { const a = this.game.lastAlertPos; if (a) { this.focusT.x = a.x; this.focusT.z = a.z; } e.preventDefault(); }
     if (k === 'y') {   // cycle combat stance for the selected fighters
       const order = ['aggressive', 'defensive', 'hold'];
       const fighters = this.selectedUnits().filter(u => u.def.attack && !u.def.worker);
       if (fighters.length) {
         const next = order[(order.indexOf(fighters[0].stance) + 1) % order.length];
-        fighters.forEach(u => u.setStance(next));
+        this.game.cmd('stance', { sel: fighters, s: next });
         this.ui.toast?.(`Stance: ${next[0].toUpperCase() + next.slice(1)}`);
         this.ui.refreshPanel?.();
       }
     }
+    if (k === 'q') { for (const u of this.selectedUnits()) if (u.def.ability) this.game.cmd('ability', { u }); }
     if (k === 'p') { this.onPause?.(); }
     // secret code: type "greene" to summon the Fields of Evil near your city
     this._code = ((this._code || '') + k).slice(-6);
@@ -173,7 +195,7 @@ export class Controls {
       if (this.game.spawnFieldsOfEvil(bp.x + 12, bp.y - 12))
         this.ui.toast('The Fields of Evil rise nearby. The House of Greene awaits.');
     }
-    if (k === 'escape') { this.cancelPlacement(); this.attackMoveArm = false; this.ui.buildMenuOpen = false; this.ui.refreshPanel(); }
+    if (k === 'escape') { this.cancelPlacement(); this.attackMoveArm = false; this.patrolArm = false; this.ui.buildMenuOpen = false; this.ui.refreshPanel(); }
     if (k === 'h') { const m = this.game.playerMain; if (m) { this.focusT.x = m.pos.x; this.focusT.z = m.pos.z; } }
     if (k === '.') { this.ui.selectIdleWorker?.(); }
     if (k === 'b' && this.selectedUnits().some(u => u.def.worker)) { this.ui.buildMenuOpen = true; this.ui.refreshPanel(); }
@@ -182,13 +204,24 @@ export class Controls {
         this.groups[k] = [...this.selectedUnits()];
         e.preventDefault();
       } else if (this.groups[k]?.length) {
-        this.game.selection = this.groups[k].filter(u => !u.dead);
+        const live = this.groups[k].filter(u => !u.dead);
+        this.game.selection = live;
         this.game.emit('selection');
+        // double-tap the same group key to snap the camera to it (classic RTS)
+        const now = performance.now();
+        if (this._lastGroupKey === k && now - (this._lastGroupT || 0) < 320 && live.length) {
+          let cx = 0, cz = 0; for (const u of live) { cx += u.pos.x; cz += u.pos.z; }
+          this.focusT.x = cx / live.length; this.focusT.z = cz / live.length;
+        }
+        this._lastGroupKey = k; this._lastGroupT = now;
       }
     }
   }
 
-  selectedUnits() { return this.game.selection.filter(s => s.isUnit && s.owner === 0); }
+  selectedUnits() { return this.game.selection.filter(s => s.isUnit && s.owner === this.game.localPlayer); }
+  // the local seat's own entities in the current selection (units + buildings),
+  // used to issue commands that only the local player may give
+  ownSelection() { return this.game.selection.filter(s => s.owner === this.game.localPlayer); }
 
   screenToWorld(cx, cy) {
     const r = this.dom.getBoundingClientRect();
@@ -223,11 +256,20 @@ export class Controls {
       if (this.attackMoveArm) {
         const p = this.screenToWorld(e.clientX, e.clientY);
         if (p) {
-          this.game.formationMove(this.selectedUnits(), p.x, p.z, true);
+          this.game.cmd('formation', { sel: this.selectedUnits(), x: p.x, z: p.z, am: true, q: e.shiftKey });
           this.game.emit('ground-click', p.x, p.z, 'attack');
           Sound.command();
         }
         this.attackMoveArm = false;
+        return;
+      }
+      if (this.patrolArm) {
+        const p = this.screenToWorld(e.clientX, e.clientY);
+        if (p) {
+          this.game.cmd('patrol', { sel: this.selectedUnits(), x: p.x, z: p.z, q: e.shiftKey });
+          this.game.emit('ground-click', p.x, p.z, 'attack');
+        }
+        this.patrolArm = false;
         return;
       }
       this.dragStart = { x: e.clientX, y: e.clientY };
@@ -236,12 +278,12 @@ export class Controls {
       e.preventDefault();
     } else if (e.button === 2) {
       if (this.placement) { this.cancelPlacement(); return; }
-      if (this.attackMoveArm) { this.attackMoveArm = false; return; }
+      if (this.attackMoveArm || this.patrolArm) { this.attackMoveArm = false; this.patrolArm = false; return; }
       const ent = this.pickEntity(e.clientX, e.clientY);
       const p = this.screenToWorld(e.clientX, e.clientY);
       if (p) {
-        this.game.commandRightClick(this.game.selection, p.x, p.z, ent);
-        if (!ent) this.game.emit('ground-click', p.x, p.z, 'move');
+        this.game.cmd('right', { sel: this.ownSelection(), x: p.x, z: p.z, ent, q: e.shiftKey });
+        if (!ent) this.game.emit('ground-click', p.x, p.z, e.shiftKey ? 'queue' : 'move');
       }
     }
   }
@@ -279,7 +321,7 @@ export class Controls {
       const sel = [];
       const v = new THREE.Vector3();
       for (const u of this.game.units) {
-        if (u.owner !== 0) continue;
+        if (u.owner !== this.game.localPlayer) continue;
         v.copy(u.pos); v.y = this.game.map.heightAt(u.pos.x, u.pos.z) + 0.5;
         v.project(this.game.camera);
         const sx = r.left + (v.x + 1) / 2 * r.width, sy = r.top + (-v.y + 1) / 2 * r.height;
@@ -296,7 +338,7 @@ export class Controls {
       // single click select
       const ent = this.pickEntity(e.clientX, e.clientY);
       if (ent && !ent.isResource) {
-        if (shift && ent.owner === 0) {
+        if (shift && ent.owner === this.game.localPlayer) {
           if (this.game.selection.includes(ent)) this.game.selection = this.game.selection.filter(s => s !== ent);
           else this.game.selection = [...this.game.selection, ent];
         } else this.game.selection = [ent];
@@ -313,20 +355,28 @@ export class Controls {
   // ---------- building placement ----------
   startPlacement(key) {
     this.cancelPlacement();
-    const def = this.game.players[0].faction.buildings[key];
-    const f = this.game.players[0].faction;
+    const me = this.game.players[this.game.localPlayer];
+    const def = me.faction.buildings[key];
+    const f = me.faction;
     const ghost = buildBuildingMesh(def.model, f.color, f.glow);
     ghost.traverse(o => {
       if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.55; o.castShadow = false; }
     });
     this.game.scene.add(ghost);
-    this.placement = { key, def, ghost, valid: false, tx: 0, ty: 0 };
+    // tinted footprint pad: shows exactly which tiles the building will occupy
+    const fp = new THREE.Mesh(
+      new THREE.PlaneGeometry(def.size * TILE, def.size * TILE),
+      new THREE.MeshBasicMaterial({ color: 0x66ff88, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
+    fp.rotation.x = -Math.PI / 2;
+    this.game.scene.add(fp);
+    this.placement = { key, def, ghost, footprint: fp, valid: false, tx: 0, ty: 0 };
     this.updateGhost();
   }
 
   cancelPlacement() {
     if (this.placement) {
       this.game.scene.remove(this.placement.ghost);
+      if (this.placement.footprint) this.game.scene.remove(this.placement.footprint);
       this.placement = null;
     }
   }
@@ -342,19 +392,38 @@ export class Controls {
     p.tx = tx; p.ty = ty;
     const cx = (tx + p.def.size / 2) * TILE, cz = (ty + p.def.size / 2) * TILE;
     p.ghost.position.set(cx, this.game.map.heightAt(cx, cz), cz);
-    p.valid = this.game.canPlace(0, p.key, tx, ty) && this.game.canAfford(0, p.def.cost);
+    const lp = this.game.localPlayer;
+    p.valid = this.game.canPlace(lp, p.key, tx, ty, true) && this.game.canAfford(lp, p.def.cost);
     p.ghost.traverse(o => { if (o.isMesh) o.material.opacity = p.valid ? 0.65 : 0.2; });
+    if (p.footprint) {
+      p.footprint.visible = true;
+      p.footprint.position.set(cx, this.game.map.heightAt(cx, cz) + 0.08, cz);
+      p.footprint.material.color.set(p.valid ? 0x66ff88 : 0xff5544);
+      p.footprint.material.opacity = p.valid ? 0.22 : 0.18;
+    }
   }
 
   tryPlace(e) {
     const p = this.placement;
     if (!p || !p.valid) { Sound.error(); return; }
     const workers = this.selectedUnits().filter(u => u.def.worker);
-    const b = this.game.placeBuilding(0, p.key, p.tx, p.ty, workers);
+    const b = this.game.cmd('build', { o: this.game.localPlayer, key: p.key, tx: p.tx, ty: p.ty, w: workers });
     if (b) {
       if (!e.shiftKey) this.cancelPlacement();
       this.ui.refreshPanel();
     } else Sound.error();
+  }
+
+  // Touch placement: drop the building at the ghost's spot (no shift-to-chain). In a
+  // net match game.cmd defers (returns null) but the command is submitted, so cancel
+  // optimistically once the spot is valid.
+  tryPlaceTouch() {
+    const p = this.placement;
+    if (!p || !p.valid) { Sound.error(); return; }
+    const workers = this.selectedUnits().filter(u => u.def.worker);
+    this.game.cmd('build', { o: this.game.localPlayer, key: p.key, tx: p.tx, ty: p.ty, w: workers });
+    this.cancelPlacement();
+    this.ui.refreshPanel();
   }
 
   // ---------- per-frame ----------
@@ -438,8 +507,68 @@ export class Controls {
       rim.target.position.set(this.focus.x, 0, this.focus.z);
     }
 
-    // selection rings
+    // selection rings + hover highlight + rally marker (all render-only)
     this.syncSelectionRings();
+    // hover pick is a raycast, so rate-limit it rather than run every frame
+    this.hoverT = (this.hoverT || 0) - dt;
+    if (this.hoverT <= 0) {
+      this.hoverT = 0.05;
+      this.hoverEnt = (this.mouse.inside && !this.dragStart && !this.placement)
+        ? this.pickEntity(this.mouse.x, this.mouse.y) : null;
+    }
+    this.syncHoverRing();
+    this.syncRallyMarker();
+  }
+
+  // a soft ring under whatever the cursor is over (skipped for already-selected)
+  syncHoverRing() {
+    if (!this.hoverRing) {
+      this.hoverRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.86, 1.0, 28),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false })
+      );
+      this.hoverRing.rotation.x = -Math.PI / 2;
+      this.game.scene.add(this.hoverRing);
+    }
+    const e = this.hoverEnt;
+    const show = e && !e.dead && !this.game.selection.includes(e);
+    this.hoverRing.visible = !!show;
+    if (!show) return;
+    const r = (e.radius + 0.45) * (1 + 0.03 * Math.sin(this.game.time * 7));
+    this.hoverRing.scale.setScalar(r);
+    this.hoverRing.position.set(e.pos.x, this.game.map.heightAt(e.pos.x, e.pos.z) + 0.07, e.pos.z);
+    this.hoverRing.material.color.set(
+      e.isResource ? 0xd8b75a : e.owner === this.game.localPlayer ? 0x9be86e : e.owner === 2 ? 0xcccc88 : 0xff7066);
+    this.hoverRing.material.opacity = 0.42;
+  }
+
+  // a banner + beam at the rally point of the selected production building, so you
+  // can see where trained units will gather
+  syncRallyMarker() {
+    if (!this.rallyMarker) {
+      const g = new THREE.Group();
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffd56e, transparent: true, opacity: 0.5, depthWrite: false }));
+      beam.position.y = 1.1;
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.5, 0.7, 20),
+        new THREE.MeshBasicMaterial({ color: 0xffd56e, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06;
+      g.add(beam); g.add(ring);
+      this.rallyMarker = g; this.game.scene.add(g);
+    }
+    const sel = this.game.selection;
+    const b = sel.length === 1 && sel[0].isBuilding && sel[0].owner === this.game.localPlayer
+      && sel[0].rally ? sel[0] : null;
+    this.rallyMarker.visible = !!b;
+    if (!b) return;
+    const { x, z } = b.rally;
+    this.rallyMarker.position.set(x, this.game.map.heightAt(x, z), z);
+    const t = 0.45 + 0.2 * Math.sin(this.game.time * 4);
+    this.rallyMarker.children[0].material.opacity = t;
+    this.rallyMarker.children[1].material.opacity = t + 0.15;
+    this.rallyMarker.children[1].scale.setScalar(1 + 0.06 * Math.sin(this.game.time * 4));
   }
 
   syncSelectionRings() {
@@ -462,7 +591,7 @@ export class Controls {
       const r = (e.radius + 0.3) * (1 + 0.04 * Math.sin(this.game.time * 5));
       ring.scale.setScalar(r);
       ring.position.set(e.pos.x, this.game.map.heightAt(e.pos.x, e.pos.z) + 0.08, e.pos.z);
-      ring.material.color.set(e.owner === 0 ? 0x66ff88 : e.owner === 1 ? 0xff5544 : 0xcccc88);
+      ring.material.color.set(e.owner === this.game.localPlayer ? 0x66ff88 : e.owner === 2 ? 0xcccc88 : 0xff5544);
       ring.material.opacity = pulse;
     }
   }

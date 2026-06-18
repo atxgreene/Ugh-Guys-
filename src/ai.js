@@ -89,6 +89,9 @@ export class AI {
     this.manageDefense(main);
     this.manageScouting(main);
     this.manageAttacks(main);
+    this.manageAbilities();
+    // keep the macro economy ability on cooldown, same as a diligent player would
+    if (this.game.players[1].empowerCd <= 0) this.game.marshalStores(1);
   }
 
   manageWorkers(main) {
@@ -162,7 +165,7 @@ export class AI {
     const ct = g.map.tileOf(main.pos.x, main.pos.z);
     for (let r = 3; r < 16; r += 1) {
       for (let attempt = 0; attempt < 10; attempt++) {
-        const a = Math.random() * Math.PI * 2;
+        const a = g.rand() * Math.PI * 2;
         const tx = Math.round(ct.x + Math.cos(a) * r) - Math.floor(size / 2);
         const ty = Math.round(ct.y + Math.sin(a) * r) - Math.floor(size / 2);
         let ok = true;
@@ -219,7 +222,7 @@ export class AI {
         w += this.counterScore(k, enemyTags) * 1.5;
         for (let j = 0; j < Math.max(1, Math.round(w)); j++) weighted.push(k);
       }
-      g.queueTrain(b, weighted[Math.floor(Math.random() * weighted.length)]);
+      g.queueTrain(b, weighted[Math.floor(g.rand() * weighted.length)]);
     }
     // research upgrades opportunistically
     if (g.time > 360) {
@@ -280,11 +283,21 @@ export class AI {
     const g = this.game;
     const workers = g.units.filter(u => u.owner === 0 && !u.dead && u.def.worker);
     if (!workers.length) return;
-    const t = workers[Math.floor(Math.random() * workers.length)];
+    const t = workers[Math.floor(g.rand() * workers.length)];
     const fast = this.myArmy().filter(u => !this.attackGroup.includes(u) && !u._harassUntil && u.def.speed >= 9).slice(0, 4);
     if (fast.length >= 2) {
       for (const u of fast) u._harassUntil = g.time + 22;   // leave them on the raid, don't reclaim
       g.formationMove(fast, t.pos.x, t.pos.z, true);
+    }
+  }
+
+  manageAbilities() {
+    const g = this.game;
+    for (const u of this.myArmy()) {
+      if (u.dead || !u.def.ability || u.abilityCd > 0) continue;
+      if (u.state !== 'attack' && u.state !== 'attackMove') continue;
+      if (g.rand() > 0.35) continue;   // 35% chance per AI think cycle to fire
+      g.useAbility(u);
     }
   }
 

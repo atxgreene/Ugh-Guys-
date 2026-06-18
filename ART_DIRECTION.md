@@ -32,12 +32,13 @@ accent** + **secondary glow** that the models apply to cloth, banners, armor, an
 - Warm key sun + **cool rim/back light** tracking the view for hero-pop; soft 3072² shadows.
 - **Image-based lighting** from a procedural sky env-map (bronze & star-metal reflect).
 - Cinematic grade pass: vignette, contrast, saturation. Bloom on all sacred fire/sigils.
-- **[planned]** god-rays at sacred sites; localized red storm-glow over corrupted zones; per-foundry point-light pools (currently emissive+bloom stand-ins).
+- **god-ray light shafts** lean along the key light across the map (mood-scaled, shimmering, flaring on lightning). **[planned]** localized red storm-glow over corrupted zones; per-foundry point-light pools (currently emissive+bloom stand-ins).
 
 ## 4. Sky & Flood foreshadowing  **[done]**
 Gradient sky dome, drifting **storm cloud wall**, **distant lightning** flashes (storm
 preset), far **rain curtain**, **lunar halo** (night/dawn), starfield, doomed red horizon
-star. **[planned]** moving cloud shadows, aurora for Watcher-dominant maps.
+star, plus **drifting cloud shadows** scrolling across the ground (mood-scaled).
+**[planned]** aurora for Watcher-dominant maps.
 
 ## 5. VFX system  **[done]**
 Pooled GPU particles (`fx.js`, one draw call each): **marching/footstep dust**,
@@ -186,8 +187,11 @@ repeated units, LODs, building mesh merging.
 8. ✅ Building construction scaffolds + damage/fire stages
 9. ✅ Prop dressing (sacks, carts, banners, braziers, amphorae, bones) — biome clutter +
    building-adjacent dressing, with god-ray shafts on braziers
-10. ⏳ Carved rivers/roads/cliffs (balance-careful)
-11. ⏳ Instancing/LOD pass for scale
+10. ✅ Carved rivers + fords + ancient roads (river slows, fords/roads
+    tune movement; channels carved into the heightfield with a water mesh)
+11. ✅ Instancing/LOD pass for scale — static doodad clutter merged into
+    per-material batches (hundreds of draw calls → a handful), shader-baked
+    fog, shadow-pass skipped for clutter
 
 ### Reach & accessibility pass (shipped version)
 Beyond the art roadmap, the shipped build added the upgrades that widen who can
@@ -210,9 +214,17 @@ The deep pass on making the core fight incredible before scaling depth:
 - ✅ Combat stances (aggressive / defensive / hold)
 - ✅ AI overhaul (staging, group commit, retreat-to-regroup, harassment, counter-composition)
 - ✅ Adaptive combat music layer
-- ✅ Skirmish setup (opponent + land), idle-worker selector
-- ⏳ Next (needs playtest): god-rays/cloud-shadow atmosphere pass, ability/active-skill layer,
-   ranged kiting micro, AI expansion to new resource sites
+- ✅ Skirmish setup (opponent + land + map size), idle-worker selector
+- ✅ World bosses + monster lairs (3 bosses w/ signature abilities + bounties),
+   selectable map size (standard/large/huge), difficulty-scaled neutrals
+- ✅ Competitive depth pass (skill-ceiling): worker saturation + active economy
+   ability ("Marshal the Stores", G); shift-queued orders, patrol (R), double-tap
+   control-group camera snap, Space-to-alert; dodgeable telegraphed boss AoE;
+   deterministic seeded sim RNG + full replay system (record/download/watch with
+   desync-checked playback) — the foundation for lockstep multiplayer
+- ⏳ Next (needs playtest): boss/lair + economy-ability tuning, AI expansion to new
+   resource sites, per-zone storm-glow/point-light pools, networked 1v1 on the
+   replay/lockstep foundation
 
 ## 15. Code map
 `game.js` engine + combat (targeting/stances/impact) + atmosphere/lighting/FX + exposure/

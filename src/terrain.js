@@ -1,12 +1,23 @@
 // Map generation, terrain mesh, walkability and fog of war.
 // World is GRID x GRID tiles of TILE world units, origin at (0,0).
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildDoodad } from './models.js';
 import { terrainMaps } from './textures.js';
 
-export const GRID = 96;
+export let GRID = 96;
 export const TILE = 2;
-export const WORLD = GRID * TILE;
+export let WORLD = GRID * TILE;
+
+// Selectable battlefield sizes. Bigger maps = longer marches, more neutral
+// ground for monster lairs and expansions. GRID/WORLD are exported `let`s and
+// ESM live bindings, so calling setMapSize() before a match rebuilds the world
+// at the new scale with no plumbing through every consumer.
+export const MAP_SIZES = { standard: 96, large: 120, huge: 144 };
+export function setMapSize(key) {
+  GRID = MAP_SIZES[key] || MAP_SIZES.standard;
+  WORLD = GRID * TILE;
+}
 
 // deterministic value noise
 function makeNoise(seed) {
@@ -89,11 +100,11 @@ export class GameMap {
       // mountainous border
       const edge = Math.min(x, y, GRID - 1 - x, GRID - 1 - y);
       if (edge < 5) h += (5 - edge) * 1.6;
-      // central ridge with two passes
+      // central ridge with two passes (thresholds scale with map size)
       const dCenter = Math.abs((x + y) - GRID) / Math.SQRT2; // distance to anti-diagonal
       const alongRidge = Math.abs(x - y);                    // position along ridge
-      const gap = (alongRidge > 18 && alongRidge < 34);      // two symmetric passes
-      if (dCenter < 4 && !gap && alongRidge < 62) h += (4 - dCenter) * 1.5 + noise(x * 0.3, y * 0.3);
+      const gap = (alongRidge > GRID * 0.19 && alongRidge < GRID * 0.35); // two symmetric passes
+      if (dCenter < 4 && !gap && alongRidge < GRID * 0.65) h += (4 - dCenter) * 1.5 + noise(x * 0.3, y * 0.3);
       // flatten base + expansion sites
       for (const s of [this.basePlayer, this.baseEnemy, ...this.expansions]) {
         const d = Math.hypot(x - s.x, y - s.y);
@@ -106,6 +117,13 @@ export class GameMap {
       const i = y * GRID + x;
       if (this.height[i] > 4.0) { this.mountain[i] = 1; this.blocked[i] = 1; }
     }
+
+    // rivers, fords, ancient roads (carved before mesh is built)
+    this.riverTiles = new Set();
+    this.fordTiles = new Set();
+    this.roadTiles = new Set();
+    this._genRivers(makeNoise(seed + 31));
+    this._genRoads();
 
     this.fogCanvas = document.createElement('canvas');
     this.fogCanvas.width = GRID; this.fogCanvas.height = GRID;
@@ -176,7 +194,8 @@ export class GameMap {
     const B = this.biome;
     const cBase = new THREE.Color(B.base), cAsh = new THREE.Color(B.ash),
           cRock = new THREE.Color(B.rock), cSand = new THREE.Color(B.sand),
-          cMoss = new THREE.Color(B.moss);
+          cMoss = new THREE.Color(B.moss),
+          cRiver = new THREE.Color(0x182840), cRoad = new THREE.Color(0x6b5c44);
     for (let i = 0; i < pos.count; i++) {
       const wx = pos.getX(i), wz = pos.getZ(i);
       const h = this.heightAt(wx, wz);
@@ -188,6 +207,11 @@ export class GameMap {
       if (n < 0.3) c.lerp(cMoss, (0.3 - n) * 1.2);
       if (h > 3.2) c.lerp(cRock, Math.min(1, (h - 3.2) / 2.5));
       if (h < 0.35) c.lerp(cRock, 0.4); // dark lowland basins
+      const rtx = Math.max(0, Math.min(GRID - 1, Math.floor(wx / TILE)));
+      const rty = Math.max(0, Math.min(GRID - 1, Math.floor(wz / TILE)));
+      const rti = rty * GRID + rtx;
+      if (this.riverTiles.has(rti)) c.lerp(cRiver, 0.9);
+      else if (this.roadTiles.has(rti)) c.lerp(cRoad, 0.5);
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -219,6 +243,103 @@ export class GameMap {
     return mesh;
   }
 
+  buildWaterMesh() {
+    if (!this.riverTiles || this.riverTiles.size === 0) return null;
+    const verts = [], idxs = [];
+    let vi = 0;
+    for (const tidx of this.riverTiles) {
+      const tx = tidx % GRID, ty = Math.floor(tidx / GRID);
+      const wx = tx * TILE, wz = ty * TILE;
+      const h = this.heightAt(wx + TILE * 0.5, wz + TILE * 0.5) + 0.14;
+      verts.push(wx, h, wz, wx + TILE, h, wz, wx + TILE, h, wz + TILE, wx, h, wz + TILE);
+      idxs.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+      vi += 4;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+    geo.setIndex(idxs);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x1e5080, transparent: true, opacity: 0.68,
+      roughness: 0.08, metalness: 0.35,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 1;
+    return mesh;
+  }
+
+  tileSpeedMult(wx, wz) {
+    const t = this.tileOf(wx, wz);
+    const i = this.idx(t.x, t.y);
+    if (this.fordTiles.has(i)) return 0.75;
+    if (this.riverTiles.has(i)) return 0.48;
+    if (this.roadTiles.has(i)) return 1.22;
+    return 1.0;
+  }
+
+  _genRivers(noiseFn) {
+    const sx = 2, sy = Math.floor(GRID * 0.37);
+    const ex = GRID - 3, ey = Math.floor(GRID * 0.57);
+    const path = [];
+    let cx = sx, cy = sy;
+    let angle = Math.atan2(ey - sy, ex - sx);
+    while (cx < ex - 0.5) {
+      path.push({ x: Math.round(cx), y: Math.round(cy) });
+      const wander = (noiseFn(cx * 0.09, cy * 0.09) - 0.5) * 0.65;
+      const toTarget = Math.atan2(ey - cy, ex - cx);
+      angle = angle * 0.6 + toTarget * 0.4 + wander * 0.35;
+      cx += Math.cos(angle) * 0.9;
+      cy += Math.sin(angle) * 0.9;
+      cx = Math.max(sx, Math.min(ex, cx));
+      cy = Math.max(2, Math.min(GRID - 3, cy));
+    }
+    path.push({ x: ex, y: ey });
+    // three evenly-spaced ford crossings
+    const fordAt = new Set([
+      Math.floor(path.length * 0.26),
+      Math.floor(path.length * 0.52),
+      Math.floor(path.length * 0.76),
+    ]);
+    const clearZones = [this.basePlayer, this.baseEnemy, ...this.expansions];
+    for (let pi = 0; pi < path.length; pi++) {
+      const { x, y } = path[pi];
+      const isFord = fordAt.has(pi);
+      const hw = isFord ? 0 : 1; // ford = 1 tile wide, river = 3 wide
+      for (let dy = -hw; dy <= hw; dy++) for (let dx = -hw; dx <= hw; dx++) {
+        const tx = x + dx, ty = y + dy;
+        if (!this.inBounds(tx, ty)) continue;
+        if (clearZones.some(z => Math.hypot(tx - z.x, ty - z.y) < 13)) continue;
+        const idx = this.idx(tx, ty);
+        if (this.mountain[idx]) continue;
+        this.riverTiles.add(idx);
+        if (isFord) this.fordTiles.add(idx);
+        this.height[idx] = Math.min(this.height[idx], 0.18); // carve channel
+      }
+    }
+  }
+
+  _genRoads() {
+    const po = GRID * 0.135;   // pass offset along the ridge — aligns with the carved gaps
+    const passA = { x: Math.floor(GRID / 2 + po), y: Math.floor(GRID / 2 - po) };
+    const passB = { x: Math.floor(GRID / 2 - po), y: Math.floor(GRID / 2 + po) };
+    const pb = this.basePlayer, eb = this.baseEnemy;
+    const seg = (x1, y1, x2, y2) => {
+      const steps = Math.ceil(Math.hypot(x2 - x1, y2 - y1) * 1.3);
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const rx = Math.round(x1 + (x2 - x1) * t), ry = Math.round(y1 + (y2 - y1) * t);
+        if (!this.inBounds(rx, ry)) continue;
+        const idx = this.idx(rx, ry);
+        if (!this.mountain[idx] && !this.riverTiles.has(idx)) this.roadTiles.add(idx);
+      }
+    };
+    // two roads — each running through one of the two ridge passes
+    seg(pb.x, pb.y, passA.x, passA.y);
+    seg(passA.x, passA.y, eb.x, eb.y);
+    seg(pb.x, pb.y, passB.x, passB.y);
+    seg(passB.x, passB.y, eb.x, eb.y);
+  }
+
   scatterDoodads(scene) {
     this.doodads = [];
     const sites = [this.basePlayer, this.baseEnemy, ...this.expansions];
@@ -235,6 +356,30 @@ export class GameMap {
       return weights[0][0];
     };
     const BLOCKS = new Set(['monolith', 'ruin', 'fallen_obelisk', 'giant_weapon']);
+    // Instead of adding ~170 multi-mesh doodad groups (hundreds of draw calls),
+    // collect every sub-mesh's world-baked geometry into buckets keyed by shared
+    // material, then merge each bucket into a single static mesh. Fog of war is
+    // sampled in-shader (per-fragment discard for unexplored tiles), so we no
+    // longer toggle per-doodad visibility every frame.
+    const buckets = new Map();   // material -> { mat, geoms: [] }
+    const collect = (obj) => {
+      obj.updateMatrixWorld(true);
+      obj.traverse(m => {
+        if (!m.isMesh) return;
+        let g = m.geometry.clone().applyMatrix4(m.matrixWorld);
+        g = g.index ? g.toNonIndexed() : g;
+        // keep a uniform attribute set so merge never fails on mismatched buffers
+        for (const name of Object.keys(g.attributes))
+          if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+        if (!g.attributes.uv) {
+          const n = g.attributes.position.count;
+          g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+        }
+        let b = buckets.get(m.material);
+        if (!b) buckets.set(m.material, (b = { mat: m.material, geoms: [] }));
+        b.geoms.push(g);
+      });
+    };
     const place = (count, minSite, yOffset) => {
       let made = 0;
       for (let attempt = 0; attempt < count * 3 && made < count; attempt++) {
@@ -246,14 +391,48 @@ export class GameMap {
         const wx = x * TILE, wz = y * TILE;
         d.position.set(wx, this.heightAt(wx, wz) + yOffset, wz);
         d.rotation.y = rng() * Math.PI * 2;
-        scene.add(d);
-        this.doodads.push(d);
+        collect(d);
         made++;
         if (BLOCKS.has(type)) { const t = this.tileOf(wx, wz); this.blocked[this.idx(t.x, t.y)] = 1; }
       }
     };
-    place(150, 13, 0);     // dense ground cover keeps clear of bases
-    place(20, 11, -0.05);  // a few extra landmarks closer in
+    // scale clutter with map area so bigger battlefields stay dressed (cheap: it
+    // all merges into the same handful of batched draw calls)
+    const areaScale = (GRID / 96) ** 2;
+    place(Math.round(150 * areaScale), 13, 0);     // dense ground cover keeps clear of bases
+    place(Math.round(20 * areaScale), 11, -0.05);  // a few extra landmarks closer in
+
+    for (const { mat, geoms } of buckets.values()) {
+      let merged;
+      try { merged = mergeGeometries(geoms, false); } catch (e) { merged = null; }
+      if (!merged) continue;
+      const fm = mat.clone();
+      this._applyDoodadFog(fm);
+      const mesh = new THREE.Mesh(merged, fm);
+      mesh.castShadow = false;     // static clutter skips the shadow pass (LOD budget)
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;  // one mesh spans the whole map; never cull wholesale
+      scene.add(mesh);
+      this.doodads.push(mesh);
+    }
+  }
+
+  // Bake fog-of-war straight into a doodad batch material: unexplored fragments
+  // are discarded (truly hidden), explored-but-unseen are dimmed, mirroring the
+  // terrain's fog multiply so merged clutter still respects vision.
+  _applyDoodadFog(material) {
+    const fogTex = this.fogTexture;
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.fogMap = { value: fogTex };
+      shader.uniforms.worldSizeV = { value: WORLD };
+      shader.vertexShader = ('uniform float worldSizeV;\n' + shader.vertexShader)
+        .replace('#include <common>', '#include <common>\nvarying vec2 vFogUv;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFogUv = vec2(position.x, position.z) / worldSizeV;');
+      shader.fragmentShader = 'uniform sampler2D fogMap;\nvarying vec2 vFogUv;\n' + shader.fragmentShader
+        .replace('#include <dithering_fragment>',
+          'float fogD = texture2D(fogMap, vFogUv).r;\nif (fogD < 0.2) discard;\ngl_FragColor.rgb *= (0.4 + 0.6 * fogD);\n#include <dithering_fragment>');
+    };
+    material.needsUpdate = true;
   }
 
   // Resource node placement plan: [{type, tx, ty}]
@@ -277,12 +456,35 @@ export class GameMap {
       addCluster(e.x, e.y + 5, 'timber', 3, 1.5);
     }
     // knowledge obelisks near the two ridge passes (guarded)
-    const passes = [{ x: GRID / 2 - 13, y: GRID / 2 + 13 }, { x: GRID / 2 + 13, y: GRID / 2 - 13 }];
-    for (const p of passes) plan.push({ type: 'knowledge', tx: p.x, ty: p.y, guarded: true });
+    const po = GRID * 0.135;
+    const passes = [{ x: GRID / 2 - po, y: GRID / 2 + po }, { x: GRID / 2 + po, y: GRID / 2 - po }];
+    for (const p of passes) plan.push({ type: 'knowledge', tx: Math.round(p.x), ty: Math.round(p.y), guarded: true });
     // a couple of extra timber stands mid-map
-    addCluster(GRID / 2 - 20, GRID / 2 - 6, 'timber', 3, 1.6);
-    addCluster(GRID / 2 + 20, GRID / 2 + 6, 'timber', 3, 1.6);
+    addCluster(GRID / 2 - GRID * 0.21, GRID / 2 - GRID * 0.06, 'timber', 3, 1.6);
+    addCluster(GRID / 2 + GRID * 0.21, GRID / 2 + GRID * 0.06, 'timber', 3, 1.6);
     return plan.filter(p => this.isWalkable(p.tx, p.ty));
+  }
+
+  // Monster-lair sites: deterministic per seed, parked in the neutral mid-field
+  // well away from both bases (and each other). Count scales with map size, so
+  // bigger battlefields host more world bosses. Returns [{tx, ty}].
+  lairPlan() {
+    const sites = [];
+    const bases = [this.basePlayer, this.baseEnemy, ...this.expansions];
+    const minBase = GRID * 0.22, minLair = GRID * 0.18;
+    const want = GRID >= 140 ? 4 : GRID >= 116 ? 3 : 2;
+    let s = (this.seed ^ 0x1d8e3a7b) >>> 0;
+    const rng = () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    for (let attempt = 0; attempt < want * 40 && sites.length < want; attempt++) {
+      const tx = Math.round(GRID * 0.22 + rng() * GRID * 0.56);
+      const ty = Math.round(GRID * 0.22 + rng() * GRID * 0.56);
+      if (!this.isWalkableClear(tx, ty, 2)) continue;
+      if (bases.some(b => Math.hypot(tx - b.x, ty - b.y) < minBase)) continue;
+      if (sites.some(l => Math.hypot(tx - l.tx, ty - l.ty) < minLair)) continue;
+      sites.push({ tx, ty });
+    }
+    return sites;
   }
 
   // ---- fog of war ----

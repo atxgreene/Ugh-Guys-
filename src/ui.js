@@ -9,6 +9,7 @@ const UNIT_ICONS = {
   servitor: '⛏', starmetal: '⚔', adept: '✦', skyfire: '☄', hybrid: '👹',
   thrall: '⛏', raider: '🪓', champion: '🦴', warbeast: '🐺', giant: '🗿', shaman: '💀',
   devourer: '🐲',
+  hero_nimrod: '👑', hero_fallen: '🌌', hero_og: '⚡',
 };
 const BLD_ICONS = {
   city_center: '🏛', granary: '🌾', barracks: '⚔', foundry: '⚒', temple: '🔥', watchtower: '🗼',
@@ -112,8 +113,8 @@ export class UI {
       const w = toWorld(e);
       if (e.button === 0) { panning = true; this.controls.moveCameraTo(w.x, w.z); }
       else if (e.button === 2) {
-        const sel = this.game.selection.filter(s => s.isUnit && s.owner === 0);
-        if (sel.length) { this.game.formationMove(sel, w.x, w.z, false); Sound.command(); }
+        const sel = this.game.selection.filter(s => s.isUnit && s.owner === this.game.localPlayer);
+        if (sel.length) { this.game.cmd('formation', { sel, x: w.x, z: w.z, am: false, q: e.shiftKey }); Sound.command(); }
       }
     });
     window.addEventListener('mousemove', e => {
@@ -144,14 +145,14 @@ export class UI {
     }
     // entities
     for (const b of this.game.buildings) {
-      if (b.owner !== 0 && !(b.discovered && this.game.map.fogStateAt(b.pos.x, b.pos.z) >= 1)) continue;
-      ctx.fillStyle = b.owner === 0 ? this.game.players[0].faction.colorCss : '#e03c2c';
+      if (b.owner !== this.game.localPlayer && !(b.discovered && this.game.map.fogStateAt(b.pos.x, b.pos.z) >= 1)) continue;
+      ctx.fillStyle = b.owner === this.game.localPlayer ? this.game.me.faction.colorCss : b.owner === 2 ? '#c9bd92' : '#e03c2c';
       const s = b.size * TILE * k;
       ctx.fillRect(b.pos.x * k - s / 2, b.pos.z * k - s / 2, s, s);
     }
     for (const u of this.game.units) {
-      if (u.owner !== 0 && this.game.map.fogStateAt(u.pos.x, u.pos.z) !== 2) continue;
-      ctx.fillStyle = u.owner === 0 ? '#9be86e' : u.owner === 1 ? '#ff5040' : '#c9bd92';
+      if (u.owner !== this.game.localPlayer && this.game.map.fogStateAt(u.pos.x, u.pos.z) !== 2) continue;
+      ctx.fillStyle = u.owner === this.game.localPlayer ? '#9be86e' : u.owner === 2 ? '#c9bd92' : '#ff5040';
       ctx.fillRect(u.pos.x * k - 1, u.pos.z * k - 1, 2, 2);
     }
     // pings
@@ -178,7 +179,7 @@ export class UI {
 
   // ---------- ground click marker ----------
   groundMarker(x, z, kind) {
-    const color = kind === 'attack' ? 0xff4433 : 0x66ff88;
+    const color = kind === 'attack' ? 0xff4433 : kind === 'queue' ? 0x66ccff : 0x66ff88;
     const mesh = new THREE.Mesh(
       new THREE.RingGeometry(0.3, 0.55, 16),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false })
@@ -191,7 +192,7 @@ export class UI {
 
   // ---------- top bar ----------
   drawResources() {
-    const p = this.game.players[0];
+    const p = this.game.me;
     const r = p.resources;
     let html = '';
     for (const k of ['grain', 'timber', 'bronze', 'favor', 'knowledge']) {
@@ -212,7 +213,7 @@ export class UI {
   }
 
   idleWorkers() {
-    return this.game.units.filter(u => u.owner === 0 && !u.dead && u.def.worker && u.state === 'idle');
+    return this.game.units.filter(u => u.owner === this.game.localPlayer && !u.dead && u.def.worker && u.state === 'idle');
   }
   // select the next idle worker and snap the camera to it (button + '.' hotkey)
   selectIdleWorker() {
@@ -232,7 +233,7 @@ export class UI {
     const cmds = [];
     let info = '';
     if (!sel.length) {
-      info = `<div class="sel-name">${this.game.players[0].faction.name}</div><div class="sel-desc">Select units with left-click / drag. Right-click to command.</div>`;
+      info = `<div class="sel-name">${this.game.me.faction.name}</div><div class="sel-desc">Select units with left-click / drag. Right-click to command.</div>`;
       this.buildMenuOpen = false;
     } else if (sel.length === 1) {
       const e = sel[0];
@@ -259,15 +260,15 @@ export class UI {
     this.elInfo.innerHTML = info;
 
     // commands
-    const own = sel.filter(s => s.owner === 0);
+    const own = sel.filter(s => s.owner === this.game.localPlayer);
     const units = own.filter(s => s.isUnit);
     const workers = units.filter(u => u.def.worker);
     const building = own.length === 1 && own[0].isBuilding ? own[0] : null;
-    const faction = this.game.players[0].faction;
+    const faction = this.game.me.faction;
 
     if (units.length) {
       cmds.push({ icon: '⚔', label: 'Attack-Move (F)', cls: 'cmd-act', fn: () => { this.controls.attackMoveArm = true; } });
-      cmds.push({ icon: '✋', label: 'Stop (X)', cls: 'cmd-act', fn: () => units.forEach(u => u.stop()) });
+      cmds.push({ icon: '✋', label: 'Stop (X)', cls: 'cmd-act', fn: () => this.game.cmd('stop', { sel: units }) });
       // combat stance — shared value highlighted when the whole selection agrees
       const fighters = units.filter(u => u.def.attack && !u.def.worker);
       if (fighters.length) {
@@ -278,10 +279,23 @@ export class UI {
             icon, label, cls: 'cmd-act' + (allSame(s) ? ' cmd-on' : ''),
             tip: `${label} stance — ${s === 'aggressive' ? 'hunt freely within sight'
               : s === 'defensive' ? 'engage nearby but return to position' : 'stand ground; strike only what comes in range'}`,
-            fn: () => { fighters.forEach(u => u.setStance(s)); Sound.click(); this.refreshPanel(); },
+            fn: () => { this.game.cmd('stance', { sel: fighters, s }); Sound.click(); this.refreshPanel(); },
           });
         }
       }
+    }
+    // ability button — shown when exactly one own non-worker unit with an ability is selected
+    if (units.length === 1 && !units[0].def.worker && units[0].def.ability) {
+      const u = units[0];
+      const ab = u.def.ability;
+      const ready = u.abilityCd <= 0;
+      cmds.push({
+        icon: ab.icon, label: `${ab.name} (Q)`,
+        sub: ready ? '— Ready —' : `${u.abilityCd.toFixed(1)} s`,
+        cls: 'cmd-act cmd-ability' + (ready ? ' cmd-ability-ready' : ''),
+        tip: ab.desc,
+        fn: () => { this.game.cmd('ability', { u }); Sound.click(); this.refreshPanel(); },
+      });
     }
     if (workers.length && !this.buildMenuOpen) {
       cmds.push({ icon: '🏗', label: 'Build… (B)', cls: 'cmd-act', fn: () => { this.buildMenuOpen = true; this.refreshPanel(); } });
@@ -300,6 +314,17 @@ export class UI {
       }
       cmds.push({ icon: '↩', label: 'Back (Esc)', cls: 'cmd-act', fn: () => { this.buildMenuOpen = false; this.refreshPanel(); } });
     }
+    if (building && building.def.main && building.complete) {
+      const p = this.game.me;
+      const ready = p.empowerCd <= 0;
+      cmds.push({
+        icon: '⛟', label: 'Marshal Stores (G)',
+        sub: ready ? '— Ready —' : `${Math.ceil(p.empowerCd)} s`,
+        cls: 'cmd-act cmd-ability' + (ready ? ' cmd-ability-ready' : ''),
+        tip: 'Marshal the Stores — instant burst of grain & favor and a 10 s surge of gather speed. On a cooldown; keep it up between fights for a macro edge.',
+        fn: () => { if (this.game.cmd('empower', { o: this.game.localPlayer })) Sound.click(); else Sound.error(); this.refreshPanel(); },
+      });
+    }
     if (building && building.complete) {
       for (const key of building.def.trains) {
         const def = faction.units[key];
@@ -308,16 +333,16 @@ export class UI {
           icon: UNIT_ICONS[key] || '⚔', label: def.name, sub: costStr(def.cost),
           disabled: !avail,
           tip: `${def.name} — ${costStr(def.cost)} ⌂${def.supply}${def.requires ? ` (requires ${faction.buildings[def.requires].name})` : ''}\n${def.desc}`,
-          fn: () => { if (!this.game.queueTrain(building, key)) Sound.error(); else Sound.click(); this.refreshPanel(); },
+          fn: () => { if (!this.game.cmd('train', { b: building, key })) Sound.error(); else Sound.click(); this.refreshPanel(); },
         });
       }
       for (const upKey of building.def.upgrades || []) {
         const up = UPGRADES[upKey];
-        if (this.game.players[0].upgrades.has(upKey)) continue;
+        if (this.game.me.upgrades.has(upKey)) continue;
         cmds.push({
           icon: '⬆', label: up.name, sub: costStr(up.cost),
           tip: `${up.name} — ${costStr(up.cost)}\n${up.desc}`,
-          fn: () => { if (!this.game.queueUpgrade(building, upKey)) Sound.error(); else Sound.click(); this.refreshPanel(); },
+          fn: () => { if (!this.game.cmd('upgrade', { b: building, key: upKey })) Sound.error(); else Sound.click(); this.refreshPanel(); },
         });
       }
     }
@@ -356,8 +381,8 @@ export class UI {
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
       ctx.fillRect(sx - w / 2 - 1, sy - 1, w + 2, h + 2);
       const frac = Math.max(0, e.hp / e.maxHp);
-      ctx.fillStyle = e.owner === 0 ? (frac > 0.5 ? '#7ee06a' : frac > 0.25 ? '#e0c14a' : '#e05540')
-        : e.owner === 1 ? '#e05540' : '#c9bd92';
+      ctx.fillStyle = e.owner === this.game.localPlayer ? (frac > 0.5 ? '#7ee06a' : frac > 0.25 ? '#e0c14a' : '#e05540')
+        : e.owner === 2 ? '#c9bd92' : '#e05540';
       ctx.fillRect(sx - w / 2, sy, w * frac, h);
       if (constructing) {
         ctx.fillStyle = 'rgba(120,180,255,0.9)';
@@ -424,6 +449,13 @@ export class UI {
         `<span>☩ razed <b>${s.razed}</b></span><span>🕯 lost <b>${s.lost}</b></span>` +
         `<span>⛏ raised <b>${s.trained}</b></span>`;
       document.getElementById('btn-restart').onclick = () => this.onRestart();
+      // offer the deterministic replay of the match just played
+      const dl = document.getElementById('btn-dlreplay');
+      if (dl) {
+        const has = !!this.game.rec;
+        dl.style.display = has ? 'inline-block' : 'none';
+        if (has) dl.onclick = () => this.onDownloadReplay?.();
+      }
     }, 2200);
   }
 
@@ -455,10 +487,14 @@ export class UI {
       this.refreshT = 0.25;
       this.drawResources();
       this.drawMinimap();
-      // live-refresh queue/progress text when a building is selected
+      // live-refresh queue/progress text when a building is selected,
+      // and cooldown countdown when a unit with an ability is selected
       const s = this.game.selection;
-      if (s.length === 1 && s[0].isBuilding) this.refreshPanel();
+      if (s.length === 1 && (s[0].isBuilding || (s[0].isUnit && s[0].def.ability))) this.refreshPanel();
     }
-    this.drawHealthBars();
+    // health-bar overlay is the heaviest per-frame 2D work; cap it to ~33 Hz so it
+    // costs the same on a 60/120/144 Hz display (it tracks slow-moving units fine).
+    this.hbT = (this.hbT || 0) - dt;
+    if (this.hbT <= 0) { this.hbT = 1 / 33; this.drawHealthBars(); }
   }
 }

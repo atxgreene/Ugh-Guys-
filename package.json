@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "playwright test",
-    "audit": "node tools/ttk-audit.mjs"
+    "audit": "node tools/ttk-audit.mjs",
+    "net-test": "node tools/net-sim-test.mjs",
+    "relay": "node server/relay.mjs"
   },
   "dependencies": {
     "three": "^0.165.0"

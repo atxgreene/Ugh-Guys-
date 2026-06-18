@@ -48,6 +48,9 @@ export const FACTIONS = {
         armor: 1, speed: 7, model: 'spearman', tags: ['heavy'],
         desc: 'Phalanx of the city levy. Spears against chariot and beast.',
         trainedAt: 'barracks',
+        ability: { name: 'Phalanx Brace', icon: '🛡', cooldown: 18, duration: 6, type: 'self_buff',
+          buff: { armorAdd: 2, spdMult: 0.6 },
+          desc: 'Brace spears: +2 armor & −40% speed for 6 s. Spearwall stands firm against cavalry.' },
       }),
       archer: U({
         name: 'Sling Archer', cost: { grain: 40, timber: 30 }, hp: 60, buildTime: 10,
@@ -55,6 +58,9 @@ export const FACTIONS = {
         speed: 7, model: 'archer', tags: ['light'],
         desc: 'Slingers of the outer villages. Stones fell the slow and the great.',
         trainedAt: 'barracks',
+        ability: { name: 'Aimed Shot', icon: '🎯', cooldown: 16, duration: 8, type: 'self_buff',
+          buff: { dmgMult: 2.5, firstHit: true },
+          desc: 'Channel a killing blow: next sling stone deals 2.5× damage.' },
       }),
       chariot: U({
         name: 'War Chariot', cost: { grain: 80, bronze: 70, timber: 30 }, hp: 150, buildTime: 16,
@@ -62,6 +68,9 @@ export const FACTIONS = {
         armor: 1, speed: 11, supply: 2, model: 'chariot', tags: ['mounted'], radius: 0.8,
         desc: 'Bronze-shod wheels of the king. Runs down the light of foot.',
         trainedAt: 'foundry',
+        ability: { name: 'Trample Charge', icon: '🏇', cooldown: 22, duration: 2, type: 'self_buff',
+          buff: { spdMult: 1.7, dmgMult: 2.0 },
+          desc: '+70% speed & 2× damage for 2 s. Run them down before they scatter.' },
       }),
       temple_guard: U({
         name: 'Temple Guard', cost: { grain: 80, bronze: 60, favor: 20 }, hp: 200, buildTime: 16,
@@ -69,6 +78,9 @@ export const FACTIONS = {
         armor: 3, speed: 6.5, supply: 2, model: 'guard', tags: ['heavy'],
         desc: 'Sworn wardens of the inner sanctuary. Anathema to corrupted flesh.',
         trainedAt: 'temple',
+        ability: { name: 'Sacred Ward', icon: '☩', cooldown: 30, duration: 8, type: 'aoe_friendly',
+          radius: 7, buff: { armorAdd: 2 },
+          desc: 'Consecrate the ground: all nearby allies gain +2 armor for 8 s.' },
       }),
       prophet: U({
         name: 'Prophet', cost: { grain: 100, favor: 60 }, hp: 80, buildTime: 20,
@@ -76,12 +88,25 @@ export const FACTIONS = {
         speed: 6.5, supply: 2, model: 'prophet', tags: ['light', 'divine'], sight: 17,
         desc: 'Speaks the burning word. Fire from heaven scatters the gathered host.',
         trainedAt: 'temple',
+        ability: { name: "Heaven's Wrath", icon: '✦', cooldown: 40, type: 'aoe_strike',
+          radius: 5, dmgMult: 3.0,
+          desc: 'Call down fire: 3× AoE damage to all enemies within 5 tiles of the prophet.' },
+      }),
+      hero_nimrod: U({
+        name: 'Nimrod the Priest-King', cost: { grain: 280, bronze: 160, favor: 120 }, hp: 520, buildTime: 45,
+        attack: { dmg: 30, range: 10.5, cooldown: 2.4, projectile: 'holyfire', aoe: 3.8 },
+        armor: 4, speed: 6.2, supply: 8, model: 'hero_nimrod', tags: ['heavy', 'divine'], sight: 18, radius: 0.8,
+        desc: "The first king of the world's last age. His word is law; his staff is judgment. One hero may walk with your host.",
+        trainedAt: 'city_center', requires: 'temple',
+        ability: { name: 'Judgment of Heaven', icon: '⚖', cooldown: 38, type: 'aoe_strike',
+          radius: 6, dmgMult: 4.0,
+          desc: 'The king speaks: 4× AoE holy fire in a 6-tile radius. None are spared the verdict.' },
       }),
     },
     buildings: {
       city_center: B({
         name: 'City Center', cost: { grain: 250, timber: 150 }, hp: 1300, buildTime: 50,
-        size: 4, supplyProvided: 10, trains: ['laborer'], dropoff: true, favorRate: 2,
+        size: 4, supplyProvided: 10, trains: ['laborer', 'hero_nimrod'], dropoff: true, favorRate: 2,
         model: 'city_center', main: true, sight: 16,
         desc: 'Seat of the priest-king. If it falls, the covenant is broken.',
       }),
@@ -139,6 +164,9 @@ export const FACTIONS = {
         armor: 3, speed: 6.8, supply: 2, model: 'starmetal', tags: ['heavy', 'corrupt'],
         desc: 'Clad in iron that fell burning from the sky.',
         trainedAt: 'obsidian_gate',
+        ability: { name: 'Iron Surge', icon: '⚡', cooldown: 20, duration: 6, type: 'self_buff',
+          buff: { atkCdMult: 0.55 },
+          desc: 'Star-metal awakens: attack cooldown cut by 45% for 6 s (nearly twice the strike rate).' },
       }),
       adept: U({
         name: 'Watcher Adept', cost: { grain: 60, bronze: 30, favor: 15 }, hp: 70, buildTime: 12,
@@ -146,6 +174,9 @@ export const FACTIONS = {
         speed: 7, model: 'adept', tags: ['light', 'corrupt'], sight: 16,
         desc: 'Reads the unlawful names. Burning script unbinds bronze and bone.',
         trainedAt: 'obsidian_gate',
+        ability: { name: 'Wither', icon: '𓂀', cooldown: 18, duration: 8, type: 'target_debuff',
+          damageMult: 1.8,
+          desc: 'Inscribe the curse of unmaking: target takes 1.8× damage from all sources for 8 s.' },
       }),
       skyfire: U({
         name: 'Skyfire Caster', cost: { grain: 100, bronze: 60, knowledge: 25 }, hp: 90, buildTime: 22,
@@ -153,6 +184,8 @@ export const FACTIONS = {
         speed: 6, supply: 3, model: 'skyfire', tags: ['light', 'corrupt'], sight: 17,
         desc: 'Calls down the falling star. The gathered host is made ash.',
         trainedAt: 'archive', requires: 'archive',
+        ability: { name: 'Nova Cascade', icon: '💫', cooldown: 35, type: 'multi_shot', count: 3,
+          desc: 'Unleash the archive: simultaneously fires skyfire bolts at up to 3 nearby enemies.' },
       }),
       hybrid: U({
         name: 'Nephilim Hybrid', cost: { grain: 140, bronze: 90, knowledge: 35 }, hp: 380, buildTime: 26,
@@ -160,12 +193,25 @@ export const FACTIONS = {
         armor: 3, speed: 7.5, supply: 4, model: 'hybrid', tags: ['massive', 'corrupt'], radius: 0.95,
         desc: 'Born of two worlds in the pits. Walls mean nothing to it.',
         trainedAt: 'hybrid_pit',
+        ability: { name: 'Rend', icon: '💀', cooldown: 22, duration: 8, type: 'self_buff',
+          buff: { dmgMult: 3.0, firstHit: true },
+          desc: 'Tear into flesh and stone: next attack deals 3× damage.' },
+      }),
+      hero_fallen: U({
+        name: 'The Fallen Watcher', cost: { grain: 260, bronze: 160, knowledge: 100 }, hp: 740, buildTime: 50,
+        attack: { dmg: 38, range: 2.6, cooldown: 1.15, bonus: { structure: 2.0, divine: 2.4 } },
+        armor: 5, speed: 7.2, supply: 8, model: 'hero_fallen', tags: ['massive', 'corrupt'], sight: 18, radius: 1.0,
+        desc: 'The Watcher who did not ascend. Old beyond memory, armor wrought from fallen stars. One hero walks with the Remnant.',
+        trainedAt: 'fallen_spire', requires: 'hybrid_pit',
+        ability: { name: 'Void Rend', icon: '🌌', cooldown: 40, type: 'aoe_strike',
+          radius: 5.5, dmgMult: 3.5, stunDur: 3.0,
+          desc: 'Tear the veil: 3.5× corruption damage and 3 s stun in a 5.5-tile radius.' },
       }),
     },
     buildings: {
       fallen_spire: B({
         name: 'Fallen Spire', cost: { grain: 250, timber: 150 }, hp: 1300, buildTime: 50,
-        size: 4, supplyProvided: 10, trains: ['servitor'], dropoff: true, favorRate: 3,
+        size: 4, supplyProvided: 10, trains: ['servitor', 'hero_fallen'], dropoff: true, favorRate: 3,
         model: 'spire', main: true, sight: 17,
         desc: 'Where the Watcher descended and did not return. The remnant gathers beneath it.',
       }),
@@ -222,6 +268,9 @@ export const FACTIONS = {
         speed: 9, supply: 2, model: 'raider', tags: ['light'],
         desc: 'Fast, half-giant, and hungry. Strikes the fields before the alarm sounds.',
         trainedAt: 'war_lodge',
+        ability: { name: 'Blood Rage', icon: '🔥', cooldown: 22, duration: 8, type: 'self_buff',
+          buff: { spdMult: 1.6, atkCdMult: 0.6 },
+          desc: 'Half-giant fury: +60% speed & +40% attack speed for 8 s.' },
       }),
       champion: U({
         name: 'Bone Club Champion', cost: { grain: 90, bronze: 60 }, hp: 260, buildTime: 16,
@@ -229,6 +278,9 @@ export const FACTIONS = {
         armor: 2, speed: 6.8, supply: 3, model: 'champion', tags: ['heavy'], radius: 0.75,
         desc: 'Carries the thighbone of his grandsire. It has opinions about your shield wall.',
         trainedAt: 'war_lodge',
+        ability: { name: 'Savage Blow', icon: '💥', cooldown: 24, duration: 8, type: 'self_buff',
+          buff: { dmgMult: 3.0, firstHit: true, stunDur: 2.0 },
+          desc: 'Thighbone of the grandsire swings true: next strike deals 3× damage and stuns for 2 s.' },
       }),
       warbeast: U({
         name: 'War Beast', cost: { grain: 100, favor: 15 }, hp: 180, buildTime: 14,
@@ -236,6 +288,9 @@ export const FACTIONS = {
         speed: 10.5, supply: 2, model: 'warbeast', tags: ['beast'], radius: 0.8,
         desc: 'Bred in the dens from things that should have drowned long ago.',
         trainedAt: 'beast_den',
+        ability: { name: 'Pack Howl', icon: '🐺', cooldown: 24, duration: 6, type: 'aoe_friendly',
+          radius: 8, buff: { spdMult: 1.4, dmgMult: 1.3 },
+          desc: 'The pack answers: nearby allied beasts gain +40% speed & +30% damage for 6 s.' },
       }),
       giant: U({
         name: 'Mountain Giant', cost: { grain: 200, bronze: 100, knowledge: 30 }, hp: 600, buildTime: 32,
@@ -243,6 +298,9 @@ export const FACTIONS = {
         armor: 4, speed: 5.5, supply: 6, model: 'giant', tags: ['massive'], radius: 1.4,
         desc: 'Older than the cities he ends. Gates are a suggestion.',
         trainedAt: 'beast_den', requires: 'totem',
+        ability: { name: 'Ground Slam', icon: '🌊', cooldown: 35, type: 'aoe_strike',
+          radius: 4.5, dmgMult: 1.5, stunDur: 2.0,
+          desc: 'Shake the earth: 1.5× damage and 2 s stun to all enemies within 4.5 tiles.' },
       }),
       shaman: U({
         name: 'Clan Shaman', cost: { grain: 80, favor: 40 }, hp: 90, buildTime: 18,
@@ -250,12 +308,25 @@ export const FACTIONS = {
         speed: 6.5, supply: 2, model: 'shaman', tags: ['light'], sight: 16,
         desc: 'Burns the marrow of giants and speaks with what answers.',
         trainedAt: 'totem',
+        ability: { name: "Ancestor's Fury", icon: '☠', cooldown: 32, duration: 10, type: 'aoe_friendly',
+          radius: 10, buff: { dmgMult: 1.3 },
+          desc: "The drowned world's echo: nearby allied units gain +30% damage for 10 s." },
+      }),
+      hero_og: U({
+        name: 'Og, Last of the Giants', cost: { grain: 320, bronze: 160, knowledge: 60 }, hp: 880, buildTime: 55,
+        attack: { dmg: 58, range: 3.0, cooldown: 1.7, bonus: { structure: 3.2, heavy: 2.2, light: 1.8 } },
+        armor: 5, speed: 5.8, supply: 8, model: 'hero_og', tags: ['massive'], sight: 16, radius: 1.6,
+        desc: 'Born when the first men were young. The world trembles at each step. Og walks last into battle and last out of legend. One hero walks with the Clans.',
+        trainedAt: 'clan_hearth', requires: 'beast_den',
+        ability: { name: "World-Ender's Blow", icon: '💀', cooldown: 42, type: 'aoe_strike',
+          radius: 5.5, dmgMult: 5.0, stunDur: 2.5,
+          desc: 'Og brings down his fist. 5× damage and 2.5 s stun in a 5.5-tile radius. Gates remember it.' },
       }),
     },
     buildings: {
       clan_hearth: B({
         name: 'Clan Hearth', cost: { grain: 250, timber: 150 }, hp: 1500, buildTime: 50,
-        size: 4, supplyProvided: 10, trains: ['thrall'], dropoff: true, favorRate: 2,
+        size: 4, supplyProvided: 10, trains: ['thrall', 'hero_og'], dropoff: true, favorRate: 2,
         model: 'hearth', main: true, sight: 15,
         desc: 'The fire that may not die. While it burns, the clans are one.',
       }),
@@ -310,11 +381,48 @@ export const UPGRADES = {
 // Neutral guardians of forbidden knowledge obelisks.
 export const NEUTRALS = {
   devourer: U({
-    name: 'Devourer', hp: 280, armor: 2,
-    attack: { dmg: 20, range: 1.8, cooldown: 1.2 },
+    name: 'Devourer', hp: 360, armor: 3,
+    attack: { dmg: 24, range: 1.8, cooldown: 1.2 },
     speed: 7.5, model: 'devourer', tags: ['beast', 'massive'], radius: 0.9,
-    aggroRange: 9, sight: 10,
+    aggroRange: 10, sight: 11,
     desc: 'It was left to guard the obelisk. It does not remember by whom.',
+  }),
+};
+
+// ---- World bosses ----
+// Monstrous neutrals that lair in the mid-field guarding a trove. They are meant
+// to break an unprepared army: huge HP, heavy blows, and a signature ability they
+// unleash on cooldown the moment they have prey. Felling one drops a `bounty`.
+export const MONSTERS = {
+  leviathan: U({
+    name: 'Leviathan, the Flood-Wyrm', boss: true, hp: 1800, armor: 4, supply: 0,
+    attack: { dmg: 34, range: 11, cooldown: 2.2, projectile: 'ember', aoe: 3.0 },
+    speed: 6.5, model: 'boss_leviathan', tags: ['beast', 'massive', 'boss'],
+    radius: 1.3, aggroRange: 14, sight: 18, leashRange: 40,
+    ability: { name: 'Deluge', icon: '🌊', cooldown: 14, type: 'aoe_strike', radius: 6.2, dmgMult: 1.9, stunDur: 1.0, windup: 1.1,
+      desc: 'Calls down the waters of the deep — an engulfing wave that batters and staggers everything near. Telegraphed: pull out of the ring to dodge.' },
+    bounty: { knowledge: 280, bronze: 200 },
+    desc: 'A serpent of the drowned world, scaled in basalt and brine. It remembers the Flood, and means to repeat it.',
+  }),
+  nephil_titan: U({
+    name: 'A Nephilim Titan', boss: true, hp: 2600, armor: 6, supply: 0,
+    attack: { dmg: 50, range: 2.8, cooldown: 2.4, bonus: { structure: 2.0, light: 1.3 } },
+    speed: 5.6, model: 'boss_titan', tags: ['massive', 'boss'],
+    radius: 1.55, aggroRange: 13, sight: 16, leashRange: 42,
+    ability: { name: 'Worldbreaker Slam', icon: '💥', cooldown: 12, type: 'aoe_strike', radius: 6.6, dmgMult: 2.2, stunDur: 2.0, windup: 1.35,
+      desc: 'Brings both fists down like falling mountains — a shockwave that stuns and crushes. Telegraphed: clear the ring before it lands.' },
+    bounty: { knowledge: 350, grain: 250, favor: 100 },
+    desc: 'One of the giants of old, taller than the gatehouse, older than the kingdom. The ground keeps its footprints.',
+  }),
+  watcher_sentinel: U({
+    name: 'Sentinel of the Watchers', boss: true, hp: 1550, armor: 5, supply: 0,
+    attack: { dmg: 28, range: 13, cooldown: 1.7, projectile: 'sigil' },
+    speed: 6.0, model: 'boss_sentinel', tags: ['massive', 'corrupt', 'boss'],
+    radius: 1.15, aggroRange: 16, sight: 20, leashRange: 38,
+    ability: { name: 'Sigil Barrage', icon: '🔯', cooldown: 13, type: 'multi_shot', count: 5,
+      desc: 'Looses a fan of searing glyph-bolts at everything in range at once.' },
+    bounty: { knowledge: 320, favor: 220 },
+    desc: 'A construct the Watchers left behind — all geometry and judgement, still enforcing a law no one living recalls.',
   }),
 };
 
@@ -373,6 +481,9 @@ export const FIELDS_OF_EVIL = {
 // owner-2 (neutral) lookup tables used when reconstructing a saved game
 export const NEUTRAL_UNIT_DEFS = {
   devourer: NEUTRALS.devourer,
+  leviathan: MONSTERS.leviathan,
+  nephil_titan: MONSTERS.nephil_titan,
+  watcher_sentinel: MONSTERS.watcher_sentinel,
   landonian: FIELDS_OF_EVIL.units.landonian,
   boydonian: FIELDS_OF_EVIL.units.boydonian,
   warwagon: FIELDS_OF_EVIL.units.warwagon,
@@ -383,12 +494,21 @@ export const NEUTRAL_UNIT_DEFS = {
 export const NEUTRAL_BUILDING_DEFS = { house_of_greene: FIELDS_OF_EVIL.building };
 
 
+// `ideal` = workers a node feeds at full efficiency; beyond it each extra worker's
+// haul is scaled down (diminishing returns), so spreading laborers across nodes and
+// expanding to fresh ones is a real macro decision rather than blob-on-one-pile.
 export const RESOURCE_NODES = {
-  grain:     { name: 'Wild Grain Field', amount: 1500, model: 'field',   carry: 10, gatherTime: 2.2 },
-  timber:    { name: 'Cedar Stand',      amount: 1200, model: 'tree',    carry: 10, gatherTime: 2.4 },
-  bronze:    { name: 'Bronze Lode',      amount: 1400, model: 'ore',     carry: 10, gatherTime: 2.6 },
-  knowledge: { name: 'Graven Obelisk',   amount: 500,  model: 'obelisk', carry: 5,  gatherTime: 3.5 },
+  grain:     { name: 'Wild Grain Field', amount: 1500, model: 'field',   carry: 10, gatherTime: 2.2, ideal: 3 },
+  timber:    { name: 'Cedar Stand',      amount: 1200, model: 'tree',    carry: 10, gatherTime: 2.4, ideal: 3 },
+  bronze:    { name: 'Bronze Lode',      amount: 1400, model: 'ore',     carry: 10, gatherTime: 2.6, ideal: 3 },
+  knowledge: { name: 'Graven Obelisk',   amount: 500,  model: 'obelisk', carry: 5,  gatherTime: 3.5, ideal: 2 },
 };
+
+// Active economy ability — every faction's main hall can "Marshal the Stores" on a
+// cooldown (hotkey G): an instant burst of soft resources plus a short surge of
+// gather speed. Rewards attention the way Inject/MULE/Chrono do — a macro rhythm
+// you keep up between fights. Free but re-cast, so the skill is remembering it.
+export const EMPOWER = { cooldown: 50, burst: { favor: 35, grain: 60 }, gatherBoost: 1.35, boostDur: 10 };
 
 export const SUPPLY_CAP = 80;
 export const START_RES = { grain: 300, timber: 200, bronze: 100, favor: 0, knowledge: 0 };

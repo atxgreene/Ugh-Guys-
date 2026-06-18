@@ -604,6 +604,88 @@ const unitBuilders = {
     grp.add(sph(0.07, g, 0.32, 1.52, 0.08));                    // ember in the skull
     return grp;
   },
+  // ---- Hero Units (one per faction, trainable from the main building late-game) ----
+  hero_nimrod(b, g, a) {                                         // Nimrod the Priest-King — grand sovereign
+    const grp = new THREE.Group();
+    const GOLD = mat(0xc8972a, { metal: 0.7, rough: 0.3 });
+    grp.add(cone(0.44, 1.15, mat(LINEN), 8, 0, 0.58, 0));         // outer ceremonial robe
+    grp.add(cone(0.32, 0.9, b, 8, 0, 0.62, 0.02));                // inner mantle (faction)
+    grp.add(box(0.68, 0.14, 0.3, GOLD, 0, 1.02, 0));              // golden pectoral breastplate
+    grp.add(box(0.12, 0.28, 0.08, a, 0, 0.86, 0.18));             // faction breastcloth
+    grp.add(sph(0.17, mat(SKIN), 0, 1.18, 0.02));                 // head
+    grp.add(cyl(0.2, 0.2, 0.06, GOLD, 12, 0, 1.32, 0));           // crown base ring
+    for (let i = 0; i < 5; i++) {                                  // five crown points
+      const a2 = (i / 5) * Math.PI * 2;
+      grp.add(cone(0.05, 0.28, GOLD, 5, Math.sin(a2) * 0.18, 1.46, Math.cos(a2) * 0.18));
+    }
+    grp.add(sph(0.07, g, 0, 1.58, 0));                            // crown apex glow
+    grp.add(torus(0.28, 0.025, g, 0, 1.55, 0, Math.PI / 2, 0, 0)); // larger halo
+    limb(grp, mat(LINEN), -0.28, 0.88, 0.05, 0.54, 0.07, 0.5);   // staff hand
+    limb(grp, mat(LINEN), 0.28, 0.9, 0.05, 0.5, 0.07, -0.9);     // raised blessing hand
+    grp.add(cyl(0.04, 0.05, 1.8, GOLD, 6, -0.4, 0.8, 0));         // golden staff shaft
+    grp.add(sph(0.14, g, -0.4, 1.82, 0));                         // divine orb atop staff
+    grp.add(sph(0.1, g, -0.4, 2.06, 0));                          // second floating orb
+    grp.add(sph(0.07, g, -0.28, 2.26, 0.1));                      // third orbiting point
+    grp.add(sph(0.11, g, 0.4, 1.46, 0.06));                       // flame hovering over blessed hand
+    return grp;
+  },
+  hero_fallen(b, g, a, g2) {                                      // The Fallen Watcher — corrupted angel
+    const grp = new THREE.Group();
+    const OBS = mat(0x18181e, { metal: 0.4, rough: 0.6 });
+    grp.add(box(0.58, 0.88, 0.48, a, 0, 0.82, 0));                // star-metal torso plate
+    grp.add(box(0.74, 0.2, 0.58, a, 0, 1.26, 0));                 // gorget
+    grp.add(box(0.28, 1.0, 0.04, g2 || g, 0, 0.82, 0.26));        // chest glyph seam (magenta)
+    grp.add(box(0.32, 0.3, 0.32, a, 0, 1.44, 0));                 // angular helm
+    grp.add(box(0.26, 0.06, 0.08, g2 || g, 0, 1.46, 0.18));       // visor-slit glow
+    grp.add(sph(0.08, g2 || g, -0.1, 1.52, 0.16));                // left eye glow
+    grp.add(sph(0.08, g2 || g, 0.1, 1.52, 0.16));                 // right eye glow
+    grp.add(cone(0.38, 0.38, OBS, 6, 0, 0.46, 0));                // dark under-skirt
+    limb(grp, mat(DARKER), 0.2, 0.42, 0, 0.4, 0.1);
+    limb(grp, mat(DARKER), -0.2, 0.42, 0, 0.4, 0.1);
+    limb(grp, a, -0.36, 1.0, 0.06, 0.52, 0.09, 0.3);             // armored arms
+    limb(grp, a, 0.36, 1.02, 0.06, 0.52, 0.09, -0.3);
+    // swept-back obsidian wings (two wide flat panels)
+    grp.add(box(0.08, 1.3, 0.7, OBS, -0.7, 1.4, -0.28, 0, 0, 0.45));
+    grp.add(box(0.08, 1.3, 0.7, OBS, 0.7, 1.4, -0.28, 0, 0, -0.45));
+    grp.add(box(0.05, 0.7, 0.4, OBS, -1.2, 0.9, -0.44, 0, 0, 0.6));
+    grp.add(box(0.05, 0.7, 0.4, OBS, 1.2, 0.9, -0.44, 0, 0, -0.6));
+    // forbidden blade held before the chest
+    grp.add(box(0.18, 1.7, 0.06, mat(0x6a7080, { metal: 0.8, rough: 0.2 }), 0, 0.9, 0.32));
+    grp.add(box(0.06, 1.6, 0.02, g2 || g, 0, 0.9, 0.35));        // blade glow seam
+    grp.add(box(0.36, 0.1, 0.08, a, 0, 0.26, 0.32));              // crossguard
+    return grp;
+  },
+  hero_og(b, g) {                                                  // Og, Last of the Giants — ancient titan
+    const grp = new THREE.Group();
+    const WAR = mat(0x1a1a1e, { rough: 0.9 });
+    limb(grp, mat(HIDE), -0.65, 1.2, 0, 1.3, 0.34);               // massive legs
+    limb(grp, mat(HIDE), 0.65, 1.2, 0, 1.3, 0.34);
+    grp.add(box(0.7, 0.5, 0.8, mat(LEATHER), 0, 0.55, 0));        // loin-wrap
+    grp.add(box(1.7, 1.5, 1.0, mat(HIDE), 0, 2.0, 0));            // vast torso
+    grp.add(box(2.2, 0.55, 1.15, mat(HIDE), 0, 2.8, 0));          // shoulders
+    // war-paint streaks across chest (dark bars)
+    grp.add(box(1.4, 0.1, 0.06, WAR, 0, 2.4, 0.52)); grp.add(box(1.2, 0.1, 0.06, WAR, 0, 2.2, 0.52));
+    grp.add(prim(new THREE.DodecahedronGeometry(0.6), mat(0x3e3c3a), -1.15, 2.95, 0)); // boulder pauldrons
+    grp.add(prim(new THREE.DodecahedronGeometry(0.6), mat(0x3e3c3a), 1.15, 2.95, 0));
+    grp.add(sph(0.5, mat(SKIN), 0.18, 3.4, 0.06));                // massive head
+    grp.add(box(0.72, 0.14, 0.56, mat(BONE), 0.18, 3.62, 0));     // bone brow
+    grp.add(sph(0.1, g, 0.02, 3.48, 0.38)); grp.add(sph(0.1, g, 0.36, 3.48, 0.38)); // eyes
+    // bone crown: circlet + three skull-spikes
+    grp.add(cyl(0.52, 0.52, 0.1, mat(BONE), 10, 0.18, 3.72, 0));  // crown band
+    grp.add(sph(0.18, mat(BONE), 0.18, 3.92, 0.46));
+    grp.add(sph(0.18, mat(BONE), -0.14, 3.92, -0.38));
+    grp.add(sph(0.18, mat(BONE), 0.52, 3.9, -0.16));
+    grp.add(sph(0.08, g, 0.18, 3.96, 0.46)); grp.add(sph(0.08, g, -0.14, 3.96, -0.38)); // skull eye-glows
+    grp.add(box(0.95, 1.0, 0.12, g, 0, 2.18, 0.52));              // chest rune-slab (glow)
+    grp.add(torus(0.32, 0.05, mat(DARKER), 0, 2.18, 0.56, 0, 0, 0));
+    limb(grp, mat(HIDE), -1.45, 2.7, 0, 1.6, 0.35, 0.25);         // arms
+    limb(grp, mat(HIDE), 1.45, 2.7, 0, 1.6, 0.36, -0.2);
+    // ancient chain-flail: shaft + boulder-head + chain links
+    grp.add(cyl(0.2, 0.4, 2.4, mat(WOOD), 6, 1.7, 1.5, 0.42, 0.5));
+    grp.add(prim(new THREE.DodecahedronGeometry(0.58), mat(0x2c3624), 2.3, 2.55, 0.7)); // weapon head
+    grp.add(sph(0.12, mat(BONE), 2.4, 3.1, 0.72)); grp.add(sph(0.1, mat(BONE), 2.6, 2.7, 0.82));
+    return grp;
+  },
   devourer(b, g) {                                                // neutral guardian beast — hexapod maw
     const grp = new THREE.Group();
     grp.add(box(0.7, 0.5, 1.2, mat(0x3a3030), 0, 0.58, 0));      // low body
@@ -624,6 +706,84 @@ const unitBuilders = {
     });
     grp.add(cyl(0.12, 0.02, 0.9, mat(0x3a3030), 4, 0, 0.6, -0.9, -0.5)); // tail
     grp.add(cone(0.08, 0.2, mat(BONE), 4, 0, 0.75, -1.3, -1.2));         // tail barb
+    return grp;
+  },
+
+  // ---- world bosses (rendered at boss scale ~2.6x) ----
+  boss_leviathan(b, g) {                                  // serpent of the drowned world
+    const grp = new THREE.Group();
+    const hide = mat(0x223038, { rough: 0.6, metal: 0.2 });
+    // rearing serpentine body — stacked segments curving up to the head
+    const seg = [[0, 0.4, -1.4, 0.55], [0, 0.7, -0.9, 0.6], [0, 1.05, -0.4, 0.62],
+                 [0, 1.4, 0.05, 0.58], [0, 1.7, 0.5, 0.5]];
+    for (const [x, y, z, r] of seg) grp.add(sph(r, hide, x, y, z));
+    grp.add(box(0.7, 0.55, 0.9, hide, 0, 1.85, 0.95));    // head block
+    grp.add(box(0.66, 0.2, 0.5, mat(DARKER), 0, 1.66, 1.35)); // lower jaw
+    grp.add(box(0.66, 0.22, 0.5, hide, 0, 2.02, 1.38));   // upper jaw
+    for (let i = 0; i < 5; i++) {                          // maw fangs
+      grp.add(cone(0.06, 0.22, mat(BONE), 4, -0.24 + i * 0.12, 1.74, 1.5, Math.PI));
+      grp.add(cone(0.06, 0.22, mat(BONE), 4, -0.24 + i * 0.12, 1.96, 1.5));
+    }
+    grp.add(box(0.5, 0.16, 0.16, g, 0, 1.84, 1.5));        // throat-glow
+    grp.add(sph(0.1, g, -0.22, 2.05, 1.2)); grp.add(sph(0.1, g, 0.22, 2.05, 1.2)); // eyes
+    // crest fins along the spine + flank fins
+    for (let i = 0; i < 5; i++) {
+      const z = -1.4 + i * 0.45;
+      grp.add(cone(0.14, 0.6 - i * 0.04, glowMat(0x2f7f8f, 0.5), 3, 0, 0.5 + i * 0.32, z, 0, 0, 0));
+    }
+    [[-1, 0.6], [1, 0.6]].forEach(([sx, y]) =>
+      grp.add(box(0.06, 0.5, 0.8, glowMat(0x2f7f8f, 0.4), sx * 0.6, y, -0.6, 0, 0, sx * 0.5)));
+    grp.add(sph(0.4, hide, 0, 0.3, -1.8)); grp.add(cone(0.16, 0.5, mat(BONE), 4, 0, 0.4, -2.2, -1.4)); // tail
+    return grp;
+  },
+
+  boss_titan(b, g) {                                       // Nephilim giant
+    const grp = new THREE.Group();
+    const flesh = mat(0x6a5240, { rough: 0.9 });
+    const wrap = mat(0x3a3026);
+    grp.add(box(1.5, 1.6, 0.95, flesh, 0, 2.2, 0));        // huge torso
+    grp.add(box(1.7, 0.5, 1.05, wrap, 0, 1.45, 0));        // gut wrap
+    grp.add(box(1.7, 0.4, 1.1, mat(DARK), 0, 3.0, 0));     // shoulder yoke
+    grp.add(box(0.55, 0.6, 0.55, flesh, 0, 3.55, 0.05));   // small head, hunched
+    grp.add(box(0.6, 0.18, 0.6, mat(BONE), 0, 3.9, 0));    // bone crown
+    for (let i = 0; i < 3; i++) grp.add(cone(0.08, 0.3, mat(BONE), 4, -0.2 + i * 0.2, 4.0, 0));
+    grp.add(sph(0.08, glowMat(0xff5530, 1.2), -0.16, 3.6, 0.32)); // eyes
+    grp.add(sph(0.08, glowMat(0xff5530, 1.2), 0.16, 3.6, 0.32));
+    // massive arms ending in boulder fists
+    [[-1, 1], [1, -1]].forEach(([s]) => {
+      grp.add(cyl(0.34, 0.3, 1.5, flesh, 5, s * 1.0, 2.5, 0, 0, 0, s * 0.25));   // upper arm
+      grp.add(cyl(0.3, 0.26, 1.4, flesh, 5, s * 1.35, 1.4, 0.1, s * 0.2, 0, s * 0.1)); // forearm
+      grp.add(sph(0.45, mat(0x4a4036), s * 1.5, 0.65, 0.18));                     // fist
+      grp.add(prim(new THREE.DodecahedronGeometry(0.34), mat(DARKER), s * 1.5, 0.65, 0.4)); // knuckle rock
+    });
+    // tree-trunk legs
+    [[-0.45], [0.45]].forEach(([x]) => {
+      grp.add(cyl(0.4, 0.34, 1.4, flesh, 5, x, 0.7, 0));
+      grp.add(box(0.55, 0.3, 0.8, mat(DARK), x, 0.15, 0.1));   // foot
+    });
+    grp.add(box(1.6, 0.2, 0.2, g, 0, 2.4, 0.5));            // glowing girdle sigil
+    return grp;
+  },
+
+  boss_sentinel(b, g) {                                    // Watcher construct, hovering
+    const grp = new THREE.Group();
+    const stone = mat(0x2c2e3a, { rough: 0.5, metal: 0.3 });
+    // floating geometric core
+    grp.add(prim(new THREE.OctahedronGeometry(0.95), stone, 0, 2.0, 0));
+    grp.add(prim(new THREE.OctahedronGeometry(0.45), glowMat(0xb07fff, 1.4), 0, 2.0, 0)); // inner eye
+    // stacked rune rings orbiting the core
+    grp.add(torus(1.3, 0.09, glowMat(0x6f8cff, 0.7), 0, 2.0, 0, Math.PI / 2, 0, 0));
+    grp.add(torus(1.1, 0.07, glowMat(0xb07fff, 0.6), 0, 2.0, 0, 0.5, 0.6, 0));
+    grp.add(torus(0.9, 0.06, glowMat(0x6f8cff, 0.6), 0, 2.0, 0, -0.5, -0.6, 0));
+    // crown of shards above, pendant shards below
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      grp.add(box(0.12, 0.6, 0.12, stone, Math.cos(a) * 0.7, 3.0, Math.sin(a) * 0.7, 0, a, 0.2));
+      grp.add(prim(new THREE.OctahedronGeometry(0.16), glowMat(0xb07fff, 1.0),
+        Math.cos(a) * 1.0, 0.9, Math.sin(a) * 1.0));
+    }
+    grp.add(cone(0.5, 1.0, stone, 6, 0, 0.6, 0, Math.PI)); // tapering base spire
+    grp.add(box(0.5, 0.16, 0.5, g, 0, 3.35, 0));           // apex sigil
     return grp;
   },
 };
@@ -1096,7 +1256,8 @@ export function buildUnitMesh(modelKey, color, glow, accent, glow2) {
   if (!template) {
     const { b, g, a, g2 } = getFactionMats(color, glow, accent, glow2);
     template = (unitBuilders[modelKey] || unitBuilders.worker)(b, g, a, g2);
-    template.scale.setScalar(1.35); // readability at RTS camera distance
+    const scale = modelKey.startsWith('boss_') ? 2.6 : modelKey.startsWith('hero_') ? 1.9 : 1.35;
+    template.scale.setScalar(scale);
     template.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
     unitTemplates.set(key, template);
   }

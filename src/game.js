@@ -5,16 +5,19 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { GameMap, BIOMES, GRID, TILE, WORLD } from './terrain.js';
+import { GameMap, BIOMES, GRID, TILE, WORLD, MAP_SIZES, setMapSize } from './terrain.js';
 import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
-import { FACTIONS, UPGRADES, NEUTRALS, RESOURCE_NODES, START_RES, SUPPLY_CAP,
-  FIELDS_OF_EVIL, NEUTRAL_UNIT_DEFS, NEUTRAL_BUILDING_DEFS } from './data.js';
+import { FACTIONS, UPGRADES, NEUTRALS, MONSTERS, RESOURCE_NODES, START_RES, SUPPLY_CAP,
+  FIELDS_OF_EVIL, NEUTRAL_UNIT_DEFS, NEUTRAL_BUILDING_DEFS, EMPOWER } from './data.js';
+import { makeRng } from './rng.js';
 import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats, buildScaffold, buildFireCluster, buildDoodad } from './models.js';
 import { waterNormalMap } from './textures.js';
 import { ParticlePool } from './fx.js';
 import { Sound } from './audio.js';
 import { Settings } from './settings.js';
 
+// Entity ids must be deterministic per match (a replay reconstructs the same id
+// space), so this counter is reset at the start of every Game construction.
 let nextId = 1;
 
 const NEUTRAL_COLOR = 0x808078, NEUTRAL_GLOW = 0xc2b89a;
@@ -68,6 +71,42 @@ const TIME_PRESETS = {
            skyTop: '#10141e', skyHorizon: '#3a4150', skyGround: '#0c0e14', exposure: 1.5, storm: 1.0, lightning: true },
 };
 
+// ---- replay command (de)serialization: entities ↔ stable ids ----
+const _ids = a => (a || []).map(e => e.id);
+const _id = e => (e ? e.id : null);
+function serCmd(name, p) {
+  switch (name) {
+    case 'right':     return { sel: _ids(p.sel), x: p.x, z: p.z, ent: _id(p.ent), q: !!p.q };
+    case 'formation': return { sel: _ids(p.sel), x: p.x, z: p.z, am: !!p.am, q: !!p.q };
+    case 'patrol':    return { sel: _ids(p.sel), x: p.x, z: p.z, q: !!p.q };
+    case 'stop':      return { sel: _ids(p.sel) };
+    case 'stance':    return { sel: _ids(p.sel), s: p.s };
+    case 'ability':   return { u: _id(p.u) };
+    case 'train':     return { b: _id(p.b), key: p.key };
+    case 'upgrade':   return { b: _id(p.b), key: p.key };
+    case 'build':     return { o: p.o, key: p.key, tx: p.tx, ty: p.ty, w: _ids(p.w) };
+    case 'empower':   return { o: p.o };
+  }
+  return {};
+}
+function deserCmd(name, s, map) {
+  const e = id => (id == null ? null : map.get(id) || null);
+  const es = arr => (arr || []).map(id => map.get(id)).filter(Boolean);
+  switch (name) {
+    case 'right':     return { sel: es(s.sel), x: s.x, z: s.z, ent: e(s.ent), q: s.q };
+    case 'formation': return { sel: es(s.sel), x: s.x, z: s.z, am: s.am, q: s.q };
+    case 'patrol':    return { sel: es(s.sel), x: s.x, z: s.z, q: s.q };
+    case 'stop':      return { sel: es(s.sel) };
+    case 'stance':    return { sel: es(s.sel), s: s.s };
+    case 'ability':   return { u: e(s.u) };
+    case 'train':     return { b: e(s.b), key: s.key };
+    case 'upgrade':   return { b: e(s.b), key: s.key };
+    case 'build':     return { o: s.o, key: s.key, tx: s.tx, ty: s.ty, w: es(s.w) };
+    case 'empower':   return { o: s.o };
+  }
+  return {};
+}
+
 export class Entity {
   constructor(game, owner, def, key, x, z) {
     this.id = nextId++;
@@ -107,9 +146,9 @@ export class Unit extends Entity {
     this.gatherNode = null; this.carry = 0; this.carryType = null;
     this.buildSite = null;
     this.cooldown = 0;
-    this.scanT = Math.random() * 0.3;
-    this.animT = Math.random() * 10;
-    this.facing = Math.random() * Math.PI * 2;
+    this.scanT = game.rand() * 0.3;       // sim-critical (scan cadence) → seeded
+    this.animT = Math.random() * 10;       // cosmetic
+    this.facing = Math.random() * Math.PI * 2;  // cosmetic (smoothly corrected on first order)
     this.facingTarget = this.facing;
     this.clearance = clearanceFor(def.radius || 0.6);
     this.stuckT = 0;           // time spent making no progress while moving
@@ -118,6 +157,14 @@ export class Unit extends Entity {
     this.leash = null;         // neutral guard post
     this.stance = 'aggressive'; // 'aggressive' | 'defensive' | 'hold'
     this.anchor = null;         // hold/defensive return point
+    this.orderQueue = [];       // shift-queued waypoints/commands (FIFO)
+    this.patrolA = null; this.patrolB = null;  // patrol endpoints
+    this.abilityCd = 0;         // seconds until ability is ready again
+    this.abilityActiveDur = 0;  // seconds remaining on an active self-buff
+    this.abilityBuff = null;    // { dmgMult?, armorAdd?, spdMult?, atkCdMult?, firstHit?, stunDur? }
+    this.abilityDebuffDur = 0;  // seconds remaining on an incoming damage debuff
+    this.abilityDebuffMult = 1; // incoming damage multiplier while debuffed
+    this.stunDur = 0;           // seconds remaining of stun (can't attack)
     const f = owner === 2 ? { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW } : game.players[owner].faction;
     this.mesh = buildUnitMesh(def.model, f.color, f.glow, f.accent, f.glow2);
     this.mesh.position.copy(this.pos);
@@ -125,8 +172,15 @@ export class Unit extends Entity {
     game.scene.add(this.mesh);
   }
 
-  effDmg(base) { return Math.round(base * (this.owner <= 1 ? this.player.dmgMult : 1)); }
-  effArmor() { return this.def.armor + (this.owner <= 1 ? this.player.armorAdd : 0); }
+  effDmg(base) {
+    let mult = this.owner <= 1 ? this.player.dmgMult : 1;
+    if (this.abilityBuff?.dmgMult) mult *= this.abilityBuff.dmgMult;
+    return Math.round(base * mult);
+  }
+  effArmor() {
+    return this.def.armor + (this.owner <= 1 ? this.player.armorAdd : 0) + (this.abilityBuff?.armorAdd || 0);
+  }
+  effSpeed() { return this.def.speed * (this.abilityBuff?.spdMult ?? 1); }
 
   orderMove(x, z, attackMove = false) {
     this.target = null; this.gatherNode = null; this.buildSite = null; this.carryReturn = false;
@@ -159,7 +213,41 @@ export class Unit extends Entity {
     this.buildSite = site; this.target = null; this.gatherNode = null;
     this.state = 'build'; this.path = null;
   }
-  stop() { this.state = 'idle'; this.path = null; this.target = null; this.gatherNode = null; this.buildSite = null; this.pendingStrike = null; }
+  stop() { this.state = 'idle'; this.path = null; this.target = null; this.gatherNode = null; this.buildSite = null; this.pendingStrike = null; this.patrolA = this.patrolB = null; this.orderQueue.length = 0; }
+
+  // Patrol back and forth between the current spot and a point, attacking what
+  // strays into range and returning to the beat — classic guard micro.
+  orderPatrol(x, z) {
+    this.patrolA = { x: this.pos.x, z: this.pos.z };
+    this.patrolB = { x, z };
+    this.patrolTo = 'B';
+    this.target = null; this.gatherNode = null; this.buildSite = null;
+    this.orderMove(x, z, true);
+    this.state = 'patrol';
+  }
+
+  // ---- shift-queued orders ----
+  // Dispatch a single queued command object to the matching order.
+  startOrder(c) {
+    if (c.type === 'move') this.orderMove(c.x, c.z, c.attackMove);
+    else if (c.type === 'patrol') this.orderPatrol(c.x, c.z);
+    else if (c.type === 'attack') { if (c.target && !c.target.dead) this.orderAttack(c.target); else this.orderMove(c.x, c.z); }
+    else if (c.type === 'gather') { if (c.node && c.node.amount > 0) this.orderGather(c.node); else this.orderMove(c.x, c.z); }
+    else if (c.type === 'build') { if (c.site && !c.site.dead && !c.site.complete) this.orderBuild(c.site); else this.orderMove(c.x, c.z); }
+  }
+  // Issue a command, optionally appending to the queue (shift). Appends only while
+  // the unit is already busy or has a queue; otherwise it starts immediately.
+  command(c, queue) {
+    if (queue && (this.state !== 'idle' || this.orderQueue.length)) this.orderQueue.push(c);
+    else { this.orderQueue.length = 0; this.startOrder(c); }
+  }
+  // Pop and begin the next queued command; returns false when the queue is empty.
+  advanceOrders() {
+    const next = this.orderQueue.shift();
+    if (!next) return false;
+    this.startOrder(next);
+    return true;
+  }
 
   // Collision-aware move with wall sliding (LoL-style barrier glide). Attempts
   // the full step; if blocked, slides along whichever axis is clear. Returns the
@@ -201,7 +289,8 @@ export class Unit extends Entity {
     const md = Math.hypot(mx, mz) || 1;
 
     // ease speed for smooth start/stop; slow slightly on the final approach
-    const target = this.def.speed * (dist < 2.5 ? Math.max(0.35, dist / 2.5) : 1);
+    const tileMult = this.game.map.tileSpeedMult(this.pos.x, this.pos.z);
+    const target = this.effSpeed() * tileMult * (dist < 2.5 ? Math.max(0.35, dist / 2.5) : 1);
     this.curSpeed += (target - this.curSpeed) * Math.min(1, dt * 8);
     const step = this.curSpeed * dt;
     this.moveBy((mx / md) * step, (mz / md) * step);
@@ -276,11 +365,11 @@ export class Unit extends Entity {
   // leash, or the spawn point). orderMove carries us off in 'move'; on arrival
   // we fall back to 'idle' and amble again.
   wander(dt) {
-    this.wanderT = (this.wanderT ?? Math.random() * 4) - dt;
+    this.wanderT = (this.wanderT ?? this.game.rand() * 4) - dt;
     if (this.wanderT > 0) return;
-    this.wanderT = 4 + Math.random() * 6;
+    this.wanderT = 4 + this.game.rand() * 6;
     const home = this.leash || (this.wanderHome ||= { x: this.pos.x, z: this.pos.z });
-    const a = Math.random() * Math.PI * 2, r = 2.5 + Math.random() * 6.5;
+    const a = this.game.rand() * Math.PI * 2, r = 2.5 + this.game.rand() * 6.5;
     this.orderMove(home.x + Math.cos(a) * r, home.z + Math.sin(a) * r);
   }
 
@@ -291,6 +380,17 @@ export class Unit extends Entity {
     this.moving = false;
     this.harvesting = false;
     const atk = this.def.attack;
+    // ability cooldown + buff/debuff/stun ticks
+    if (this.abilityCd > 0) this.abilityCd = Math.max(0, this.abilityCd - dt);
+    if (this.abilityActiveDur > 0) {
+      this.abilityActiveDur -= dt;
+      if (this.abilityActiveDur <= 0) { this.abilityActiveDur = 0; this.abilityBuff = null; }
+    }
+    if (this.abilityDebuffDur > 0) {
+      this.abilityDebuffDur -= dt;
+      if (this.abilityDebuffDur <= 0) { this.abilityDebuffDur = 0; this.abilityDebuffMult = 1; }
+    }
+    if (this.stunDur > 0) this.stunDur = Math.max(0, this.stunDur - dt);
 
     // deferred melee blow: lands when the lunge reaches the target — but only if
     // we're still attacking that same target (orders/target may have changed).
@@ -330,7 +430,7 @@ export class Unit extends Entity {
         break;
       }
       case 'move': {
-        if (this.seek(this.dest.x, this.dest.z, 0.5, dt)) this.state = 'idle';
+        if (this.seek(this.dest.x, this.dest.z, 0.5, dt)) { if (!this.advanceOrders()) this.state = 'idle'; }
         break;
       }
       case 'attackMove': {
@@ -340,24 +440,44 @@ export class Unit extends Entity {
           const t = this.acquireTarget(this.def.aggroRange + 2);
           if (t) { this.target = t; this.state = 'attack'; this.resumeAM = this.dest; break; }
         }
-        if (this.seek(this.dest.x, this.dest.z, 0.8, dt)) this.state = 'idle';
+        if (this.seek(this.dest.x, this.dest.z, 0.8, dt)) { if (!this.advanceOrders()) this.state = 'idle'; }
+        break;
+      }
+      case 'patrol': {
+        this.scanT -= dt;
+        if (this.scanT <= 0) {
+          this.scanT = 0.25;
+          const t = this.acquireTarget(this.def.aggroRange + 2);
+          if (t) { this.target = t; this.state = 'attack'; this.resumePatrol = true; break; }
+        }
+        const ep = this.patrolTo === 'B' ? this.patrolB : this.patrolA;
+        if (!ep) { this.state = 'idle'; break; }
+        if (this.seek(ep.x, ep.z, 0.9, dt)) {
+          this.patrolTo = this.patrolTo === 'B' ? 'A' : 'B';
+          const n = this.patrolTo === 'B' ? this.patrolB : this.patrolA;
+          this.orderMove(n.x, n.z, true); this.state = 'patrol';
+        }
         break;
       }
       case 'attack': {
         const t = this.target;
         if (!t || t.dead) {
           this.target = null;
-          if (this.resumeAM) { this.orderMove(this.resumeAM.x, this.resumeAM.z, true); this.resumeAM = null; }
+          if (this.resumePatrol && this.patrolB) { this.resumePatrol = false; const ep = this.patrolTo === 'B' ? this.patrolB : this.patrolA; this.orderMove(ep.x, ep.z, true); this.state = 'patrol'; }
+          else if (this.resumeAM) { this.orderMove(this.resumeAM.x, this.resumeAM.z, true); this.resumeAM = null; }
           else if (this.owner === 2 && this.leash) { this.state = 'move'; this.dest = { ...this.leash }; this.path = null; }
-          else this.state = 'idle';
+          else if (!this.advanceOrders()) this.state = 'idle';
           break;
         }
         if (!atk) { this.state = 'idle'; break; }
-        // neutral leash break
-        if (this.owner === 2 && this.leash && Math.hypot(this.pos.x - this.leash.x, this.pos.z - this.leash.z) > 26) {
+        // neutral leash break (bosses roam farther before disengaging + heal home)
+        if (this.owner === 2 && this.leash &&
+            Math.hypot(this.pos.x - this.leash.x, this.pos.z - this.leash.z) > (this.def.leashRange || 26)) {
           this.target = null; this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.5);
           this.state = 'move'; this.dest = { ...this.leash }; this.path = null; break;
         }
+        // world bosses unleash their signature ability on cooldown the moment they fight
+        if (this.owner === 2 && this.def.ability && this.abilityCd <= 0) this.game.useAbility(this);
         const inRange = this.distTo(t) <= this.attackRange(t);
         if (!inRange) {
           // hold stands its ground — wait if the target is still within reach (same
@@ -374,9 +494,21 @@ export class Unit extends Entity {
           }
           this.seek(t.pos.x, t.pos.z, this.attackRange(t) - 0.2, dt); break;
         }
+        // ranged kiting: archers/casters back away from incoming melee threats while still firing.
+        // Only when the target is a melee unit (no projectile), in aggressive/defensive stance, and
+        // close enough to feel threatening (within 55% of full attack range).
+        if (atk.projectile && this.stance !== 'hold' &&
+            !t.def.attack?.projectile && t.def.attack &&
+            this.distTo(t) < atk.range * 0.55 + this.radius + t.radius) {
+          const dx = this.pos.x - t.pos.x, dz = this.pos.z - t.pos.z;
+          const d = Math.hypot(dx, dz) || 1;
+          this.moveBy((dx / d) * this.effSpeed() * 0.75 * dt, (dz / d) * this.effSpeed() * 0.75 * dt);
+          this.moving = true;
+        }
         this.facingTarget = Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
+        if (this.stunDur > 0) break;   // stunned — cannot attack
         if (this.cooldown <= 0) {
-          this.cooldown = atk.cooldown;
+          this.cooldown = atk.cooldown * (this.abilityBuff?.atkCdMult ?? 1);
           this.lungeDur = 0.3; this.lungeT = this.lungeDur;
           // ranged fires now (the projectile carries the timing); melee lands on
           // contact — scheduled to the lunge's strike apex so the blow connects.
@@ -389,16 +521,23 @@ export class Unit extends Entity {
         const n = this.gatherNode;
         if (!n || n.amount <= 0) { this.findNewNode(); break; }
         if (this.seek(n.pos.x, n.pos.z, n.radius + this.radius + 0.5, dt)) {
-          this.gatherT = (this.gatherT ?? 0) + dt;
+          // a faction-wide gather surge (Marshal the Stores) speeds the swing
+          const boost = this.game.players[this.owner].gatherBoostT > 0 ? EMPOWER.gatherBoost : 1;
+          this.gatherT = (this.gatherT ?? 0) + dt * boost;
           this.facingTarget = Math.atan2(n.pos.x - this.pos.x, n.pos.z - this.pos.z);
           this.harvesting = true;          // drives the chop/swing + gather particles
           this.game.gatherFx(n);
           const info = RESOURCE_NODES[n.type];
           if (this.gatherT >= info.gatherTime) {
             this.gatherT = 0;
+            // worker saturation: past the node's ideal headcount, each surplus
+            // laborer hauls less — the engine's nudge to spread out and expand.
+            const crew = this.game.gatherersOn(n);
+            const ideal = info.ideal || 3;
+            const sat = crew <= ideal ? 1 : Math.max(0.45, ideal / crew);
             const take = Math.min(info.carry, n.amount);
             n.amount -= take;
-            this.carry = take; this.carryType = n.type;
+            this.carry = take * sat; this.carryType = n.type;
             if (n.amount <= 0) this.game.depleteNode(n);
             this.state = 'return';
           }
@@ -528,7 +667,7 @@ export class Unit extends Entity {
     const s = this.game.stats;
     if (this.owner === 0) s.lost++;
     else if (attacker && attacker.owner === 0) s.killed++;
-    this.game.removeUnit(this);
+    this.game.removeUnit(this, attacker);
     Sound.death();
   }
 }
@@ -763,6 +902,7 @@ export class ResourceNode extends Entity {
 // ---------------- Game ----------------
 export class Game {
   constructor(container, playerFactionKey, enemyFactionKey, opts = {}) {
+    nextId = 1;   // deterministic per-match entity id space (replay reconstructs it)
     this.container = container;
     this.pfKey = playerFactionKey; this.efKey = enemyFactionKey;
     this.time = 0;
@@ -776,7 +916,13 @@ export class Game {
     // a saved game pins the exact map (seed/biome/mood) so it reloads identically
     const load = opts.load || null;
     this.loadedGame = !!load;   // AI skips the opening-stockpile handicap on a restored game
-    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay, difficulty: load.difficulty }; }
+    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay, difficulty: load.difficulty, mapSize: load.mapSize }; }
+    // Battlefield size — pinned by a save, else the player's setting. Must be set
+    // before the map (and WORLD-dependent atmosphere) is built. Live binding means
+    // GRID/WORLD elsewhere pick up the new scale automatically.
+    this.mapSizeKey = (opts.mapSize && MAP_SIZES[opts.mapSize]) ? opts.mapSize
+      : (MAP_SIZES[Settings.get('mapSize')] ? Settings.get('mapSize') : 'standard');
+    setMapSize(this.mapSizeKey);
     // AI difficulty: explicit option wins, else the saved value, else the player's setting
     this.difficulty = opts.difficulty || Settings.get('difficulty') || 'normal';
     // choose the land first, then a sky mood that suits it
@@ -792,8 +938,15 @@ export class Game {
     this.qualityMode = Settings.get('quality') || 'auto';
     this.units = []; this.buildings = []; this.resources = [];
     this.projectiles = []; this.effects = [];
+    this.pendingTelegraphs = [];   // dodgeable boss AoE wind-ups (resolve after a delay)
     this.selection = [];
     this.listeners = {};
+    // Which player THIS client controls (0 in single-player; the joined seat in
+    // multiplayer). Only input/UI/fog read it — the simulation itself is the same on
+    // every client, keyed by actual entity owners. `net` holds the lockstep session
+    // when in a networked match (commands are deferred to it instead of run inline).
+    this.localPlayer = opts.localPlayer ?? 0;
+    this.net = null;
 
     this.players = [
       this.makePlayer(FACTIONS[playerFactionKey]),
@@ -803,13 +956,33 @@ export class Game {
 
     this.initRenderer();
     this.map = new GameMap(opts.seed, this.biomeKey);
+    // Seeded simulation RNG: every gameplay-affecting random draw flows through
+    // this.rand() so a match is fully reproducible from (seed + input stream).
+    // Derived from the (now-fixed) map seed so a save/replay reloads identically.
+    this.rng = makeRng((this.map.seed ^ 0x53c0ffee) >>> 0);
     this.scene.add(this.map.buildMesh());
+    const _wm = this.map.buildWaterMesh();
+    if (_wm) this.scene.add(_wm);
     this.map.scatterDoodads(this.scene);
     this.initAtmosphere();
     if (load) this.deserialize(load);
     else this.spawnInitial();
     this.map.updateFog(this.playerViewers());
     this.applyFogVisibility();
+
+    // ---- replay recorder ----
+    // Every fresh match records its seed + the player command stream so it can be
+    // replayed deterministically. Playback runs with replayMode=true (no recording,
+    // live input ignored; the Replay driver feeds the recorded frames instead).
+    // Saved-game restores are not recorded (their mid-match state isn't reproducible
+    // from a seed alone).
+    this.replayMode = !!opts.replay;
+    this.rec = (this.replayMode || load) ? null : {
+      v: 1, frame: 0, frames: [],
+      pending: [],
+      header: { seed: this.map.seed, biomeKey: this.biomeKey, timeOfDay: this.timeOfDay,
+        mapSize: this.mapSizeKey, difficulty: this.difficulty, pf: this.pfKey, ef: this.efKey },
+    };
   }
 
   on(ev, fn) { (this.listeners[ev] ||= []).push(fn); }
@@ -822,8 +995,18 @@ export class Game {
       dmgMult: 1, armorAdd: 0, hpMult: 1,
       upgrades: new Set(),
       supplyUsed: 0, supplyCap: 0,
+      empowerCd: 0,      // Marshal-the-Stores cooldown (active economy ability)
+      gatherBoostT: 0,   // remaining seconds of the gather-speed surge it grants
     };
   }
+
+  // Seeded simulation RNG accessor — use for ANY randomness that affects the
+  // simulation (movement, AI, timing). Cosmetic-only jitter stays on Math.random.
+  rand() { return this.rng(); }
+
+  // The player THIS client controls (the local seat). Input, the HUD, and fog read
+  // this so the same code serves owner 0 in single-player and owner N in a net game.
+  get me() { return this.players[this.localPlayer]; }
 
   initRenderer() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -1049,11 +1232,113 @@ export class Game {
     }));
     this.scene.add(this.embers);
 
+    this.buildGodRays();
+    this.buildCloudShadows();
+    this.buildDustMotes();
+
     // particle pools: marching/footstep dust, building & damage smoke, foundry sparks
     this.fxDust = new ParticlePool(this.scene, { capacity: 360, color: 0xb9a98a, gravity: -1.2 });
     this.fxSmoke = new ParticlePool(this.scene, { capacity: 300, color: 0x6a6358, gravity: 0.6 });
     this.fxSpark = new ParticlePool(this.scene, { capacity: 180, color: 0xffb24a, gravity: -7, blending: THREE.AdditiveBlending });
     this.shake = 0;
+  }
+
+  // Volumetric sun shafts: a handful of soft additive slabs leaning along the
+  // key-light direction, so light appears to stream down across the battlefield.
+  // Strong in daylight moods, near-absent at night / under storm cloud.
+  buildGodRays() {
+    const P = this.preset;
+    const rayI = P.night ? 0.05 : P.lightning ? 0.05 : this.timeOfDay === 'noon' ? 0.10 : 0.15;
+    const tex = this._shaftTexture();
+    const warm = new THREE.Color(P.sun).lerp(new THREE.Color(0xfff0d0), 0.4);
+    // align the slab's local up-axis with the direction back toward the sun
+    const up = new THREE.Vector3(40, 70, 25).normalize();
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
+    const grp = new THREE.Group();
+    this.godRayShafts = [];
+    const N = 7;
+    for (let i = 0; i < N; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex, color: warm, transparent: true, opacity: rayI,
+        blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
+      });
+      const w = 14 + Math.random() * 10, len = 95 + Math.random() * 30;
+      const shaft = new THREE.Mesh(new THREE.PlaneGeometry(w, len), mat);
+      shaft.quaternion.copy(quat);
+      shaft.rotateY(Math.random() * Math.PI); // spin around the shaft so some always face the camera
+      const ang = (i / N) * Math.PI * 2;
+      shaft.position.set(WORLD / 2 + Math.cos(ang) * (28 + Math.random() * 60), 34,
+                         WORLD / 2 + Math.sin(ang) * (28 + Math.random() * 60));
+      shaft.renderOrder = 2;
+      shaft.userData = { base: rayI, phase: Math.random() * Math.PI * 2, rate: 0.5 + Math.random() * 0.7, yaw: Math.random() * Math.PI };
+      grp.add(shaft);
+      this.godRayShafts.push(shaft);
+    }
+    this.scene.add(grp);
+    this.godRays = grp;
+  }
+
+  // Slow soft-noise plane just above the ground that scrolls dark blotches over
+  // the terrain — clouds passing overhead. Subtle, and skipped in dark moods.
+  buildCloudShadows() {
+    const P = this.preset;
+    const strength = P.night ? 0.0 : P.lightning ? 0.34 : 0.2;
+    if (strength <= 0) return;
+    const tex = this._cloudTexture();
+    tex.wrapS = tex.wrapT = THREE.MirroredRepeatWrapping;
+    tex.repeat.set(2.4, 2.4);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, opacity: strength, color: 0x0a0c12,
+      depthWrite: false, fog: false,
+    });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(WORLD * 1.4, WORLD * 1.4), mat);
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.set(WORLD / 2, 6.5, WORLD / 2);
+    plane.renderOrder = 1;
+    this.scene.add(plane);
+    this.cloudShadow = plane;
+  }
+
+  // Soft vertical gradient with feathered horizontal falloff for a light shaft.
+  _shaftTexture() {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 256;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0.0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.4, 'rgba(255,255,255,0.85)');
+    g.addColorStop(0.7, 'rgba(255,255,255,0.55)');
+    g.addColorStop(1.0, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 256);
+    // feather the left/right edges so the slab has no hard vertical seams
+    const h = ctx.createLinearGradient(0, 0, 64, 0);
+    h.addColorStop(0, 'rgba(0,0,0,1)'); h.addColorStop(0.5, 'rgba(0,0,0,0)'); h.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = h; ctx.fillRect(0, 0, 64, 256);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  // Tileable field of soft dark blobs — the silhouette of drifting clouds.
+  _cloudTexture() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, 256, 256);
+    let seed = (this.map.seed ^ 0x5bd1e995) >>> 0;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let i = 0; i < 26; i++) {
+      const x = rnd() * 256, y = rnd() * 256, r = 26 + rnd() * 60;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      const a = 0.35 + rnd() * 0.4;
+      g.addColorStop(0, `rgba(255,255,255,${a})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
   }
 
   addShake(amount) { this.shake = Math.min(1.2, this.shake + amount); }
@@ -1108,6 +1393,173 @@ export class Game {
     }
   }
 
+  // ---------- active abilities ----------
+  useAbility(unit) {
+    const ab = unit.def.ability;
+    if (!ab || unit.abilityCd > 0 || unit.dead) return false;
+    unit.abilityCd = ab.cooldown;
+    const gy = this.map.heightAt(unit.pos.x, unit.pos.z);
+    const visible = this.map.fogStateAt(unit.pos.x, unit.pos.z) === 2;
+
+    switch (ab.type) {
+      case 'self_buff': {
+        unit.abilityBuff = { ...ab.buff };
+        unit.abilityActiveDur = ab.duration;
+        if (visible) {
+          for (let i = 0; i < 7; i++) {
+            const a = Math.random() * Math.PI * 2, r = 0.4 + Math.random() * 0.8;
+            this.fxSpark.spawn(unit.pos.x + Math.cos(a) * r, gy + 1.0, unit.pos.z + Math.sin(a) * r,
+              (Math.random() - 0.5) * 2, 2 + Math.random() * 2, (Math.random() - 0.5) * 2,
+              0.4, 0.13, 1.0);
+          }
+          Sound.abilityBuff();
+        }
+        break;
+      }
+      case 'target_debuff': {
+        const t = unit.target || unit.acquireTarget(unit.def.aggroRange);
+        if (!t) { unit.abilityCd = 0; return false; }
+        t.abilityDebuffDur = ab.duration;
+        t.abilityDebuffMult = ab.damageMult;
+        if (this.map.fogStateAt(t.pos.x, t.pos.z) === 2) {
+          const ty = this.map.heightAt(t.pos.x, t.pos.z);
+          for (let i = 0; i < 5; i++) {
+            const a = Math.random() * Math.PI * 2, r = 0.5 + Math.random() * 0.7;
+            this.fxSpark.spawn(t.pos.x + Math.cos(a) * r, ty + 1.0, t.pos.z + Math.sin(a) * r,
+              (Math.random() - 0.5), 1.5 + Math.random(), (Math.random() - 0.5),
+              0.55, 0.10, 0.8);
+          }
+          Sound.abilityDebuff();
+        }
+        break;
+      }
+      case 'aoe_strike': {
+        const rawDmg = unit.effDmg(unit.def.attack?.dmg || 10);
+        const dmgBase = rawDmg * (ab.dmgMult || 1);
+        const fxColor = unit.owner <= 1 ? this.players[unit.owner].faction.glow : 0xff7a4d;
+        // World bosses TELEGRAPH their slam: a warning ring blooms on the ground and
+        // the blow lands a beat later, so a sharp player can pull units out of it.
+        // (Player/AI abilities still strike instantly to preserve PvP balance.)
+        if (unit.owner === 2 && unit.def.boss) {
+          this.telegraphAoe(unit, ab, dmgBase, fxColor);
+          break;
+        }
+        this.addEffect(unit.pos.x, unit.pos.z, ab.radius, glowMat(fxColor, 2));
+        if (visible) {
+          for (let i = 0; i < 12; i++) {
+            const a = i / 12 * Math.PI * 2, r = ab.radius * (0.5 + Math.random() * 0.6);
+            this.fxSpark.spawn(unit.pos.x + Math.cos(a) * r, gy + 0.6, unit.pos.z + Math.sin(a) * r,
+              Math.cos(a) * 2, 1 + Math.random() * 2, Math.sin(a) * 2, 0.5, 0.14, 1.0);
+          }
+          this.addShake(0.2);
+          Sound.abilityAoe();
+        }
+        for (const e of this.allCombatants()) {
+          if (e.dead || e.owner === unit.owner || (unit.owner !== 2 && e.owner === 2)) continue;
+          if (unit.distTo(e) - e.radius <= ab.radius) {
+            this.applyHit(unit, e, unit.def.attack || {}, dmgBase);
+            if (ab.stunDur && e.isUnit) e.stunDur = Math.max(e.stunDur || 0, ab.stunDur);
+          }
+        }
+        break;
+      }
+      case 'aoe_friendly': {
+        const r = ab.radius || 8;
+        for (const u of this.units) {
+          if (u.dead || u.owner !== unit.owner) continue;
+          if (unit.distTo(u) <= r) {
+            u.abilityBuff = { ...ab.buff };
+            u.abilityActiveDur = ab.duration;
+          }
+        }
+        if (visible) {
+          for (let i = 0; i < 10; i++) {
+            const a = i / 10 * Math.PI * 2, fr = 1.5 + Math.random() * r * 0.4;
+            this.fxSpark.spawn(unit.pos.x + Math.cos(a) * fr, gy + 1.0, unit.pos.z + Math.sin(a) * fr,
+              Math.cos(a), 1.5 + Math.random(), Math.sin(a), 0.6, 0.11, 0.8);
+          }
+          Sound.abilityBuff();
+        }
+        break;
+      }
+      case 'multi_shot': {
+        const range = (unit.def.attack?.range || 12) + 3;
+        const enemies = [];
+        for (const e of this.allCombatants()) {
+          if (e.dead || e.owner === unit.owner) continue;
+          if (unit.distTo(e) <= range) enemies.push(e);
+        }
+        enemies.sort((a, b) => unit.distTo(a) - unit.distTo(b));
+        const atk = unit.def.attack;
+        for (let i = 0; i < Math.min(ab.count || 3, enemies.length); i++) {
+          this.performAttack(unit, enemies[i], atk);
+        }
+        if (visible) Sound.abilityAoe();
+        break;
+      }
+    }
+    return true;
+  }
+
+  useSelectedAbility() {
+    for (const u of this.selection) if (u.isUnit && u.owner === 0 && !u.dead) this.useAbility(u);
+  }
+
+  // ---- dodgeable boss AoE telegraphs ----
+  // Paint a danger zone on the ground that detonates after a wind-up. The impact
+  // centre is FIXED where the boss stood, so micro'ing units out of the ring dodges
+  // the blow — the heart of reading a boss fight.
+  telegraphAoe(attacker, ab, dmgBase, fxColor) {
+    const windup = ab.windup || 1.1;
+    const x = attacker.pos.x, z = attacker.pos.z, r = ab.radius;
+    const y = this.map.heightAt(x, z) + 0.12;
+    const ringMat = new THREE.MeshBasicMaterial({ color: fxColor, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r * 0.84, r, 36), ringMat);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(x, y, z);
+    this.scene.add(ring);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 36),
+      new THREE.MeshBasicMaterial({ color: fxColor, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
+    disc.rotation.x = -Math.PI / 2; disc.position.set(x, y, z);
+    this.scene.add(disc);
+    this.pendingTelegraphs.push({ attacker, ab, dmgBase, x, z, r, t: 0, dur: windup, ring, disc });
+    if (this.map.fogStateAt(x, z) === 2) Sound.alert();
+  }
+
+  updateTelegraphs(dt) {
+    if (!this.pendingTelegraphs.length) return;
+    for (const tg of this.pendingTelegraphs) {
+      tg.t += dt;
+      const p = Math.min(1, tg.t / tg.dur);
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
+      tg.disc.material.opacity = 0.08 + 0.20 * p;
+      tg.ring.material.opacity = 0.30 + 0.55 * p * pulse;
+      if (tg.t < tg.dur) continue;
+      tg.done = true;
+      this.scene.remove(tg.ring); this.scene.remove(tg.disc);
+      const u = tg.attacker;
+      const gy = this.map.heightAt(tg.x, tg.z);
+      const visible = this.map.fogStateAt(tg.x, tg.z) === 2;
+      this.addEffect(tg.x, tg.z, tg.r, glowMat(0xff7a4d, 2));
+      if (visible) {
+        for (let i = 0; i < 14; i++) {
+          const a = i / 14 * Math.PI * 2, rr = tg.r * (0.5 + Math.random() * 0.6);
+          this.fxSpark.spawn(tg.x + Math.cos(a) * rr, gy + 0.6, tg.z + Math.sin(a) * rr,
+            Math.cos(a) * 2, 1 + Math.random() * 2, Math.sin(a) * 2, 0.5, 0.14, 1.0);
+        }
+        this.addShake(0.25); Sound.abilityAoe();
+      }
+      // only what is STILL inside the marked zone is struck — step out to dodge
+      for (const e of this.allCombatants()) {
+        if (e.dead || e.owner === u.owner || (u.owner !== 2 && e.owner === 2)) continue;
+        if (Math.hypot(e.pos.x - tg.x, e.pos.z - tg.z) - e.radius <= tg.r) {
+          this.applyHit(u, e, u.def.attack || {}, tg.dmgBase);
+          if (tg.ab.stunDur && e.isUnit) e.stunDur = Math.max(e.stunDur || 0, tg.ab.stunDur);
+        }
+      }
+    }
+    this.pendingTelegraphs = this.pendingTelegraphs.filter(t => !t.done);
+  }
+
   updateEmbers(dt) {
     const a = this.embers.geometry.attributes.position;
     for (let i = 0; i < a.count; i++) {
@@ -1126,14 +1578,61 @@ export class Game {
     a.needsUpdate = true;
   }
 
+  // Faint dust motes drifting in the air near the camera — adds atmospheric depth
+  // and catches the bloom. One draw call; recycled within a moving window so they're
+  // always around the player's view. Purely cosmetic.
+  buildDustMotes() {
+    const M = 120;
+    this.moteSpan = 64;
+    const pos = new Float32Array(M * 3);
+    this.moteVel = new Float32Array(M * 3);
+    const c = WORLD / 2;
+    for (let i = 0; i < M; i++) {
+      pos[i * 3] = c + (Math.random() - 0.5) * this.moteSpan;
+      pos[i * 3 + 1] = 0.5 + Math.random() * 15;
+      pos[i * 3 + 2] = c + (Math.random() - 0.5) * this.moteSpan;
+      this.moteVel[i * 3] = (Math.random() - 0.5) * 0.5;
+      this.moteVel[i * 3 + 1] = (Math.random() - 0.35) * 0.22;
+      this.moteVel[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const tint = new THREE.Color(this.preset.skyHorizon || '#cdbf9a').lerp(new THREE.Color(0xffffff), 0.25);
+    this.dustMotes = new THREE.Points(geo, new THREE.PointsMaterial({
+      color: tint, size: 0.11, sizeAttenuation: true, transparent: true,
+      opacity: 0.30, blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    this.dustMotes.frustumCulled = false;
+    this.scene.add(this.dustMotes);
+  }
+
+  updateDustMotes(dt) {
+    if (!this.dustMotes) return;
+    const f = this.controls && this.controls.focus;
+    if (!f) return;
+    const a = this.dustMotes.geometry.attributes.position;
+    const span = this.moteSpan, half = span / 2;
+    for (let i = 0; i < a.count; i++) {
+      let x = a.getX(i) + this.moteVel[i * 3] * dt + Math.sin(this.time * 0.5 + i) * dt * 0.12;
+      let y = a.getY(i) + this.moteVel[i * 3 + 1] * dt;
+      let z = a.getZ(i) + this.moteVel[i * 3 + 2] * dt;
+      if (x < f.x - half) x += span; else if (x > f.x + half) x -= span;
+      if (z < f.z - half) z += span; else if (z > f.z + half) z -= span;
+      if (y < 0.4) y += 15; else if (y > 15.4) y -= 15;
+      a.setX(i, x); a.setY(i, y); a.setZ(i, z);
+    }
+    a.needsUpdate = true;
+  }
+
   spawnInitial() {
     // resource nodes
     for (const p of this.map.resourcePlan()) {
       const n = new ResourceNode(this, p.type, p.tx, p.ty);
       this.resources.push(n);
       if (p.guarded) {
+        const mult = this.neutralMult();
         for (let i = 0; i < 2; i++) {
-          const u = new Unit(this, 2, NEUTRALS.devourer, 'devourer',
+          const u = new Unit(this, 2, this.scaleNeutral(NEUTRALS.devourer, mult), 'devourer',
             n.pos.x + Math.cos(i * 2.5) * 4, n.pos.z + Math.sin(i * 2.5) * 4);
           u.leash = { x: u.pos.x, z: u.pos.z };
           this.units.push(u);
@@ -1149,7 +1648,7 @@ export class Game {
       b.complete = true; b.progress = 1; b.hp = b.maxHp; b.mesh.scale.y = 1;
       b.removeScaffold();
       this.buildings.push(b);
-      if (owner === 0) this.playerMain = b; else this.enemyMain = b;
+      if (owner === this.localPlayer) this.playerMain = b; else if (owner !== 2) this.enemyMain = b;
       // starting workers
       const wKey = p.faction.worker;
       for (let i = 0; i < 5; i++) {
@@ -1160,10 +1659,53 @@ export class Game {
         if (grain) u.orderGather(grain);
       }
     }
+    this.spawnMonsterLairs();
     this.recalcSupply();
     // Easter egg: a rare hidden encampment, deterministic per seed (also summonable
     // any match by typing the secret code, or via window.__game.spawnFieldsOfEvil()).
     if (this.map.seed % 100 < 18) this.spawnFieldsOfEvil(Math.floor(GRID * 0.5), Math.floor(GRID * 0.12));
+  }
+
+  // Neutral strength scalar from match difficulty — bosses and guardians hit
+  // harder and last longer on Hard, softer on Easy.
+  neutralMult() {
+    return this.difficulty === 'easy' ? 0.85 : this.difficulty === 'hard' ? 1.25 : 1.0;
+  }
+  // Clone a neutral def with HP and attack damage scaled by `mult`.
+  scaleNeutral(def, mult) {
+    if (mult === 1) return def;
+    const out = { ...def, hp: Math.round(def.hp * mult) };
+    if (def.attack) out.attack = { ...def.attack, dmg: Math.round(def.attack.dmg * mult) };
+    return out;
+  }
+
+  // World bosses: one monster lairs at each mid-field site, guarding a Forbidden
+  // Knowledge obelisk. Felling the beast drops its bounty (see removeUnit). Bigger
+  // maps generate more lairs; Hard difficulty makes each boss meaner.
+  spawnMonsterLairs() {
+    const sites = this.map.lairPlan();
+    if (!sites.length) return;
+    const mult = this.neutralMult();
+    const keys = Object.keys(MONSTERS);
+    let s = (this.map.seed ^ 0x77a5b3c1) >>> 0;
+    const rng = () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    this.lairs = [];
+    for (let i = 0; i < sites.length; i++) {
+      const site = sites[i];
+      // a rich obelisk at the heart of the lair (the boss guards it)
+      const node = new ResourceNode(this, 'knowledge', site.tx, site.ty);
+      this.resources.push(node);
+      const key = keys[Math.floor(rng() * keys.length)];
+      const def = MONSTERS[key];
+      // boss stands a couple of tiles off the obelisk (the lair was cleared with margin 2)
+      const w = findNearestWalkable(this.map, site.tx + 2, site.ty, 4, 1) || { x: site.tx + 2, y: site.ty };
+      const bx = (w.x + 0.5) * TILE, bz = (w.y + 0.5) * TILE;
+      const u = new Unit(this, 2, this.scaleNeutral(def, mult), key, bx, bz);
+      u.leash = { x: node.pos.x, z: node.pos.z };
+      this.units.push(u);
+      this.lairs.push({ x: node.pos.x, z: node.pos.z, boss: u });
+    }
   }
 
   // The Fields of Evil: the House of Greene ringed by feuding Landonian & Boydonian
@@ -1214,7 +1756,7 @@ export class Game {
     for (let i = 0; i < this.map.fog.length; i++) fogStr += String.fromCharCode(this.map.fog[i]);
     return {
       v: 1, t: this.time, timeOfDay: this.timeOfDay, biomeKey: this.biomeKey, seed: this.map.seed,
-      difficulty: this.difficulty,
+      difficulty: this.difficulty, mapSize: this.mapSizeKey,
       pf: this.pfKey, ef: this.efKey,
       players: [0, 1].map(o => { const p = this.players[o]; return {
         res: { ...p.resources }, up: [...p.upgrades], dmgMult: p.dmgMult, armorAdd: p.armorAdd, hpMult: p.hpMult }; }),
@@ -1249,7 +1791,7 @@ export class Game {
       b.trainQueue = (bs.q || []).map(j => ({ key: j.key, t: j.t, total: j.total, upgrade: j.up }));
       b.rally = bs.rally || null;
       this.buildings.push(b);
-      if (def.main) { if (bs.o === 0) this.playerMain = b; else if (bs.o === 1) this.enemyMain = b; }
+      if (def.main) { if (bs.o === this.localPlayer) this.playerMain = b; else if (bs.o !== 2) this.enemyMain = b; }
     }
     for (const us of d.units || []) {
       const def = this.defFor(us.o, 'unit', us.k); if (!def) continue;
@@ -1286,6 +1828,87 @@ export class Game {
     return u;
   }
 
+  // ---------- macro: active economy ability ----------
+  // How many of an owner's laborers are currently working a given node — drives
+  // worker-saturation diminishing returns.
+  gatherersOn(node) {
+    let c = 0;
+    for (const u of this.units) if (!u.dead && u.gatherNode === node) c++;
+    return c;
+  }
+  // "Marshal the Stores": instant soft-resource burst + a timed gather surge, on a
+  // cooldown. Returns false (and stays silent) if still cooling down. Deterministic.
+  marshalStores(owner) {
+    const p = this.players[owner];
+    if (!p || p.empowerCd > 0) return false;
+    p.empowerCd = EMPOWER.cooldown;
+    p.gatherBoostT = Math.max(p.gatherBoostT, EMPOWER.boostDur);
+    for (const [k, v] of Object.entries(EMPOWER.burst)) p.resources[k] = (p.resources[k] || 0) + v;
+    if (owner === 0) {
+      Sound.upgrade();
+      this.emit('toast', '⛟ The stores are marshalled — granaries fill and the laborers quicken.');
+      const m = this.playerMain;
+      if (m) this.addEffect(m.pos.x, m.pos.z, m.radius + 3, glowMat(this.players[0].faction.glow, 2));
+    }
+    return true;
+  }
+
+  // ---------- player command bus (recorded for replays) ----------
+  // EVERY sim-mutating player action funnels through cmd(): it logs a serialized
+  // form (entities → stable ids) then executes live with the real refs. The AI calls
+  // the raw methods directly and is never logged — it re-runs deterministically from
+  // the seeded RNG + recorded player inputs. During playback cmd() is inert; the
+  // Replay driver calls runCmd() with rehydrated refs instead.
+  cmd(name, refs) {
+    if (this.replayMode) return null;
+    // Networked match: don't run the command now — hand it to the lockstep session,
+    // which schedules it to execute on a future turn simultaneously on every client.
+    if (this.net) { this.net.submit({ n: name, p: serCmd(name, refs) }); return null; }
+    if (this.rec) this.rec.pending.push({ n: name, p: serCmd(name, refs) });
+    return this.runCmd(name, refs);
+  }
+
+  // Apply a command that arrived over the network (already serialized), resolving its
+  // entity ids against the live sim. Builds the id map lazily per turn via the caller.
+  applyNetCommand(rec, idMap) { this.dispatchRecorded(rec, idMap); }
+  // Execute a command with live entity references. Shared by live play and playback.
+  runCmd(name, p) {
+    switch (name) {
+      case 'right':     return this.commandRightClick(p.sel, p.x, p.z, p.ent, p.q);
+      case 'formation': return this.formationMove(p.sel, p.x, p.z, p.am, p.q);
+      case 'patrol':    return this.commandPatrol(p.sel, p.x, p.z, p.q);
+      case 'stop':      for (const u of p.sel) u.stop(); return;
+      case 'stance':    for (const u of p.sel) u.setStance(p.s); return;
+      case 'ability':   return p.u ? this.useAbility(p.u) : null;
+      case 'train':     return p.b ? this.queueTrain(p.b, p.key) : null;
+      case 'upgrade':   return p.b ? this.queueUpgrade(p.b, p.key) : null;
+      case 'build':     return this.placeBuilding(p.o, p.key, p.tx, p.ty, p.w);
+      case 'empower':   return this.marshalStores(p.o);
+    }
+  }
+  // Rehydrate a logged command's ids back into live entities, then run it (playback).
+  dispatchRecorded(rec, idMap) { this.runCmd(rec.n, deserCmd(rec.n, rec.p, idMap)); }
+
+  // Deterministic state fingerprint — order-independent, integer-only — used to
+  // verify a replay is tracking the original simulation frame-for-frame.
+  checksum() {
+    let h = 0x811c9dc5 >>> 0;
+    const mix = (e) => {
+      let v = (Math.imul(e.id, 2654435761) ^ (Math.round(e.hp) | 0) ^
+        (Math.round(e.pos.x * 4) << 3) ^ (Math.round(e.pos.z * 4) << 11)) >>> 0;
+      h = (h ^ v) >>> 0; h = Math.imul(h, 16777619) >>> 0;
+    };
+    for (const u of this.units) if (!u.dead) mix(u);
+    for (const b of this.buildings) if (!b.dead) mix(b);
+    return h >>> 0;
+  }
+
+  // Snapshot the recording for download. Frames are already compact; JSON-friendly.
+  exportReplay() {
+    if (!this.rec) return null;
+    return { v: this.rec.v, app: 'sotw', header: this.rec.header, frames: this.rec.frames };
+  }
+
   // ---------- queries ----------
   allCombatants() { return this._combat || (this._combat = [...this.units, ...this.buildings]); }
   unitsNear(pos, r, exclude) {
@@ -1307,7 +1930,8 @@ export class Game {
     return best;
   }
   playerViewers() {
-    return [...this.units.filter(u => u.owner === 0), ...this.buildings.filter(b => b.owner === 0)]
+    const lp = this.localPlayer;
+    return [...this.units.filter(u => u.owner === lp), ...this.buildings.filter(b => b.owner === lp)]
       .map(e => ({ pos: e.pos, sight: e.def.sight }));
   }
 
@@ -1411,13 +2035,17 @@ export class Game {
   }
 
   // ---------- building placement ----------
-  canPlace(owner, key, tx, ty) {
+  // checkFog is an input-layer affordance only (don't let the player place into
+  // unexplored ground). It must NOT gate the actual placement: fog is per-client, so
+  // a fog test inside the simulation would let clients diverge. placeBuilding calls
+  // this WITHOUT checkFog; only the placement ghost passes it.
+  canPlace(owner, key, tx, ty, checkFog = false) {
     const def = this.players[owner].faction.buildings[key];
     if (!def) return false;
     for (let y = 0; y < def.size; y++) for (let x = 0; x < def.size; x++) {
       if (!this.map.inBounds(tx + x, ty + y)) return false;
       if (this.map.blocked[this.map.idx(tx + x, ty + y)]) return false;
-      if (owner === 0 && this.map.fog[this.map.idx(tx + x, ty + y)] === 0) return false;
+      if (checkFog && this.map.fog[this.map.idx(tx + x, ty + y)] === 0) return false;
     }
     // keep clear of units
     const cx = (tx + def.size / 2) * TILE, cz = (ty + def.size / 2) * TILE;
@@ -1488,11 +2116,17 @@ export class Game {
 
   // ---------- combat ----------
   performAttack(attacker, target, atk) {
+    // consume a firstHit buff before computing damage (effDmg already applies dmgMult)
+    const firstHit = attacker.isUnit && attacker.abilityBuff?.firstHit;
+    const stunToApply = firstHit ? (attacker.abilityBuff.stunDur || 0) : 0;
     const dmgBase = attacker.isUnit ? attacker.effDmg(atk.dmg) : atk.dmg;
+    if (firstHit) { attacker.abilityBuff = null; attacker.abilityActiveDur = 0; }
     if (atk.projectile) {
       this.spawnProjectile(attacker, target, atk, dmgBase);
+      if (stunToApply && target.isUnit) target.stunDur = Math.max(target.stunDur || 0, stunToApply);
     } else {
       this.applyHit(attacker, target, atk, dmgBase);
+      if (stunToApply && target.isUnit) target.stunDur = Math.max(target.stunDur || 0, stunToApply);
       if (this.map.fogStateAt(target.pos.x, target.pos.z) === 2) Sound.meleeHit(dmgBase);
     }
   }
@@ -1500,7 +2134,8 @@ export class Game {
   applyHit(attacker, target, atk, dmgBase) {
     const mult = (target.def.tags || []).reduce((m, tag) => m * (atk.bonus?.[tag] || 1), 1);
     const armor = target.isUnit ? target.effArmor() : (target.def.armor || 0);
-    const dmg = Math.max(1, Math.round(dmgBase * mult) - armor);
+    let dmg = Math.max(1, Math.round(dmgBase * mult) - armor);
+    if (target.isUnit && target.abilityDebuffDur > 0) dmg = Math.ceil(dmg * target.abilityDebuffMult);
     target.takeDamage(dmg, attacker);
     this.hitImpact(attacker, target, dmg, mult > 1.05);
   }
@@ -1574,12 +2209,13 @@ export class Game {
 
   onDamaged(entity, attacker) {
     this.combatHeat = Math.min(1, this.combatHeat + 0.05);   // feeds the combat music layer
-    if (entity.owner === 0 && (this.time - (this.lastAlert || -99)) > 12) {
+    if (entity.owner === this.localPlayer && (this.time - (this.lastAlert || -99)) > 12) {
       const anySelectedNear = false;
       if (this.map.fogStateAt(entity.pos.x, entity.pos.z) !== 2 || entity.isBuilding) {
         this.lastAlert = this.time;
+        this.lastAlertPos = { x: entity.pos.x, z: entity.pos.z };   // Space jumps here
         Sound.alert();
-        this.emit('toast', '⚔ Your forces are under attack!');
+        this.emit('toast', '⚔ Your forces are under attack! (Space to view)');
         this.emit('ping', entity.pos.x, entity.pos.z);
       }
     }
@@ -1603,7 +2239,9 @@ export class Game {
     this.emit('damaged', entity, attacker);
   }
 
-  removeUnit(u) {
+  removeUnit(u, attacker) {
+    // felling a world boss: pay out its bounty to the killer and mark the kill
+    if (u.def.bounty) this.onBossSlain(u, attacker);
     // death animation: topple + sink, plus a burst of debris
     u.mesh.scale.setScalar(1);   // clear any mid-flash scale-pop before the corpse falls
     this.effects.push({ mesh: u.mesh, life: 1.0, max: 1.0, type: 'corpse' });
@@ -1625,6 +2263,31 @@ export class Game {
     this._combat = null;
     this.recalcSupply();
     this.emit('selection');
+  }
+
+  // Reward + spectacle when a world boss falls: pay the bounty to its slayer,
+  // shake the earth, and announce it. Killer defaults to the player if a neutral
+  // or environment landed the blow.
+  onBossSlain(boss, attacker) {
+    const owner = attacker && attacker.owner <= 1 ? attacker.owner : 0;
+    const r = this.players[owner].resources;
+    for (const [k, v] of Object.entries(boss.def.bounty)) r[k] = (r[k] || 0) + v;
+    const visible = this.map.fogStateAt(boss.pos.x, boss.pos.z) === 2;
+    if (visible) {
+      const gy = this.map.heightAt(boss.pos.x, boss.pos.z);
+      this.addEffect(boss.pos.x, boss.pos.z, boss.radius * 3.2, glowMat(0xffd56e, 2));
+      for (let i = 0; i < 26; i++) {
+        const a = Math.random() * Math.PI * 2, rr = Math.random() * boss.radius * 2.4;
+        this.fxSpark.spawn(boss.pos.x + Math.cos(a) * rr, gy + 0.8 + Math.random() * 1.5, boss.pos.z + Math.sin(a) * rr,
+          Math.cos(a) * 3, 1.5 + Math.random() * 3, Math.sin(a) * 3, 0.7, 0.18, 1.0);
+      }
+      this.addShake(0.7);
+    }
+    if (owner === 0) {
+      Sound.win();
+      const spoils = Object.entries(boss.def.bounty).map(([k, v]) => `${v} ${k}`).join(', ');
+      this.emit('toast', `☠ ${boss.def.name} is slain! Its hoard — ${spoils} — is yours.`);
+    }
   }
 
   removeBuilding(b, attacker) {
@@ -1684,38 +2347,53 @@ export class Game {
   }
 
   // ---------- commands from UI ----------
-  commandRightClick(targets, wx, wz, entity) {
-    const units = targets.filter(t => t.isUnit && t.owner === 0);
-    const buildings = targets.filter(t => t.isBuilding && t.owner === 0);
+  // `targets` are the commanding player's own entities (the input layer filters the
+  // selection to the local seat; a net-applied command's ids resolve to the issuer's
+  // units). The commander is derived from them so this is owner-agnostic — the same
+  // path serves the local player and a remote player's relayed command. Only the
+  // local seat's commands click.
+  commandRightClick(targets, wx, wz, entity, queue = false) {
+    const units = targets.filter(t => t.isUnit);
+    const buildings = targets.filter(t => t.isBuilding);
+    const cmdr = units[0]?.owner ?? buildings[0]?.owner;
     for (const b of buildings) {
       b.rally = { x: wx, z: wz };
       b.rallyNode = entity && entity.isResource ? entity : null;
     }
     if (!units.length) return;
-    Sound.command();
+    if (cmdr === this.localPlayer) Sound.command();
     if (entity && entity.isResource) {
-      for (const u of units) u.def.worker ? u.orderGather(entity) : u.orderMove(wx, wz);
+      for (const u of units) u.command(u.def.worker ? { type: 'gather', node: entity, x: wx, z: wz } : { type: 'move', x: wx, z: wz }, queue);
       return;
     }
-    if (entity && !entity.dead && entity.owner !== 0 && !entity.isResource) {
-      for (const u of units) u.def.attack ? u.orderAttack(entity) : u.orderMove(wx, wz);
+    if (entity && !entity.dead && entity.owner !== cmdr && !entity.isResource) {
+      for (const u of units) u.command(u.def.attack ? { type: 'attack', target: entity, x: wx, z: wz } : { type: 'move', x: wx, z: wz }, queue);
       return;
     }
-    if (entity && entity.isBuilding && entity.owner === 0 && !entity.complete) {
-      for (const u of units) u.def.worker ? u.orderBuild(entity) : u.orderMove(wx, wz);
+    if (entity && entity.isBuilding && entity.owner === cmdr && !entity.complete) {
+      for (const u of units) u.command(u.def.worker ? { type: 'build', site: entity, x: wx, z: wz } : { type: 'move', x: wx, z: wz }, queue);
       return;
     }
     // formation move
-    this.formationMove(units, wx, wz, false);
+    this.formationMove(units, wx, wz, false, queue);
+  }
+
+  // Patrol: each unit walks a beat between where it stands and the point, engaging
+  // what wanders into range. Shift appends it as a queued order. Owner-agnostic.
+  commandPatrol(units, wx, wz, queue = false) {
+    const us = units.filter(u => u.isUnit);
+    if (!us.length) return;
+    if (us[0].owner === this.localPlayer) Sound.command();
+    for (const u of us) u.command({ type: 'patrol', x: wx, z: wz }, queue);
   }
 
   // Move a group as a battle line: the block is oriented to the travel direction
   // with a wide front, melee in the leading rows and ranged/casters/workers tucked
   // behind them. Reads as an army and keeps fragile units out of the front line.
-  formationMove(units, wx, wz, attackMove) {
+  formationMove(units, wx, wz, attackMove, queue = false) {
     const n = units.length;
     if (n === 0) return;
-    if (n === 1) { units[0].orderMove(wx, wz, attackMove); return; }
+    if (n === 1) { units[0].command({ type: 'move', x: wx, z: wz, attackMove }, queue); return; }
 
     // travel direction from the group's centroid toward the destination
     let cx = 0, cz = 0;
@@ -1743,18 +2421,19 @@ export class Game {
       const depth  = ((rows - 1) / 2 - r) * spacing;   // r=0 → front, toward the target
       const sx = wx + rx * across + dx * depth;
       const sz = wz + rz * across + dz * depth;
-      u.orderMove(sx, sz, attackMove);
+      u.command({ type: 'move', x: sx, z: sz, attackMove }, queue);
     });
   }
 
   // ---------- fog ----------
   applyFogVisibility() {
+    const lp = this.localPlayer;
     for (const u of this.units) {
-      if (u.owner === 0) { u.mesh.visible = true; continue; }
+      if (u.owner === lp) { u.mesh.visible = true; continue; }
       u.mesh.visible = this.map.fogStateAt(u.pos.x, u.pos.z) === 2;
     }
     for (const b of this.buildings) {
-      if (b.owner === 0) { b.mesh.visible = true; continue; }
+      if (b.owner === lp) { b.mesh.visible = true; continue; }
       const st = this.map.fogStateAt(b.pos.x, b.pos.z);
       if (st === 2) b.discovered = true;
       b.mesh.visible = b.discovered && st >= 1;
@@ -1763,14 +2442,22 @@ export class Game {
     for (const r of this.resources) {
       r.mesh.visible = this.map.fogStateAt(r.pos.x, r.pos.z) >= 1;
     }
-    for (const d of this.map.doodads || []) {
-      d.visible = this.map.fogStateAt(d.position.x, d.position.z) >= 1;
-    }
+    // doodads are merged static batches whose fog is sampled per-fragment in the
+    // shader (see GameMap._applyDoodadFog), so no per-mesh visibility toggle here.
   }
 
   // ---------- main update ----------
   update(dt) {
     if (this.over) dt *= 0.3; // slow-mo end
+    // record this tick: its dt, the commands issued since the last tick, and a
+    // periodic state checksum so playback can detect (and report) any desync.
+    if (this.rec && !this.over) {
+      const f = { d: +dt.toFixed(5) };
+      if (this.rec.pending.length) { f.c = this.rec.pending; this.rec.pending = []; }
+      if ((this.rec.frame % 120) === 0) f.k = this.checksum();
+      this.rec.frames.push(f);
+      this.rec.frame++;
+    }
     this.time += dt;
     this.combatHeat = Math.max(0, this.combatHeat - dt * 0.14);   // cools between clashes
     this._combat = null;
@@ -1783,6 +2470,14 @@ export class Game {
       this._exposureFade = 1 - f * 0.4;
       this.applyExposure();
     }
+
+    // macro ability timers (active economy: Marshal the Stores)
+    for (const o of [0, 1]) {
+      const p = this.players[o];
+      if (p.empowerCd > 0) p.empowerCd = Math.max(0, p.empowerCd - dt);
+      if (p.gatherBoostT > 0) p.gatherBoostT = Math.max(0, p.gatherBoostT - dt);
+    }
+    this.updateTelegraphs(dt);   // dodgeable boss AoE wind-ups land here
 
     for (const u of this.units) u.update(dt);
     for (const b of this.buildings) b.update(dt);
@@ -1865,7 +2560,22 @@ export class Game {
   }
 
   updateSky(dt) {
+    this.updateDustMotes(dt);
     if (this.stormBand) this.stormBand.rotation.y += dt * 0.012;
+    // drifting cloud shadows scroll slowly across the ground
+    if (this.cloudShadow) {
+      const off = this.cloudShadow.material.map.offset;
+      off.x += dt * 0.0065; off.y += dt * 0.0028;
+    }
+    // god-ray shafts shimmer gently (and lightning briefly flares them)
+    if (this.godRayShafts) {
+      const flare = 1 + (this._flash || 0) * 1.4;
+      for (const s of this.godRayShafts) {
+        const u = s.userData;
+        u.phase += dt * u.rate;
+        s.material.opacity = u.base * (0.7 + 0.3 * Math.sin(u.phase)) * flare;
+      }
+    }
     if (this.skyMat) {
       // distant lightning during storms: brief stacked flashes
       let f = 0;

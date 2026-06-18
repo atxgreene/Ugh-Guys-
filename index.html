@@ -109,6 +109,10 @@
     .cmd-label { font-size: 10.5px; text-align: center; line-height: 1.1; color: #cdbf9a; }
     .cmd-sub { font-size: 9.5px; color: #b89a5e; }
     .cmd-act { width: 76px; }
+    .cmd-ability { border-color: #7a5cbb; background: linear-gradient(180deg, #1e1630, #120e20); }
+    .cmd-ability:hover { border-color: #c08bff; background: linear-gradient(180deg, #2a1e44, #180f2c); }
+    .cmd-ability-ready { border-color: #c08bff; box-shadow: 0 0 10px rgba(176,127,255,0.45); }
+    .cmd-ability-ready .cmd-sub { color: #c08bff; }
 
     #selbox { position: absolute; z-index: 20; display: none; border: 1px solid #9be86e;
       background: rgba(155,232,110,0.12); pointer-events: none; }
@@ -155,6 +159,13 @@
       border: 1px solid #b88a3e; padding: 12px 30px; font-size: 16px; cursor: pointer; font-family: inherit;
       letter-spacing: 2px; border-radius: 4px; box-shadow: 0 0 20px rgba(232,179,58,0.25); }
     #btn-continue:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); }
+    #btn-replay { margin-top: 2px; background: linear-gradient(180deg, #232a3a, #161a22); color: #9fc6ff;
+      border: 1px solid #4a5e8a; padding: 10px 26px; font-size: 14px; cursor: pointer; font-family: inherit;
+      letter-spacing: 2px; border-radius: 4px; }
+    #btn-replay:hover { background: linear-gradient(180deg, #2e3850, #1c2230); border-color: #9fc6ff; }
+    #btn-dlreplay { margin-left: 12px; background: #1c2230; color: #9fc6ff; border: 1px solid #4a5e8a;
+      padding: 12px 24px; font-size: 14px; cursor: pointer; font-family: inherit; letter-spacing: 1px; border-radius: 4px; }
+    #btn-dlreplay:hover { background: #2a3346; border-color: #9fc6ff; }
 
     /* first-contact dialogue box */
     #dialogue { left: 50%; bottom: 152px; transform: translateX(-50%); z-index: 30; display: none;
@@ -224,6 +235,33 @@
       color: #e6c074; border: 1px solid #7a5a2c; padding: 11px; font-size: 15px; cursor: pointer;
       font-family: inherit; letter-spacing: 2px; border-radius: 4px; }
     .set-close:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); border-color: #e6c074; }
+
+    /* multiplayer lobby */
+    #btn-mp { margin-top: 2px; background: linear-gradient(180deg, #3a1c2c, #221016); color: #ff9fc6;
+      border: 1px solid #8a4a5e; padding: 10px 26px; font-size: 14px; cursor: pointer; font-family: inherit;
+      letter-spacing: 2px; border-radius: 4px; }
+    #btn-mp:hover { background: linear-gradient(180deg, #50283a, #301620); border-color: #ff9fc6; }
+    #lobby { position: absolute; inset: 0; z-index: 48; display: none; align-items: center; justify-content: center;
+      background: rgba(8,6,12,0.78); }
+    #lobby.show { display: flex; }
+    .lobby-card { width: min(440px, 92vw); background: linear-gradient(180deg, #1c1622, #120e16);
+      border: 1px solid #5a4458; border-radius: 8px; padding: 22px 24px; box-shadow: 0 0 40px rgba(0,0,0,0.6); }
+    .lobby-card h2 { color: #e8c074; font-weight: normal; letter-spacing: 1px; margin-bottom: 4px; }
+    .lobby-card .beta { font-size: 11px; color: #8a8294; letter-spacing: 2px; text-transform: uppercase; }
+    .lobby-sub { color: #9a90a4; font-size: 12.5px; line-height: 1.5; margin-bottom: 16px; }
+    .lobby-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .lobby-row > span { width: 92px; color: #b0a4be; font-size: 13px; flex-shrink: 0; }
+    .lobby-row input, .lobby-row select { flex: 1; background: #0e0b14; color: #e6cf94; border: 1px solid #4a4458;
+      border-radius: 4px; padding: 8px 10px; font-family: inherit; font-size: 13px; }
+    .lobby-actions { display: flex; gap: 10px; margin-top: 14px; }
+    .lobby-actions button { flex: 1; background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6cf94;
+      border: 1px solid #6a5634; border-radius: 4px; padding: 10px; font-family: inherit; font-size: 14px;
+      letter-spacing: 1px; cursor: pointer; }
+    .lobby-actions button:hover:not(:disabled) { border-color: #e6c074; }
+    .lobby-actions button:disabled { opacity: 0.4; cursor: default; }
+    .lobby-ghost { background: #1c1622 !important; color: #9a90a4 !important; border-color: #4a4458 !important; }
+    .lobby-status { margin-top: 14px; font-size: 12px; color: #8a90a0; line-height: 1.5; min-height: 18px; }
+    .lobby-status code { color: #b0a4be; background: #0e0b14; padding: 1px 5px; border-radius: 3px; }
 
     /* onboarding: controls/hotkey reference (repurposed #help) */
     #help { right: 10px; top: 46px; width: 264px; padding: 14px 16px; font-size: 12px; color: #b0a890;
@@ -351,12 +389,18 @@
       <div class="menu-setup">
         <label><span class="md-label">Opponent</span><select id="sel-enemy"></select></label>
         <label><span class="md-label">Land</span><select id="sel-biome"></select></label>
+        <label><span class="md-label">Map Size</span><select id="sel-mapsize"></select></label>
       </div>
       <button id="btn-continue" style="display:none">Continue Campaign</button>
+      <button id="btn-replay" style="display:none">▶ Watch a Replay</button>
+      <button id="btn-mp" style="display:none">⚔ Multiplayer (beta)</button>
+      <input id="replay-file" type="file" accept=".json,application/json" style="display:none" />
       <div class="hint">
         <b>WASD / arrows / screen edge</b> pan · <b>Q/E or middle-drag</b> rotate · <b>Wheel</b> zoom ·
         <b>Left-click / drag</b> select · <b>Right-click</b> move, gather, attack ·
-        <b>F</b> attack-move · <b>X</b> stop · <b>B</b> build · <b>Ctrl+1-9</b> control groups · <b>H</b> go home<br/>
+        <b>F</b> attack-move · <b>R</b> patrol · <b>Shift+command</b> queue waypoints · <b>X</b> stop ·
+        <b>B</b> build · <b>Q</b> ability · <b>G</b> marshal stores · <b>Ctrl+1-9</b> set group ·
+        <b>1-9</b> (double-tap to center) · <b>Space</b> jump to alert · <b>H</b> go home<br/>
         Destroy the enemy's seat of power before they destroy yours. Beware what guards the obelisks.
       </div>
     </div>
@@ -434,8 +478,28 @@
       <b>⚔ Best on desktop.</b> Touch controls are basic — drag to pan, pinch to zoom, tap to select &amp; command.
       <span class="tn-x" id="touchnote-x">✕</span>
     </div>
+
+    <div id="lobby">
+      <div class="lobby-card">
+        <h2>Multiplayer <span class="beta">beta · lockstep</span></h2>
+        <p class="lobby-sub">Deterministic peer-to-peer over a relay. Host a room or join one. Both players run the same simulation; only commands cross the wire.</p>
+        <label class="lobby-row"><span>Relay</span><input id="mp-url" type="text" value="ws://localhost:8787" spellcheck="false"></label>
+        <label class="lobby-row"><span>Room</span><input id="mp-room" type="text" value="watchers" spellcheck="false"></label>
+        <label class="lobby-row"><span>Your faction</span><select id="mp-faction"></select></label>
+        <label class="lobby-row" id="mp-foe-row"><span>Opponent</span><select id="mp-foe"></select></label>
+        <div class="lobby-actions">
+          <button id="mp-host">Host</button>
+          <button id="mp-join">Join</button>
+        </div>
+        <div id="mp-status" class="lobby-status">Run <code>npm run relay</code> locally, or point Relay at a deployed <code>wss://</code> server.</div>
+        <div class="lobby-actions">
+          <button id="mp-start" disabled>Start Match</button>
+          <button id="mp-close" class="lobby-ghost">Back</button>
+        </div>
+      </div>
+    </div>
     <div id="selbox"></div>
-    <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button></div>
+    <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button><button id="btn-dlreplay" style="display:none">⭳ Download Replay</button></div>
     <div id="pausemenu">
       <h1>PAUSED</h1>
       <div class="pm-buttons">
