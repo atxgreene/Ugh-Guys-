@@ -85,6 +85,15 @@ export class Controls {
       const tc = this.touch; if (!tc) return;
       if (tc.mode === 'one' && e.touches.length === 1) {
         const p = pt(e.touches[0]);
+        // placing a building: the finger drags the ghost instead of panning, so the
+        // player can see exactly where it will land before lifting to drop it.
+        if (this.placement) {
+          tc.moved += Math.abs(p.x - tc.lx) + Math.abs(p.y - tc.ly);
+          tc.lx = p.x; tc.ly = p.y;
+          this.mouse.x = p.x; this.mouse.y = p.y;
+          this.updateGhost();
+          return;
+        }
         const dx = p.x - tc.lx, dy = p.y - tc.ly;
         tc.moved += Math.abs(dx) + Math.abs(dy);
         tc.lx = p.x; tc.ly = p.y;
@@ -107,6 +116,15 @@ export class Controls {
     d.addEventListener('touchend', e => {
       e.preventDefault();
       const tc = this.touch;
+      // placing a building: lift to drop it at the ghost's spot (positioned by the
+      // last touch). A tap with no drag also works — the ghost sits under the finger.
+      if (this.placement && tc && tc.mode === 'one') {
+        this.mouse.x = tc.lx; this.mouse.y = tc.ly;
+        this.updateGhost();
+        this.tryPlaceTouch();
+        this.touch = e.touches.length ? this.touch : null;
+        return;
+      }
       // a quick, near-stationary single touch is a tap → select or command
       if (tc && tc.mode === 'one' && tc.moved < 14 && performance.now() - tc.t0 < 350) {
         this.handleTap(tc.sx, tc.sy);
@@ -334,8 +352,9 @@ export class Controls {
   // ---------- building placement ----------
   startPlacement(key) {
     this.cancelPlacement();
-    const def = this.game.players[0].faction.buildings[key];
-    const f = this.game.players[0].faction;
+    const me = this.game.players[this.game.localPlayer];
+    const def = me.faction.buildings[key];
+    const f = me.faction;
     const ghost = buildBuildingMesh(def.model, f.color, f.glow);
     ghost.traverse(o => {
       if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.55; o.castShadow = false; }
@@ -363,7 +382,8 @@ export class Controls {
     p.tx = tx; p.ty = ty;
     const cx = (tx + p.def.size / 2) * TILE, cz = (ty + p.def.size / 2) * TILE;
     p.ghost.position.set(cx, this.game.map.heightAt(cx, cz), cz);
-    p.valid = this.game.canPlace(0, p.key, tx, ty) && this.game.canAfford(0, p.def.cost);
+    const lp = this.game.localPlayer;
+    p.valid = this.game.canPlace(lp, p.key, tx, ty) && this.game.canAfford(lp, p.def.cost);
     p.ghost.traverse(o => { if (o.isMesh) o.material.opacity = p.valid ? 0.65 : 0.2; });
   }
 
@@ -371,11 +391,23 @@ export class Controls {
     const p = this.placement;
     if (!p || !p.valid) { Sound.error(); return; }
     const workers = this.selectedUnits().filter(u => u.def.worker);
-    const b = this.game.cmd('build', { o: 0, key: p.key, tx: p.tx, ty: p.ty, w: workers });
+    const b = this.game.cmd('build', { o: this.game.localPlayer, key: p.key, tx: p.tx, ty: p.ty, w: workers });
     if (b) {
       if (!e.shiftKey) this.cancelPlacement();
       this.ui.refreshPanel();
     } else Sound.error();
+  }
+
+  // Touch placement: drop the building at the ghost's spot (no shift-to-chain). In a
+  // net match game.cmd defers (returns null) but the command is submitted, so cancel
+  // optimistically once the spot is valid.
+  tryPlaceTouch() {
+    const p = this.placement;
+    if (!p || !p.valid) { Sound.error(); return; }
+    const workers = this.selectedUnits().filter(u => u.def.worker);
+    this.game.cmd('build', { o: this.game.localPlayer, key: p.key, tx: p.tx, ty: p.ty, w: workers });
+    this.cancelPlacement();
+    this.ui.refreshPanel();
   }
 
   // ---------- per-frame ----------

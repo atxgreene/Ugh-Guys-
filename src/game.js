@@ -941,6 +941,12 @@ export class Game {
     this.pendingTelegraphs = [];   // dodgeable boss AoE wind-ups (resolve after a delay)
     this.selection = [];
     this.listeners = {};
+    // Which player THIS client controls (0 in single-player; the joined seat in
+    // multiplayer). Only input/UI/fog read it — the simulation itself is the same on
+    // every client, keyed by actual entity owners. `net` holds the lockstep session
+    // when in a networked match (commands are deferred to it instead of run inline).
+    this.localPlayer = opts.localPlayer ?? 0;
+    this.net = null;
 
     this.players = [
       this.makePlayer(FACTIONS[playerFactionKey]),
@@ -997,6 +1003,10 @@ export class Game {
   // Seeded simulation RNG accessor — use for ANY randomness that affects the
   // simulation (movement, AI, timing). Cosmetic-only jitter stays on Math.random.
   rand() { return this.rng(); }
+
+  // The player THIS client controls (the local seat). Input, the HUD, and fog read
+  // this so the same code serves owner 0 in single-player and owner N in a net game.
+  get me() { return this.players[this.localPlayer]; }
 
   initRenderer() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -1804,9 +1814,16 @@ export class Game {
   // Replay driver calls runCmd() with rehydrated refs instead.
   cmd(name, refs) {
     if (this.replayMode) return null;
+    // Networked match: don't run the command now — hand it to the lockstep session,
+    // which schedules it to execute on a future turn simultaneously on every client.
+    if (this.net) { this.net.submit({ n: name, p: serCmd(name, refs) }); return null; }
     if (this.rec) this.rec.pending.push({ n: name, p: serCmd(name, refs) });
     return this.runCmd(name, refs);
   }
+
+  // Apply a command that arrived over the network (already serialized), resolving its
+  // entity ids against the live sim. Builds the id map lazily per turn via the caller.
+  applyNetCommand(rec, idMap) { this.dispatchRecorded(rec, idMap); }
   // Execute a command with live entity references. Shared by live play and playback.
   runCmd(name, p) {
     switch (name) {
