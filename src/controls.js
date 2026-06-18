@@ -363,13 +363,20 @@ export class Controls {
       if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.55; o.castShadow = false; }
     });
     this.game.scene.add(ghost);
-    this.placement = { key, def, ghost, valid: false, tx: 0, ty: 0 };
+    // tinted footprint pad: shows exactly which tiles the building will occupy
+    const fp = new THREE.Mesh(
+      new THREE.PlaneGeometry(def.size * TILE, def.size * TILE),
+      new THREE.MeshBasicMaterial({ color: 0x66ff88, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
+    fp.rotation.x = -Math.PI / 2;
+    this.game.scene.add(fp);
+    this.placement = { key, def, ghost, footprint: fp, valid: false, tx: 0, ty: 0 };
     this.updateGhost();
   }
 
   cancelPlacement() {
     if (this.placement) {
       this.game.scene.remove(this.placement.ghost);
+      if (this.placement.footprint) this.game.scene.remove(this.placement.footprint);
       this.placement = null;
     }
   }
@@ -388,6 +395,12 @@ export class Controls {
     const lp = this.game.localPlayer;
     p.valid = this.game.canPlace(lp, p.key, tx, ty, true) && this.game.canAfford(lp, p.def.cost);
     p.ghost.traverse(o => { if (o.isMesh) o.material.opacity = p.valid ? 0.65 : 0.2; });
+    if (p.footprint) {
+      p.footprint.visible = true;
+      p.footprint.position.set(cx, this.game.map.heightAt(cx, cz) + 0.08, cz);
+      p.footprint.material.color.set(p.valid ? 0x66ff88 : 0xff5544);
+      p.footprint.material.opacity = p.valid ? 0.22 : 0.18;
+    }
   }
 
   tryPlace(e) {
