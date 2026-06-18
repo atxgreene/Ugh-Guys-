@@ -255,10 +255,17 @@ function closeLobby() {
 }
 
 function lobbyConnect(isHost) {
-  const url = document.getElementById('mp-url').value.trim();
+  let url = document.getElementById('mp-url').value.trim();
   const room = (document.getElementById('mp-room').value.trim() || 'default');
   const status = document.getElementById('mp-status');
   const startBtn = document.getElementById('mp-start');
+
+  // Auto-correct common URL mistakes
+  if (url && !url.match(/^wss?:\/\//)) {
+    if (url.match(/^https?:\/\//)) url = url.replace(/^https?/, 'ws');
+    else url = 'ws://' + url;
+  }
+
   status.textContent = `Connecting to ${url} …`;
   let transport;
   try {
