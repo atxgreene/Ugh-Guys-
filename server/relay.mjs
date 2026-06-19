@@ -34,6 +34,14 @@ const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '127.0.0.1';          // secure default: localhost only
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
+// Each allowlist entry may contain '*' wildcards (e.g. https://mygame-*.vercel.app) so
+// a single rule can cover rotating preview URLs without enumerating them.
+function originAllowed(origin) {
+  return ALLOWED_ORIGINS.some(pat => {
+    const re = '^' + pat.split('*').map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$';
+    return new RegExp(re).test(origin);
+  });
+}
 const MAX_ROOM = Number(process.env.MAX_ROOM || 2);     // 1v1 lockstep → 2 seats
 const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS || 500);
 const MAX_ROOMS = Number(process.env.MAX_ROOMS || 200);
@@ -56,7 +64,7 @@ server.on('upgrade', (req, socket) => {
   if (sockets.size >= MAX_CONNECTIONS) { try { socket.destroy(); } catch {} return; }
   // optional origin allowlist — only our game(s) may use the relay
   const origin = req.headers['origin'] || '';
-  if (ALLOWED_ORIGINS.length && !ALLOWED_ORIGINS.includes(origin)) {
+  if (ALLOWED_ORIGINS.length && !originAllowed(origin)) {
     try { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); } catch {}
     return;
   }

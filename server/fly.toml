@@ -18,6 +18,12 @@
 app = "sotw-relay"
 primary_region = "iad"
 
+# Lock the relay to this game's origins. Wildcards cover Vercel's rotating preview URLs
+# and production aliases (all start with "aethercraft-"), plus the clean prod hostname.
+# Add a custom domain here too if you point one at the game. Empty = open (dev).
+[env]
+  ALLOWED_ORIGINS = "https://aethercraft.vercel.app,https://aethercraft-*.vercel.app"
+
 [build]
 
 [http_service]

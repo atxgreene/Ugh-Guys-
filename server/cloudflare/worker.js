@@ -28,7 +28,11 @@ export default {
     // separated list) in wrangler.toml / dashboard. Empty = allow all (dev only).
     const allow = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
     const origin = request.headers.get('Origin') || '';
-    if (allow.length && !allow.includes(origin)) return new Response('forbidden origin', { status: 403 });
+    // entries may contain '*' wildcards (e.g. https://mygame-*.vercel.app) to cover
+    // rotating preview URLs without listing each one
+    const ok = allow.some(pat =>
+      new RegExp('^' + pat.split('*').map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$').test(origin));
+    if (allow.length && !ok) return new Response('forbidden origin', { status: 403 });
 
     const id = env.HUB.idFromName('hub');
     return env.HUB.get(id).fetch(request);
