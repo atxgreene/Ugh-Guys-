@@ -1,0 +1,29 @@
+# Cloudflare Workers config for the lockstep relay (free plan friendly).
+#
+# Deploy:
+#   cd server/cloudflare
+#   npx wrangler login        # one-time, opens a browser
+#   npx wrangler deploy       # ships the Worker + Durable Object
+#
+# After deploy, wrangler prints your URL, e.g. https://sotw-relay.<you>.workers.dev
+# Use it as wss://sotw-relay.<you>.workers.dev and set DEFAULT_RELAY in src/main.js to
+# match (or paste it into the game's Multiplayer → Advanced field).
+
+name = "sotw-relay"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# Lock the relay to your game's origin(s) in production — comma-separated, no spaces.
+# Leave empty for local `wrangler dev` testing. Example:
+#   ALLOWED_ORIGINS = "https://your-game.example.com,https://your-game.pages.dev"
+[vars]
+ALLOWED_ORIGINS = ""
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "RelayHub"
+
+# SQLite-backed Durable Objects are required to stay on the Workers FREE plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayHub"]

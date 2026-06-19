@@ -26,7 +26,7 @@ const NEUTRAL_COLOR = 0x808078, NEUTRAL_GLOW = 0xc2b89a;
 const CLAN_DIALOGUE = {
   landonian: { portrait: 'portraits/landon.png', name: 'Landry · Lord of the Landonians',
     line: '“You’re standing in my Fields. Bold move — I respect it. Won’t change what happens next.”' },
-  boydonian: { portrait: 'portraits/boydonian.png', name: 'Connor · King of the Boydonians',
+  boydonian: { portrait: 'portraits/boydonian.png', name: 'Conner · King of the Boydonians',
     line: '“Swing true, fear nothing. This is Boydonian ground, friend. Always has been.”' },
   greene: { portrait: 'portraits/greene.png', name: 'Mr Greene · Master of the House',
     line: '“Welcome to my Fields, stranger. The hounds caught your scent a mile off. Stay a while — few leave.”' },
@@ -2452,7 +2452,10 @@ export class Game {
     // record this tick: its dt, the commands issued since the last tick, and a
     // periodic state checksum so playback can detect (and report) any desync.
     if (this.rec && !this.over) {
-      const f = { d: +dt.toFixed(5) };
+      // store dt at full double precision: playback must integrate with the exact
+      // same dt the live sim used, or the tiny per-tick offset from rounding drifts
+      // positions until the checksum diverges (a replay desync / would-be MP desync).
+      const f = { d: dt };
       if (this.rec.pending.length) { f.c = this.rec.pending; this.rec.pending = []; }
       if ((this.rec.frame % 120) === 0) f.k = this.checksum();
       this.rec.frames.push(f);

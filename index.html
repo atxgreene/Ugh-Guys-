@@ -5,12 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Shadow of the Watchers — Ancient Apocalyptic RTS</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none;
+      -webkit-user-select: none; -webkit-touch-callout: none; }
+    /* iOS ignores user-scalable=no, so stop the page itself from ever zooming:
+       `manipulation` kills double-tap-to-zoom (without delaying real taps); the game
+       canvas takes full gesture ownership; text inputs stay selectable/editable. */
     html, body { width: 100%; height: 100%; overflow: hidden; background: #08080c;
-      font-family: Georgia, 'Times New Roman', serif; color: #d8d2c4; }
+      font-family: Georgia, 'Times New Roman', serif; color: #d8d2c4;
+      touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+    input, textarea { -webkit-user-select: text; user-select: text; }
     #app { position: relative; width: 100%; height: 100%; }
-    #game-container { position: absolute; inset: 0; }
-    canvas { display: block; }
+    #game-container { position: absolute; inset: 0; touch-action: none; }
+    canvas { display: block; touch-action: none; }
 
     /* ---------- main menu ---------- */
     #menu { position: absolute; inset: 0; z-index: 50; display: flex; flex-direction: column;
@@ -244,7 +250,7 @@
     #lobby { position: absolute; inset: 0; z-index: 48; display: none; align-items: center; justify-content: center;
       background: rgba(8,6,12,0.78); }
     #lobby.show { display: flex; }
-    .lobby-card { width: min(440px, 92vw); background: linear-gradient(180deg, #1c1622, #120e16);
+    .lobby-card { width: min(440px, 92vw); max-height: 92vh; overflow-y: auto; background: linear-gradient(180deg, #1c1622, #120e16);
       border: 1px solid #5a4458; border-radius: 8px; padding: 22px 24px; box-shadow: 0 0 40px rgba(0,0,0,0.6); }
     .lobby-card h2 { color: #e8c074; font-weight: normal; letter-spacing: 1px; margin-bottom: 4px; }
     .lobby-card .beta { font-size: 11px; color: #8a8294; letter-spacing: 2px; text-transform: uppercase; }
@@ -252,7 +258,7 @@
     .lobby-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
     .lobby-row > span { width: 92px; color: #b0a4be; font-size: 13px; flex-shrink: 0; }
     .lobby-row input, .lobby-row select { flex: 1; background: #0e0b14; color: #e6cf94; border: 1px solid #4a4458;
-      border-radius: 4px; padding: 8px 10px; font-family: inherit; font-size: 13px; }
+      border-radius: 4px; padding: 8px 10px; font-family: inherit; font-size: 16px; }
     .lobby-actions { display: flex; gap: 10px; margin-top: 14px; }
     .lobby-actions button { flex: 1; background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6cf94;
       border: 1px solid #6a5634; border-radius: 4px; padding: 10px; font-family: inherit; font-size: 14px;
@@ -262,6 +268,114 @@
     .lobby-ghost { background: #1c1622 !important; color: #9a90a4 !important; border-color: #4a4458 !important; }
     .lobby-status { margin-top: 14px; font-size: 12px; color: #8a90a0; line-height: 1.5; min-height: 18px; }
     .lobby-status code { color: #b0a4be; background: #0e0b14; padding: 1px 5px; border-radius: 3px; }
+
+    /* multiplayer chat — shared styling for the lobby panel and the in-match overlay */
+    .lobby-chat { margin-top: 12px; }
+    .chat-log { font-size: 12px; line-height: 1.55; color: #c4b8d0; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 2px; }
+    .lobby-chat .chat-log { height: 110px; background: #0b0810; border: 1px solid #322c3e;
+      border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; }
+    .chat-log .cm-me b { color: #7fc4e8; font-weight: normal; }
+    .chat-log .cm-them b { color: #e8c074; font-weight: normal; }
+    .chat-log .cm-sys { color: #7a7488; font-style: italic; }
+    .chat-log .cm b { font-weight: normal; }
+    .chat-input { width: 100%; box-sizing: border-box; background: #0e0b14; color: #e6cf94;
+      border: 1px solid #4a4458; border-radius: 4px; padding: 7px 9px; font-family: inherit;
+      font-size: 16px; outline: none; }
+    .chat-input:focus { border-color: #7a6a92; }
+
+    /* in-match chat overlay — bottom-left, above the unit panel */
+    #match-chat { position: absolute; left: 12px; bottom: 132px; width: min(360px, 44vw);
+      z-index: 34; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+    #match-chat .chat-log { max-height: 168px; pointer-events: none;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.95); }
+    #match-chat .chat-log .cm { background: rgba(10,8,16,0.55); border-radius: 3px;
+      padding: 1px 6px; align-self: flex-start; max-width: 100%; }
+    #match-chat .chat-input { display: none; pointer-events: auto;
+      background: rgba(14,11,20,0.94); box-shadow: 0 4px 18px rgba(0,0,0,0.6); }
+    #match-chat.typing .chat-input { display: block; }
+
+    /* ---- seamless lobby: quick match / host / join, ready-up, codes ---- */
+    .mp-stage { margin: 4px 0 2px; }
+    .mp-bigactions { display: flex; gap: 10px; margin-bottom: 10px; }
+    .mp-big { flex: 1; display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
+      padding: 13px 14px; background: linear-gradient(180deg,#241b30,#15101d); color: #e6cf94;
+      border: 1px solid #4a4458; border-radius: 6px; cursor: pointer; text-align: left;
+      transition: border-color .15s, transform .05s; }
+    .mp-big:hover { border-color: #b88a3e; }
+    .mp-big:active { transform: translateY(1px); }
+    .mp-big b { font-weight: normal; font-size: 15px; color: #e8c074; }
+    .mp-big small { color: #9a90a8; font-size: 11px; }
+    .mp-join-row { display: flex; gap: 8px; }
+    .mp-join-row input { flex: 1; background: #0e0b14; color: #e6cf94; border: 1px solid #4a4458;
+      border-radius: 4px; padding: 9px 11px; font-family: inherit; font-size: 16px; letter-spacing: 2px;
+      text-transform: uppercase; outline: none; }
+    .mp-join-row input:focus { border-color: #7a6a92; }
+    .mp-join-row button, .lobby-actions button { background: linear-gradient(180deg,#3a2c16,#241a0c);
+      color: #e6cf94; border: 1px solid #6a4e26; border-radius: 4px; padding: 9px 16px; cursor: pointer;
+      font-family: inherit; font-size: 13px; letter-spacing: 1px; }
+    .mp-join-row button:hover, .lobby-actions button:hover { border-color: #b88a3e; }
+    .lobby-actions button:disabled { opacity: .45; cursor: default; border-color: #4a4458; }
+    .lobby-foot { justify-content: space-between; align-items: center; margin-top: 12px; }
+
+    .mp-searching { display: flex; align-items: center; gap: 10px; color: #d8c8a0; font-size: 14px;
+      padding: 18px 4px; }
+    .mp-spinner { width: 16px; height: 16px; border: 2px solid #4a4458; border-top-color: #e8c074;
+      border-radius: 50%; display: inline-block; animation: mp-spin 0.8s linear infinite; }
+    .mp-spinner.big { width: 28px; height: 28px; border-width: 3px; }
+    @keyframes mp-spin { to { transform: rotate(360deg); } }
+
+    .mp-invite { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 10px;
+      background: #0b0810; border: 1px solid #322c3e; border-radius: 6px; }
+    .mp-invite-label { font-size: 11px; color: #8a8294; text-transform: uppercase; letter-spacing: 1px; }
+    .mp-code-big { font-size: 18px; letter-spacing: 3px; color: #e8c074; font-weight: bold; flex: 1; }
+    .mp-copy { background: #2c2519; color: #e6cf94; border: 1px solid #6a4e26; border-radius: 4px;
+      padding: 6px 11px; cursor: pointer; font-family: inherit; font-size: 12px; }
+    .mp-copy:hover { border-color: #b88a3e; }
+    .mp-copy.done { color: #8fd08f; border-color: #4e6a2e; }
+
+    .mp-players { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .mp-player { display: flex; align-items: center; gap: 10px; padding: 8px 11px; background: #0e0b14;
+      border: 1px solid #322c3e; border-radius: 5px; font-size: 13px; }
+    .mp-player .mp-seat { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .mp-player.p0 .mp-seat { background: #6fa8dc; } .mp-player.p1 .mp-seat { background: #e06666; }
+    .mp-player .mp-pname { flex: 1; color: #d8cce0; }
+    .mp-player.you .mp-pname::after { content: ' (you)'; color: #8a8294; font-size: 11px; }
+    .mp-player .mp-rs { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+    .mp-player .mp-rs.on { color: #8fd08f; } .mp-player .mp-rs.off { color: #8a7a52; }
+    .mp-ready-btn.on { background: linear-gradient(180deg,#2c4a1c,#1a2c10); border-color: #4e6a2e; color: #cfe6a0; }
+
+    .mp-advanced { margin-top: 12px; font-size: 12px; }
+    .mp-advanced summary { color: #8a8294; cursor: pointer; letter-spacing: 1px; outline: none; }
+    .mp-advanced[open] summary { margin-bottom: 8px; }
+    .mp-ping { font-size: 11px; color: #8a8294; letter-spacing: 1px; }
+    .mp-ping b { font-weight: normal; } .mp-ping.good b { color: #8fd08f; }
+    .mp-ping.ok b { color: #e8c074; } .mp-ping.bad b { color: #e06666; }
+
+    /* launch countdown */
+    #mp-countdown { position: absolute; inset: 0; z-index: 60; display: none; flex-direction: column;
+      align-items: center; justify-content: center; background: rgba(8,6,12,0.82); gap: 8px; }
+    #mp-countdown.show { display: flex; }
+    .mp-cd-num { font-size: 120px; color: #e8c074; font-weight: bold; line-height: 1;
+      text-shadow: 0 0 40px rgba(232,192,116,0.5); animation: mp-pop 1s ease-out; }
+    .mp-cd-sub { color: #b0a4be; letter-spacing: 3px; text-transform: uppercase; font-size: 13px; }
+    @keyframes mp-pop { 0% { transform: scale(1.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: scale(1); } }
+
+    /* in-match connection-lost / reconnecting overlay */
+    #mp-connlost { position: absolute; inset: 0; z-index: 58; display: none; align-items: center;
+      justify-content: center; background: rgba(8,6,12,0.55); backdrop-filter: blur(2px); }
+    #mp-connlost.show { display: flex; }
+    .mp-cl-card { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 28px 36px;
+      background: linear-gradient(180deg,#1c1622,#120e16); border: 1px solid #4a4458; border-radius: 8px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.7); }
+    .mp-cl-title { color: #e8c074; font-size: 16px; letter-spacing: 1px; }
+    .mp-cl-sub { color: #9a90a8; font-size: 12px; }
+
+    /* in-match ping indicator (top-right, under the topbar) */
+    #net-ping { position: absolute; right: 12px; top: 46px; z-index: 33; font-size: 11px;
+      letter-spacing: 1px; padding: 2px 7px; border-radius: 3px; background: rgba(10,8,16,0.6);
+      text-shadow: 0 1px 2px rgba(0,0,0,0.9); pointer-events: none; }
+    #net-ping.good { color: #8fd08f; } #net-ping.ok { color: #e8c074; } #net-ping.bad { color: #e06666; }
 
     /* onboarding: controls/hotkey reference (repurposed #help) */
     #help { right: 10px; top: 46px; width: 264px; padding: 14px 16px; font-size: 12px; color: #b0a890;
@@ -482,22 +596,61 @@
     <div id="lobby">
       <div class="lobby-card">
         <h2>Multiplayer <span class="beta">beta · lockstep</span></h2>
-        <p class="lobby-sub">Deterministic peer-to-peer over a relay. Host a room or join one. Both players run the same simulation; only commands cross the wire.</p>
-        <label class="lobby-row"><span>Relay</span><input id="mp-url" type="text" value="ws://localhost:8787" spellcheck="false"></label>
-        <label class="lobby-row"><span>Room</span><input id="mp-room" type="text" value="watchers" spellcheck="false"></label>
+        <p class="lobby-sub">Play a friend or get matched. Both players run the same simulation; only commands cross the wire.</p>
+
+        <label class="lobby-row"><span>Your name</span><input id="mp-name" type="text" maxlength="24" placeholder="Commander" spellcheck="false"></label>
         <label class="lobby-row"><span>Your faction</span><select id="mp-faction"></select></label>
-        <label class="lobby-row" id="mp-foe-row"><span>Opponent</span><select id="mp-foe"></select></label>
-        <div class="lobby-actions">
-          <button id="mp-host">Host</button>
-          <button id="mp-join">Join</button>
+
+        <div id="mp-stage-choose" class="mp-stage">
+          <div class="mp-bigactions">
+            <button id="mp-quick" class="mp-big"><b>⚔ Quick Match</b><small>Auto-pair with another player</small></button>
+            <button id="mp-host2" class="mp-big"><b>⛺ Host Game</b><small>Get a code to share</small></button>
+          </div>
+          <div class="mp-join-row">
+            <input id="mp-code" type="text" placeholder="Enter invite code" spellcheck="false" maxlength="14">
+            <button id="mp-join2">Join</button>
+          </div>
         </div>
-        <div id="mp-status" class="lobby-status">Run <code>npm run relay</code> locally, or point Relay at a deployed <code>wss://</code> server.</div>
-        <div class="lobby-actions">
-          <button id="mp-start" disabled>Start Match</button>
+
+        <div id="mp-stage-search" class="mp-stage" style="display:none">
+          <div class="mp-searching"><span class="mp-spinner"></span><span>Searching for an opponent…</span></div>
+          <div class="lobby-actions"><button id="mp-cancel-qm" class="lobby-ghost">Cancel</button></div>
+        </div>
+
+        <div id="mp-stage-room" class="mp-stage" style="display:none">
+          <div id="mp-invite" class="mp-invite" style="display:none">
+            <span class="mp-invite-label">Invite code</span>
+            <span class="mp-code-big" id="mp-code-display">—</span>
+            <button id="mp-copy" class="mp-copy">⧉ Copy link</button>
+          </div>
+          <div id="mp-players" class="mp-players"></div>
+          <div class="lobby-actions">
+            <button id="mp-ready" class="mp-ready-btn">Ready</button>
+            <button id="mp-start" disabled>Start Match</button>
+          </div>
+        </div>
+
+        <div id="mp-status" class="lobby-status"></div>
+
+        <div id="lobby-chat" class="lobby-chat" style="display:none">
+          <div id="lobby-chat-log" class="chat-log"></div>
+          <input id="lobby-chat-input" class="chat-input" type="text" maxlength="240" placeholder="Chat… (Enter to send)" spellcheck="false">
+        </div>
+
+        <details class="mp-advanced">
+          <summary>Advanced</summary>
+          <label class="lobby-row"><span>Relay</span><input id="mp-url" type="text" spellcheck="false"></label>
+        </details>
+
+        <div class="lobby-actions lobby-foot">
           <button id="mp-close" class="lobby-ghost">Back</button>
+          <span id="mp-ping" class="mp-ping"></span>
         </div>
       </div>
     </div>
+    <div id="mp-countdown"><div class="mp-cd-num" id="mp-cd-num">3</div><div class="mp-cd-sub">The flood gathers…</div></div>
+    <div id="mp-connlost"><div class="mp-cl-card"><span class="mp-spinner big"></span><div class="mp-cl-title" id="mp-cl-title">Opponent reconnecting…</div><div class="mp-cl-sub" id="mp-cl-sub">Holding the line.</div><button id="mp-cl-quit" class="lobby-ghost">Abandon match</button></div></div>
+    <div id="net-ping" style="display:none"></div>
     <div id="selbox"></div>
     <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button><button id="btn-dlreplay" style="display:none">⭳ Download Replay</button></div>
     <div id="pausemenu">
@@ -511,6 +664,10 @@
       <div class="pm-hint">P resumes · the flood waits while you deliberate</div>
     </div>
     <div id="introcard"><div class="ic-rule"></div><h2 id="ic-name"></h2><div class="ic-sub" id="ic-sub"></div><div class="ic-rule"></div></div>
+    <div id="match-chat" style="display:none">
+      <div id="match-chat-log" class="chat-log"></div>
+      <input id="match-chat-input" class="chat-input" type="text" maxlength="240" placeholder="Message your opponent…" spellcheck="false">
+    </div>
     <div id="loading"><div class="load-glyph">✦</div><div>Shaping the world before the flood…</div></div>
   </div>
   <script type="module" src="/src/main.js"></script>
