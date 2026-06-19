@@ -13,11 +13,11 @@ name = "sotw-relay"
 main = "worker.js"
 compatibility_date = "2024-11-01"
 
-# Lock the relay to your game's origin(s) in production — comma-separated, no spaces.
-# Leave empty for local `wrangler dev` testing. Example:
-#   ALLOWED_ORIGINS = "https://your-game.example.com,https://your-game.pages.dev"
+# Lock the relay to this game's origins. Wildcards ('*') cover Vercel's rotating preview
+# URLs and production aliases (all start with "aethercraft-") plus the clean prod host.
+# Add a custom domain here too if you point one at the game. Empty = open (dev).
 [vars]
-ALLOWED_ORIGINS = ""
+ALLOWED_ORIGINS = "https://aethercraft.vercel.app,https://aethercraft-*.vercel.app"
 
 [[durable_objects.bindings]]
 name = "HUB"

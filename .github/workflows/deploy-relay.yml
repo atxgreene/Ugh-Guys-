@@ -29,6 +29,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Cloudflare secrets are present
+        run: |
+          if [ -z "$CF_TOKEN" ] || [ -z "$CF_ACCOUNT" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN and/or CLOUDFLARE_ACCOUNT_ID are missing in atxgreene/Ugh-Guys-. Add BOTH under Settings -> Secrets and variables -> Actions -> Repository secrets (this repo)."
+            exit 1
+          fi
+          echo "Cloudflare secrets present (token length ${#CF_TOKEN}, account length ${#CF_ACCOUNT})."
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
