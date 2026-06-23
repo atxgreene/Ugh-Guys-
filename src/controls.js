@@ -192,13 +192,19 @@ export class Controls {
     }
     if (k === 'q') { for (const u of this.selectedUnits()) if (u.def.ability) this.game.cmd('ability', { u }); }
     if (k === 'p') { this.onPause?.(); }
-    // secret code: type "greene" to summon the Fields of Evil near your city
-    this._code = ((this._code || '') + k).slice(-6);
-    if (this._code === 'greene') {
+    // secret codes: type "greene" to summon the Fields of Evil, "scott" for the boss
+    this._code = ((this._code || '') + k).slice(-8);
+    if (this._code.endsWith('greene')) {
       this._code = '';
       const bp = this.game.map.basePlayer;
       if (this.game.spawnFieldsOfEvil(bp.x + 12, bp.y - 12))
         this.ui.toast('The Fields of Evil rise nearby. The House of Greene awaits.');
+    }
+    if (this._code.endsWith('scott')) {
+      this._code = '';
+      const bp = this.game.map.basePlayer;
+      if (this.game.summonScott(bp.x + 14, bp.y - 10))
+        this.ui.toast('◎ SCOTT awakens — the green-eyed sentinel marches. Dodge the rings; fell him for a trove.');
     }
     if (k === 'escape') { this.cancelPlacement(); this.attackMoveArm = false; this.patrolArm = false; this.ui.buildMenuOpen = false; this.ui.refreshPanel(); }
     if (k === 'h') { const m = this.game.playerMain; if (m) { this.focusT.x = m.pos.x; this.focusT.z = m.pos.z; } }
