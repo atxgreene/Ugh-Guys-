@@ -278,10 +278,9 @@ function appendChat(logEl, { from, text, sys }, youSeat) {
 // The hosted relay players reach by default — no setup, no URLs. Overridable via the
 // Advanced panel (e.g. ws://localhost:8787 for dev) or a ?relay= query param.
 //
-// Points at the Fly.io app named in server/fly.toml ("sotw-relay"). If you deploy under
-// a different app name (Fly names are globally unique), change this to match your
-// wss://<app>.fly.dev hostname.
-const DEFAULT_RELAY = 'wss://sotw-relay.fly.dev';
+// Points at the Cloudflare Worker deployed from server/cloudflare (free plan, always-on,
+// no cold starts). Deployed via .github/workflows/deploy-relay.yml.
+const DEFAULT_RELAY = 'wss://sotw-relay.atxgreene.workers.dev';
 const CODE_WORDS = ['RAVEN', 'ASHEN', 'IRON', 'GRAVE', 'WOLF', 'EMBER', 'STORM', 'THORN',
   'DUSK', 'FROST', 'BONE', 'OMEN', 'RUIN', 'VEIL', 'WRAITH', 'TIDE'];
 
