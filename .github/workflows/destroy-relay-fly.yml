@@ -1,0 +1,47 @@
+# One-shot: destroy the Fly.io relay app now that the relay runs on Cloudflare.
+#
+# We migrated the multiplayer relay to Cloudflare Workers (free, always-on). The old
+# Fly.io app scaled to zero but still existed; this removes it entirely so it can never
+# bill. Safe to delete this workflow file after a successful run.
+#
+# Trigger: Actions -> "Destroy relay (Fly.io)" -> Run workflow. Requires the FLY_API_TOKEN
+# secret. If the app is already gone, the job still succeeds.
+name: Destroy relay (Fly.io)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Fly app name to destroy
+        required: true
+        default: sotw-relay
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Fly token is present
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::FLY_API_TOKEN is missing. Add it under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          echo "Fly token present (length ${#FLY_API_TOKEN})."
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Destroy app (idempotent)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP="${{ github.event.inputs.app }}"
+          if flyctl apps list | grep -qw "$APP"; then
+            echo "Destroying $APP ..."
+            flyctl apps destroy "$APP" --yes
+            echo "Destroyed $APP."
+          else
+            echo "App $APP not found (already gone). Nothing to do."
+          fi
