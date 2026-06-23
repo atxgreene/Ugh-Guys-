@@ -1,0 +1,89 @@
+# Admin helper: drive the Cloudflare API with the repo's CLOUDFLARE_* secrets.
+#
+# The relay sandbox can't reach api.cloudflare.com and never sees the token, so any
+# Cloudflare API change is run from here, where the secret is available. Pick an action:
+#
+#   discover            - read-only dump of the Worker, its subdomain, and any Workers
+#                         Builds / Git connections (run this first; mutates nothing).
+#   disconnect-build    - remove the Git-connected Workers Build for $SCRIPT so the
+#                         dashboard auto-build stops firing on every push.
+#
+# Trigger: Actions -> "Cloudflare admin" -> Run workflow -> choose action.
+name: Cloudflare admin
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do
+        required: true
+        default: discover
+        type: choice
+        options:
+          - discover
+          - disconnect-build
+      script:
+        description: Worker script name
+        required: true
+        default: sotw-relay
+
+jobs:
+  cf:
+    runs-on: ubuntu-latest
+    env:
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_ACCT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SCRIPT: ${{ github.event.inputs.script }}
+      ACTION: ${{ github.event.inputs.action }}
+    steps:
+      - name: Verify secrets
+        run: |
+          if [ -z "$CF_TOKEN" ] || [ -z "$CF_ACCT" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN and/or CLOUDFLARE_ACCOUNT_ID missing."
+            exit 1
+          fi
+          echo "Secrets present (token len ${#CF_TOKEN}, acct len ${#CF_ACCT})."
+
+      - name: Run
+        run: |
+          set -uo pipefail
+          api() {
+            # $1 = METHOD, $2 = path (after /client/v4)
+            local method="$1"; shift
+            local path="$1"; shift
+            curl -sS -X "$method" \
+              -H "Authorization: Bearer $CF_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4${path}" "$@"
+          }
+          show() { echo "=== $1 ==="; echo "$2" | jq . 2>/dev/null || echo "$2"; echo; }
+
+          # --- always: identify the worker + subdomain ---
+          show "token verify" "$(api GET /user/tokens/verify)"
+          show "account subdomain" "$(api GET /accounts/$CF_ACCT/workers/subdomain)"
+          show "worker $SCRIPT settings" "$(api GET /accounts/$CF_ACCT/workers/scripts/$SCRIPT/settings)"
+
+          # --- Workers Builds: enumerate repo connections + the build linked to this script ---
+          CONNS="$(api GET /accounts/$CF_ACCT/builds/repos/connections)"
+          show "builds repo connections" "$CONNS"
+
+          TRIGGERS="$(api GET /accounts/$CF_ACCT/builds/triggers)"
+          show "builds triggers" "$TRIGGERS"
+
+          if [ "$ACTION" = "discover" ]; then
+            echo "Discovery complete. Review the JSON above, then re-run with action=disconnect-build."
+            exit 0
+          fi
+
+          # --- disconnect-build: delete every build trigger bound to this script ---
+          IDS="$(echo "$TRIGGERS" | jq -r --arg s "$SCRIPT" \
+            '.result[]? | select((.worker_name // .script_name // .worker.name) == $s) | (.trigger_uuid // .id // .uuid)' 2>/dev/null)"
+          if [ -z "$IDS" ]; then
+            echo "No build trigger bound to $SCRIPT found. Listing all so you can pick manually:"
+            echo "$TRIGGERS" | jq -r '.result[]? | "\(.trigger_uuid // .id // .uuid)  ->  \(.worker_name // .script_name // (.worker.name) // "?")"' 2>/dev/null || true
+            exit 0
+          fi
+          for id in $IDS; do
+            show "delete trigger $id" "$(api DELETE /accounts/$CF_ACCT/builds/triggers/$id)"
+          done
+          echo "Disconnect attempt finished. Re-run action=discover to confirm it's gone."
