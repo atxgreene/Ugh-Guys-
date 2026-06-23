@@ -786,6 +786,45 @@ const unitBuilders = {
     grp.add(box(0.5, 0.16, 0.5, g, 0, 3.35, 0));           // apex sigil
     return grp;
   },
+
+  boss_scott(b, g) {                                       // Easter egg: Scott, the Green-Eyed Sentinel
+    const grp = new THREE.Group();
+    const white = mat(0xe6e7ea, { rough: 0.45, metal: 0.25 });  // bright stormtrooper plate
+    const black = mat(0x141417, { rough: 0.55, metal: 0.35 });  // undersuit + accents
+    const visor = mat(0x0b0b0d, { rough: 0.25, metal: 0.45 });  // glossy dark visor band
+    const eye = glowMat(0x66e23a, 1.9);                         // signature green optics
+    // armored legs + boots
+    [[-0.42], [0.42]].forEach(([x]) => {
+      grp.add(cyl(0.3, 0.26, 1.5, white, 6, x, 0.85, 0));        // greave
+      grp.add(box(0.42, 0.5, 0.42, white, x, 1.42, 0.02));       // thigh plate
+      grp.add(box(0.5, 0.3, 0.74, black, x, 0.18, 0.1));         // boot
+    });
+    grp.add(box(1.0, 0.5, 0.62, black, 0, 1.55, 0));             // hip belt
+    // torso — chestplate over a black core panel
+    grp.add(box(1.16, 1.3, 0.7, white, 0, 2.4, 0));              // chest
+    grp.add(box(1.22, 0.4, 0.74, black, 0, 1.9, 0));            // ab band
+    grp.add(box(0.5, 0.82, 0.42, black, 0, 2.5, 0.34));          // sternum panel
+    grp.add(box(0.16, 0.52, 0.06, eye, 0, 2.55, 0.58));         // green chest light
+    grp.add(box(0.7, 0.92, 0.34, black, 0, 2.5, -0.5));          // backpack
+    // pauldrons + arms ending in gauntlet fists
+    [[-1], [1]].forEach(([s]) => {
+      grp.add(sph(0.5, white, s * 0.96, 3.02, 0));               // shoulder dome
+      grp.add(cyl(0.26, 0.24, 1.3, white, 6, s * 1.06, 2.3, 0, 0, 0, s * 0.2));    // upper arm
+      grp.add(cyl(0.24, 0.2, 1.2, white, 6, s * 1.32, 1.2, 0.05, s * 0.16, 0, s * 0.05)); // forearm
+      grp.add(box(0.34, 0.36, 0.36, black, s * 1.46, 0.55, 0.12)); // gauntlet fist
+    });
+    // neck → helmet: white dome, dark T-visor, two round green eyes, side ear-pods
+    grp.add(cyl(0.24, 0.26, 0.22, black, 6, 0, 3.16, 0));        // neck
+    grp.add(sph(0.56, white, 0, 3.55, 0.02));                    // helmet dome
+    grp.add(box(0.64, 0.44, 0.62, white, 0, 3.5, 0));            // helmet shell (squares the brow)
+    grp.add(box(0.76, 0.26, 0.46, visor, 0, 3.5, 0.3));          // dark visor band across the eyes
+    grp.add(box(0.22, 0.5, 0.22, black, 0, 3.66, 0.16));         // dark central crest (the helmet's T)
+    grp.add(sph(0.12, eye, -0.19, 3.5, 0.5));                    // green left optic
+    grp.add(sph(0.12, eye, 0.19, 3.5, 0.5));                     // green right optic
+    grp.add(box(0.16, 0.3, 0.3, black, -0.58, 3.46, 0.0));       // ear pod
+    grp.add(box(0.16, 0.3, 0.3, black, 0.58, 3.46, 0.0));        // ear pod
+    return grp;
+  },
 };
 
 // ---------- buildings ----------

@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GameMap, BIOMES, GRID, TILE, WORLD, MAP_SIZES, setMapSize } from './terrain.js';
 import { findPath, findNearestWalkable, clearanceFor } from './pathfinding.js';
-import { FACTIONS, UPGRADES, NEUTRALS, MONSTERS, RESOURCE_NODES, START_RES, SUPPLY_CAP,
+import { FACTIONS, UPGRADES, NEUTRALS, MONSTERS, SCOTT, RESOURCE_NODES, START_RES, SUPPLY_CAP,
   FIELDS_OF_EVIL, NEUTRAL_UNIT_DEFS, NEUTRAL_BUILDING_DEFS, EMPOWER } from './data.js';
 import { makeRng } from './rng.js';
 import { buildUnitMesh, buildBuildingMesh, buildResourceNode, glowMat, tickGlowMats, buildScaffold, buildFireCluster, buildDoodad } from './models.js';
@@ -1436,7 +1436,7 @@ export class Game {
       case 'aoe_strike': {
         const rawDmg = unit.effDmg(unit.def.attack?.dmg || 10);
         const dmgBase = rawDmg * (ab.dmgMult || 1);
-        const fxColor = unit.owner <= 1 ? this.players[unit.owner].faction.glow : 0xff7a4d;
+        const fxColor = unit.owner <= 1 ? this.players[unit.owner].faction.glow : (unit.def.telegraphColor || 0xff7a4d);
         // World bosses TELEGRAPH their slam: a warning ring blooms on the ground and
         // the blow lands a beat later, so a sharp player can pull units out of it.
         // (Player/AI abilities still strike instantly to preserve PvP balance.)
@@ -1521,7 +1521,7 @@ export class Game {
       new THREE.MeshBasicMaterial({ color: fxColor, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
     disc.rotation.x = -Math.PI / 2; disc.position.set(x, y, z);
     this.scene.add(disc);
-    this.pendingTelegraphs.push({ attacker, ab, dmgBase, x, z, r, t: 0, dur: windup, ring, disc });
+    this.pendingTelegraphs.push({ attacker, ab, dmgBase, x, z, r, t: 0, dur: windup, ring, disc, fxColor });
     if (this.map.fogStateAt(x, z) === 2) Sound.alert();
   }
 
@@ -1539,7 +1539,7 @@ export class Game {
       const u = tg.attacker;
       const gy = this.map.heightAt(tg.x, tg.z);
       const visible = this.map.fogStateAt(tg.x, tg.z) === 2;
-      this.addEffect(tg.x, tg.z, tg.r, glowMat(0xff7a4d, 2));
+      this.addEffect(tg.x, tg.z, tg.r, glowMat(tg.fxColor || 0xff7a4d, 2));
       if (visible) {
         for (let i = 0; i < 14; i++) {
           const a = i / 14 * Math.PI * 2, rr = tg.r * (0.5 + Math.random() * 0.6);
@@ -1741,6 +1741,23 @@ export class Game {
     this._combat = null;
     this.recalcSupply();
     this.fieldsOfEvil = { x: b.pos.x, z: b.pos.z, seen: false };
+    return true;
+  }
+
+  // Easter egg: summon Scott, the Green-Eyed Sentinel — a one-off world boss that
+  // marches on whoever called him. Same machinery as the lair bosses (telegraphed
+  // green slams, a fat knowledge bounty on death); just hand-spawned by the code.
+  summonScott(tx, ty) {
+    if (this.scottSummoned) return false;
+    const w = findNearestWalkable(this.map, tx, ty, 18, 1);
+    if (!w) return false;
+    const bx = (w.x + 0.5) * TILE, bz = (w.y + 0.5) * TILE;
+    const u = new Unit(this, 2, { ...SCOTT, hp: SCOTT.hp }, 'scott', bx, bz);
+    u.leash = { x: bx, z: bz };           // he holds his ground, then hunts what's near
+    this.units.push(u);
+    this._combat = null;
+    this.recalcSupply();
+    this.scottSummoned = true;
     return true;
   }
 

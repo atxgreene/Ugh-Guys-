@@ -478,12 +478,30 @@ export const FIELDS_OF_EVIL = {
   reward: { knowledge: 500, favor: 200 },
 };
 
+// ---- Easter-egg world boss: Scott, the Green-Eyed Sentinel ----
+// Summoned by typing "scott" in a live match. A towering white-armored sentinel with
+// glowing green optics, telegraphed slams (GREEN rings — micro out of them to dodge),
+// and a fat trove of forbidden knowledge for whoever fells him.
+export const SCOTT = U({
+  name: 'SCOTT · the Green-Eyed Sentinel', boss: true, hp: 2200, armor: 5, supply: 0,
+  attack: { dmg: 42, range: 3.0, cooldown: 2.1, bonus: { structure: 1.5 } },
+  speed: 6.2, model: 'boss_scott', tags: ['massive', 'boss', 'construct'],
+  radius: 1.3, aggroRange: 16, sight: 20, leashRange: 80,
+  telegraphColor: 0x66e23a,
+  ability: { name: 'Optic Overload', icon: '🟢', cooldown: 11, type: 'aoe_strike', radius: 6.4,
+    dmgMult: 2.0, stunDur: 1.4, windup: 1.2,
+    desc: 'His visor flares and a ring of green force erupts where he stands — pull your units out of the ring before it lands to dodge.' },
+  bounty: { knowledge: 400, bronze: 250, favor: 120 },
+  desc: 'A sentinel in white plate, green optics aglow beneath a dark visor. He lifts his helm, smiles — then the smile is gone and the rings begin. Few who summon him are ready for what answers.',
+});
+
 // owner-2 (neutral) lookup tables used when reconstructing a saved game
 export const NEUTRAL_UNIT_DEFS = {
   devourer: NEUTRALS.devourer,
   leviathan: MONSTERS.leviathan,
   nephil_titan: MONSTERS.nephil_titan,
   watcher_sentinel: MONSTERS.watcher_sentinel,
+  scott: SCOTT,
   landonian: FIELDS_OF_EVIL.units.landonian,
   boydonian: FIELDS_OF_EVIL.units.boydonian,
   warwagon: FIELDS_OF_EVIL.units.warwagon,
