@@ -1115,6 +1115,41 @@ export class Game {
     return env;
   }
 
+  // Give a standard water material a rolling swell (vertex) plus a grazing-angle
+  // fresnel sheen and lifted wave crests (fragment), via onBeforeCompile so it still
+  // takes scene lighting, fog, shadows and tone mapping. The shader is registered on
+  // this._waterShaders; the sim tick advances its uTime for the animation.
+  enhanceWater(mat, crestCol) {
+    const crest = new THREE.Color(crestCol);
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.uniforms.uCrest = { value: crest };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>',
+          '#include <common>\nuniform float uTime;\nvarying float vSwell;\nvarying vec3 vWorldW;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+          float sw = sin(transformed.x * 0.055 + uTime * 1.05) * 0.16
+                   + sin(transformed.y * 0.041 - uTime * 0.85) * 0.14
+                   + sin((transformed.x + transformed.y) * 0.09 + uTime * 1.60) * 0.06;
+          transformed.z += sw;
+          vSwell = sw;
+          vWorldW = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>',
+          '#include <common>\nuniform vec3 uCrest;\nvarying float vSwell;\nvarying vec3 vWorldW;')
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          float crestF = smoothstep(0.04, 0.20, vSwell);
+          diffuseColor.rgb = mix(diffuseColor.rgb, uCrest, crestF * 0.5);`)
+        .replace('#include <dithering_fragment>', `
+          vec3 Vw = normalize(cameraPosition - vWorldW);
+          float fres = pow(1.0 - clamp(Vw.y, 0.0, 1.0), 3.5);
+          gl_FragColor.rgb += uCrest * fres * 0.45;
+          #include <dithering_fragment>`);
+      this._waterShaders.push(shader);
+    };
+    return mat;
+  }
+
   // Gradient sky dome + storm cloud wall + lunar halo + distant rain curtain.
   buildSky() {
     const P = this.preset;
@@ -1179,19 +1214,21 @@ export class Game {
 
   initAtmosphere() {
     this.buildSky();
-    // black water in the lowland basins, with slow drifting ripples
+    // black water in the lowland basins, with rolling swell + drifting ripples
     this.waterNormal = waterNormalMap();
     this.waterNormal.repeat.set(36, 36);
+    this._waterShaders = [];   // shader refs whose uTime the sim tick advances
     // faint sky-tinted sheen so dark-mood water reads as a surface, not a void
     const wc = new THREE.Color(this.preset.skyHorizon).lerp(new THREE.Color(0x0d1118), 0.7);
-    const water = new THREE.Mesh(
-      new THREE.PlaneGeometry(WORLD, WORLD),
-      new THREE.MeshStandardMaterial({
-        color: wc, metalness: 0.6, roughness: 0.32,
-        emissive: new THREE.Color(this.preset.skyHorizon).multiplyScalar(0.06),
-        normalMap: this.waterNormal, normalScale: new THREE.Vector2(0.5, 0.5),
-      })
-    );
+    // crest colour: a lifted, sky-lit tint the wave tops and grazing fresnel blend toward
+    const crestCol = new THREE.Color(this.preset.skyHorizon).lerp(new THREE.Color(0x9fd8ff), 0.45);
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: wc, metalness: 0.62, roughness: 0.26,
+      emissive: new THREE.Color(this.preset.skyHorizon).multiplyScalar(0.06),
+      normalMap: this.waterNormal, normalScale: new THREE.Vector2(0.5, 0.5),
+    });
+    // segmented plane so the vertex swell has geometry to displace
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD, 96, 96), this.enhanceWater(waterMat, crestCol));
     water.rotation.x = -Math.PI / 2;
     water.position.set(WORLD / 2, 0.24, WORLD / 2);
     water.receiveShadow = true;
@@ -2572,6 +2609,7 @@ export class Game {
     tickGlowMats(this.time);
     this.updateEmbers(dt);
     this.waterNormal.offset.set(this.time * 0.008, this.time * 0.005);
+    if (this._waterShaders) for (const s of this._waterShaders) s.uniforms.uTime.value = this.time;
     this.fxDust.update(dt); this.fxSmoke.update(dt); this.fxSpark.update(dt);
     this.updateSky(dt);
     this.shake = Math.max(0, this.shake - dt * 2.2);
