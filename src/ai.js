@@ -27,10 +27,10 @@ const DIFFICULTY = {
 };
 
 export class AI {
-  constructor(game) {
+  constructor(game, owner = 1) {
     this.game = game;
-    this.owner = 1;
-    this.faction = game.players[1].faction;
+    this.owner = owner;
+    this.faction = game.players[owner].faction;
     this.buildIndex = 0;
     this.thinkT = 0;
     this.wave = 0;
@@ -48,11 +48,11 @@ export class AI {
     // resource handicap: scale the AI's opening stockpile up (hard) or down (easy).
     // Skip on a restored save — those resources are already the post-handicap values.
     if (d.handicap !== 1 && !game.loadedGame) {
-      const r = game.players[1].resources;
+      const r = game.players[owner].resources;
       for (const k of ['grain', 'timber', 'bronze']) r[k] = Math.round((r[k] || 0) * d.handicap);
     }
     game.on('damaged', (e, attacker) => {
-      if (e.owner !== 1 || !attacker || attacker.owner !== 0) return;
+      if (e.owner !== this.owner || !attacker || !this.isEnemy(attacker.owner)) return;
       // only treat it as a home threat if it's near our base — otherwise a single
       // immortal harasser chipping a far outbuilding could lock us out of attacking
       const m = this.main;
@@ -62,16 +62,32 @@ export class AI {
     });
   }
 
-  get main() { return this.game.buildings.find(b => b.owner === 1 && b.def.main && !b.dead); }
-  myUnits() { return this.game.units.filter(u => u.owner === 1 && !u.dead); }
+  get main() { return this.game.buildings.find(b => b.owner === this.owner && b.def.main && !b.dead); }
+  myUnits() { return this.game.units.filter(u => u.owner === this.owner && !u.dead); }
   myWorkers() { return this.myUnits().filter(u => u.def.worker); }
   myArmy() { return this.myUnits().filter(u => !u.def.worker); }
-  myBuildings() { return this.game.buildings.filter(b => b.owner === 1 && !b.dead); }
+  myBuildings() { return this.game.buildings.filter(b => b.owner === this.owner && !b.dead); }
+
+  // A real, non-neutral player that isn't us — i.e. someone to fight.
+  isEnemy(owner) { return owner < this.game.NEUTRAL && owner !== this.owner; }
+  // Nearest enemy base site (tile coords) to our main — the fallback attack anchor
+  // when no enemy structure is currently known.
+  enemyBaseSite(main) {
+    const g = this.game; let best = null, bd = Infinity;
+    for (let o = 0; o < g.numPlayers; o++) {
+      if (o === this.owner) continue;
+      const s = g.map.bases[o]; if (!s) continue;
+      const cx = (s.x + 0.5) * TILE, cz = (s.y + 0.5) * TILE;
+      const d = main ? Math.hypot(cx - main.pos.x, cz - main.pos.z) : 0;
+      if (d < bd) { bd = d; best = { x: cx, z: cz }; }
+    }
+    return best || { x: (g.map.baseEnemy.x + 0.5) * TILE, z: (g.map.baseEnemy.y + 0.5) * TILE };
+  }
 
   update(dt) {
     // passive economy trickle (hard only) — applied every frame for smoothness
     if (this.diff.trickle && !this.game.over) {
-      const r = this.game.players[1].resources;
+      const r = this.game.players[this.owner].resources;
       const add = this.diff.trickle * dt;
       r.grain = (r.grain || 0) + add; r.timber = (r.timber || 0) + add * 0.7; r.bronze = (r.bronze || 0) + add * 0.5;
     }
@@ -91,7 +107,7 @@ export class AI {
     this.manageAttacks(main);
     this.manageAbilities();
     // keep the macro economy ability on cooldown, same as a diligent player would
-    if (this.game.players[1].empowerCd <= 0) this.game.marshalStores(1);
+    if (this.game.players[this.owner].empowerCd <= 0) this.game.marshalStores(this.owner);
   }
 
   manageWorkers(main) {
@@ -102,7 +118,7 @@ export class AI {
       g.queueTrain(main, this.faction.worker);
     }
     // assign idle workers; keep rough balance grain > timber > bronze, knowledge late
-    const wantKnowledge = g.time > 420 && g.players[1].resources.knowledge < 60;
+    const wantKnowledge = g.time > 420 && g.players[this.owner].resources.knowledge < 60;
     for (const w of workers) {
       if (w.state !== 'idle') continue;
       const counts = { grain: 0, timber: 0, bronze: 0, knowledge: 0 };
@@ -134,28 +150,28 @@ export class AI {
 
   manageBuildOrder(main) {
     const g = this.game;
-    const p = g.players[1];
+    const p = g.players[this.owner];
     const order = BUILD_ORDERS[this.faction.key];
     // emergency supply
     let key = null;
     const supplyKey = order.find(k => this.faction.buildings[k].supplyProvided > 0);
     const underConstruction = this.myBuildings().filter(b => !b.complete);
-    if (p.supplyCap - p.supplyUsed - g.queuedSupply(1) < 4 && p.supplyCap < 80 &&
+    if (p.supplyCap - p.supplyUsed - g.queuedSupply(this.owner) < 4 && p.supplyCap < 80 &&
         !underConstruction.some(b => b.def.supplyProvided > 0)) {
       key = supplyKey;
     } else if (this.buildIndex < order.length) {
       key = order[this.buildIndex];
-      if (!g.buildingAvailable(1, key)) key = null;
+      if (!g.buildingAvailable(this.owner, key)) key = null;
       if (underConstruction.length >= 2) key = null;
     }
     if (!key) return;
     const def = this.faction.buildings[key];
-    if (!g.canAfford(1, def.cost)) return;
+    if (!g.canAfford(this.owner, def.cost)) return;
     const spot = this.findSpot(main, def.size);
     if (!spot) return;
     const worker = this.myWorkers().find(w => w.state !== 'build') || this.myWorkers()[0];
     if (!worker) return;
-    const b = g.placeBuilding(1, key, spot.x, spot.y, [worker]);
+    const b = g.placeBuilding(this.owner, key, spot.x, spot.y, [worker]);
     if (b && key === order[this.buildIndex] && b.def.supplyProvided === 0) this.buildIndex++;
     else if (b && this.buildIndex < order.length && key === order[this.buildIndex]) this.buildIndex++;
   }
@@ -191,7 +207,7 @@ export class AI {
   playerArmyTags() {
     const tags = {};
     for (const u of this.game.units) {
-      if (u.owner !== 0 || u.dead || u.def.worker) continue;
+      if (!this.isEnemy(u.owner) || u.dead || u.def.worker) continue;
       for (const t of u.def.tags || []) tags[t] = (tags[t] || 0) + 1;
     }
     return tags;
@@ -213,7 +229,7 @@ export class AI {
     for (const b of this.myBuildings()) {
       if (!b.complete || !b.def.trains.length || b.trainQueue.length >= 2) continue;
       const options = b.def.trains.filter(k =>
-        !g.players[1].faction.units[k].worker && g.unitAvailable(1, k) && g.canAfford(1, g.players[1].faction.units[k].cost));
+        !g.players[this.owner].faction.units[k].worker && g.unitAvailable(this.owner, k) && g.canAfford(this.owner, g.players[this.owner].faction.units[k].cost));
       if (!options.length) continue;
       // weight by base composition + a bias toward whatever counters the player's army
       const weighted = [];
@@ -229,7 +245,7 @@ export class AI {
       for (const b of this.myBuildings()) {
         if (!b.complete || !b.def.upgrades?.length || b.trainQueue.length) continue;
         for (const upKey of b.def.upgrades) {
-          if (!g.players[1].upgrades.has(upKey)) { g.queueUpgrade(b, upKey); break; }
+          if (!g.players[this.owner].upgrades.has(upKey)) { g.queueUpgrade(b, upKey); break; }
         }
       }
     }
@@ -254,34 +270,38 @@ export class AI {
       this.scouted = true;
       const w = this.myWorkers()[0];
       if (w) {
-        const pb = g.map.basePlayer;
-        w.orderMove((pb.x + 0.5) * TILE, (pb.y + 0.5) * TILE);
+        const t = this.enemyBaseSite(main);
+        w.orderMove(t.x, t.z);
         // return home after a while
         setTimeout(() => { if (!w.dead) w.orderMove(main.pos.x + 6, main.pos.z + 6); }, 25000);
       }
     }
   }
 
-  // freshest worthwhile target: player's main, else any known player building,
-  // else the player's base site on the map.
+  // freshest worthwhile target: nearest enemy main, else nearest known enemy
+  // building, else the nearest enemy base site on the map.
   playerTarget() {
     const g = this.game;
-    if (g.playerMain && !g.playerMain.dead) return g.playerMain.pos;
-    const b = g.buildings.find(x => x.owner === 0 && !x.dead);
-    if (b) return b.pos;
-    return { x: (g.map.basePlayer.x + 0.5) * TILE, z: (g.map.basePlayer.y + 0.5) * TILE };
+    const from = this.main?.pos;
+    const dist = (p) => from ? Math.hypot(p.x - from.x, p.z - from.z) : 0;
+    let best = null, bd = Infinity;
+    for (const b of g.buildings) {
+      if (b.dead || !this.isEnemy(b.owner)) continue;
+      const score = (b.def.main ? 0 : 1e6) + dist(b.pos);   // prefer mains, then nearest
+      if (score < bd) { bd = score; best = b.pos; }
+    }
+    return best || this.enemyBaseSite(this.main);
   }
-  // a forward staging point ~30% of the way from our base toward the player, so
-  // reserves mass up the field instead of dribbling out one unit at a time.
+  // a forward staging point ~30% of the way from our base toward the nearest enemy,
+  // so reserves mass up the field instead of dribbling out one unit at a time.
   stagingPoint(main) {
-    const pb = this.game.map.basePlayer;
-    const px = (pb.x + 0.5) * TILE, pz = (pb.y + 0.5) * TILE;
-    return { x: main.pos.x + (px - main.pos.x) * 0.28, z: main.pos.z + (pz - main.pos.z) * 0.28 };
+    const t = this.enemyBaseSite(main);
+    return { x: main.pos.x + (t.x - main.pos.x) * 0.28, z: main.pos.z + (t.z - main.pos.z) * 0.28 };
   }
-  // peel the fastest free units onto the player's economy
+  // peel the fastest free units onto an enemy economy
   harass() {
     const g = this.game;
-    const workers = g.units.filter(u => u.owner === 0 && !u.dead && u.def.worker);
+    const workers = g.units.filter(u => this.isEnemy(u.owner) && !u.dead && u.def.worker);
     if (!workers.length) return;
     const t = workers[Math.floor(g.rand() * workers.length)];
     const fast = this.myArmy().filter(u => !this.attackGroup.includes(u) && !u._harassUntil && u.def.speed >= 9).slice(0, 4);

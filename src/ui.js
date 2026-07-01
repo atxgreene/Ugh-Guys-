@@ -146,13 +146,13 @@ export class UI {
     // entities
     for (const b of this.game.buildings) {
       if (b.owner !== this.game.localPlayer && !(b.discovered && this.game.map.fogStateAt(b.pos.x, b.pos.z) >= 1)) continue;
-      ctx.fillStyle = b.owner === this.game.localPlayer ? this.game.me.faction.colorCss : b.owner === this.game.NEUTRAL ? '#c9bd92' : '#e03c2c';
+      ctx.fillStyle = b.owner === this.game.localPlayer ? this.game.me.faction.colorCss : b.owner === this.game.NEUTRAL ? '#c9bd92' : b.owner >= 2 ? this.game.seatCss(b.owner) : '#e03c2c';
       const s = b.size * TILE * k;
       ctx.fillRect(b.pos.x * k - s / 2, b.pos.z * k - s / 2, s, s);
     }
     for (const u of this.game.units) {
       if (u.owner !== this.game.localPlayer && this.game.map.fogStateAt(u.pos.x, u.pos.z) !== 2) continue;
-      ctx.fillStyle = u.owner === this.game.localPlayer ? '#9be86e' : u.owner === this.game.NEUTRAL ? '#c9bd92' : '#ff5040';
+      ctx.fillStyle = u.owner === this.game.localPlayer ? '#9be86e' : u.owner === this.game.NEUTRAL ? '#c9bd92' : u.owner >= 2 ? this.game.seatCss(u.owner) : '#ff5040';
       ctx.fillRect(u.pos.x * k - 1, u.pos.z * k - 1, 2, 2);
     }
     // pings
@@ -382,7 +382,7 @@ export class UI {
       ctx.fillRect(sx - w / 2 - 1, sy - 1, w + 2, h + 2);
       const frac = Math.max(0, e.hp / e.maxHp);
       ctx.fillStyle = e.owner === this.game.localPlayer ? (frac > 0.5 ? '#7ee06a' : frac > 0.25 ? '#e0c14a' : '#e05540')
-        : e.owner === this.game.NEUTRAL ? '#c9bd92' : '#e05540';
+        : e.owner === this.game.NEUTRAL ? '#c9bd92' : e.owner >= 2 ? this.game.seatCss(e.owner) : '#e05540';
       ctx.fillRect(sx - w / 2, sy, w * frac, h);
       if (constructing) {
         ctx.fillStyle = 'rgba(120,180,255,0.9)';

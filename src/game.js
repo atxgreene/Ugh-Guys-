@@ -21,6 +21,10 @@ import { Settings } from './settings.js';
 let nextId = 1;
 
 const NEUTRAL_COLOR = 0x808078, NEUTRAL_GLOW = 0xc2b89a;
+// Distinct per-seat HUD colours so free-for-all opponents are tell-apart on the minimap,
+// health bars and selection rings. Seats 0/1 keep the classic green/red; 2/3 add blue/gold.
+const SEAT_CSS = ['#9be86e', '#ff5040', '#5aa0ff', '#ffd23c'];
+const SEAT_HEX = [0x9be86e, 0xff5040, 0x5aa0ff, 0xffd23c];
 
 // Easter-egg first-contact dialogue (pixel portraits live in public/portraits/)
 const CLAN_DIALOGUE = {
@@ -1013,6 +1017,10 @@ export class Game {
   // The player THIS client controls (the local seat). Input, the HUD, and fog read
   // this so the same code serves owner 0 in single-player and owner N in a net game.
   get me() { return this.players[this.localPlayer]; }
+
+  // Per-seat HUD colours (minimap, health bars, rings). Wraps if more seats than colours.
+  seatCss(owner) { return SEAT_CSS[owner % SEAT_CSS.length]; }
+  seatHex(owner) { return SEAT_HEX[owner % SEAT_HEX.length]; }
 
   initRenderer() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -2383,11 +2391,23 @@ export class Game {
       for (const [k, v] of Object.entries(FIELDS_OF_EVIL.reward)) r[k] = (r[k] || 0) + v;
       if (owner === 0) { Sound.win(); this.emit('toast', '☩ The House of Greene has fallen. Their hoard of forbidden knowledge is yours.'); }
     }
-    if (!this.over) {
-      if (b === this.playerMain) this.endGame(1, b.pos);
-      else if (b === this.enemyMain) this.endGame(0, b.pos);
+    // Elimination / victory. A seat is out when it has no main left; the local player
+    // loses the instant they're eliminated, and wins once every other real seat is out.
+    // At 2 players this is exactly the old playerMain/enemyMain check.
+    if (!this.over && b.def.main) {
+      const hasMain = (o) => this.buildings.some(x => x.owner === o && x.def.main && !x.dead);
+      if (b.owner === this.localPlayer && !hasMain(this.localPlayer)) {
+        this.endGame(1, b.pos);
+      } else if (this.isEnemyOwner(b.owner) && !hasMain(b.owner)) {
+        let remaining = 0;
+        for (let o = 0; o < this.numPlayers; o++) if (o !== this.localPlayer && hasMain(o)) remaining++;
+        if (remaining === 0 && hasMain(this.localPlayer)) this.endGame(0, b.pos);
+      }
     }
   }
+
+  // A real, non-neutral seat that isn't the local player.
+  isEnemyOwner(owner) { return owner < this.NEUTRAL && owner !== this.localPlayer; }
 
   depleteNode(n) {
     this.map.blocked[this.map.idx(n.tx, n.ty)] = 0;
@@ -2622,7 +2642,8 @@ export class Game {
     this.updateSky(dt);
     this.shake = Math.max(0, this.shake - dt * 2.2);
 
-    if (this.ai) this.ai.update(dt);
+    if (this.ais) for (const ai of this.ais) ai.update(dt);
+    else if (this.ai) this.ai.update(dt);
   }
 
   updateSky(dt) {

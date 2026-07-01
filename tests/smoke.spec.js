@@ -135,6 +135,15 @@ test('free-for-all: a 4-player match spawns 4 bases and simulates deterministica
   expect(errors, `console errors during FFA:\n${errors.join('\n')}`).toEqual([]);
 });
 
+test('free-for-all victory: razing every opponent main wins as last standing', async ({ page }) => {
+  await startMatch(page);
+  const r = await page.evaluate(() => window.__ffaVictoryCheck(3));
+  expect(r.numPlayers).toBe(3);
+  expect(r.enemyMains).toBe(2);        // two AI opponents
+  expect(r.over).toBe(true);           // match ended
+  expect(r.winner).toBe(0);            // local player (seat 0) won
+});
+
 test('stances: a selected fighter cycles aggressive → defensive → hold', async ({ page }) => {
   await startMatch(page);
   await skipIntro(page);
