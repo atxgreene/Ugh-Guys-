@@ -165,7 +165,7 @@ export class Unit extends Entity {
     this.abilityDebuffDur = 0;  // seconds remaining on an incoming damage debuff
     this.abilityDebuffMult = 1; // incoming damage multiplier while debuffed
     this.stunDur = 0;           // seconds remaining of stun (can't attack)
-    const f = owner === 2 ? { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW } : game.players[owner].faction;
+    const f = owner === game.NEUTRAL ? { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW } : game.players[owner].faction;
     this.mesh = buildUnitMesh(def.model, f.color, f.glow, f.accent, f.glow2);
     this.mesh.position.copy(this.pos);
     this.mesh.userData.entity = this;
@@ -173,12 +173,12 @@ export class Unit extends Entity {
   }
 
   effDmg(base) {
-    let mult = this.owner <= 1 ? this.player.dmgMult : 1;
+    let mult = this.owner < this.game.NEUTRAL ? this.player.dmgMult : 1;
     if (this.abilityBuff?.dmgMult) mult *= this.abilityBuff.dmgMult;
     return Math.round(base * mult);
   }
   effArmor() {
-    return this.def.armor + (this.owner <= 1 ? this.player.armorAdd : 0) + (this.abilityBuff?.armorAdd || 0);
+    return this.def.armor + (this.owner < this.game.NEUTRAL ? this.player.armorAdd : 0) + (this.abilityBuff?.armorAdd || 0);
   }
   effSpeed() { return this.def.speed * (this.abilityBuff?.spdMult ?? 1); }
 
@@ -342,8 +342,8 @@ export class Unit extends Entity {
     let best = null, bestScore = -Infinity;
     for (const e of this.game.allCombatants()) {
       if (e.dead || e.owner === this.owner) continue;
-      if (this.owner !== 2 && e.owner === 2 && this.state !== 'attackMove') continue; // don't auto-aggro neutrals
-      if (this.owner === 2 && e.owner === 2) continue;
+      if (this.owner !== this.game.NEUTRAL && e.owner === this.game.NEUTRAL && this.state !== 'attackMove') continue; // don't auto-aggro neutrals
+      if (this.owner === this.game.NEUTRAL && e.owner === this.game.NEUTRAL) continue;
       if (e.isBuilding && !e.complete) continue;
       const d = this.distTo(e) - e.radius;
       if (d > range) continue;
@@ -422,7 +422,7 @@ export class Unit extends Entity {
             if (t) { this.target = t; this.state = 'attack'; this.returnTo = { x: this.pos.x, z: this.pos.z }; }
           }
           // neutral leash
-          if (this.owner === 2 && this.leash) {
+          if (this.owner === this.game.NEUTRAL && this.leash) {
             const t = this.acquireTarget(this.def.aggroRange);
             if (t) { this.target = t; this.state = 'attack'; }
           }
@@ -465,19 +465,19 @@ export class Unit extends Entity {
           this.target = null;
           if (this.resumePatrol && this.patrolB) { this.resumePatrol = false; const ep = this.patrolTo === 'B' ? this.patrolB : this.patrolA; this.orderMove(ep.x, ep.z, true); this.state = 'patrol'; }
           else if (this.resumeAM) { this.orderMove(this.resumeAM.x, this.resumeAM.z, true); this.resumeAM = null; }
-          else if (this.owner === 2 && this.leash) { this.state = 'move'; this.dest = { ...this.leash }; this.path = null; }
+          else if (this.owner === this.game.NEUTRAL && this.leash) { this.state = 'move'; this.dest = { ...this.leash }; this.path = null; }
           else if (!this.advanceOrders()) this.state = 'idle';
           break;
         }
         if (!atk) { this.state = 'idle'; break; }
         // neutral leash break (bosses roam farther before disengaging + heal home)
-        if (this.owner === 2 && this.leash &&
+        if (this.owner === this.game.NEUTRAL && this.leash &&
             Math.hypot(this.pos.x - this.leash.x, this.pos.z - this.leash.z) > (this.def.leashRange || 26)) {
           this.target = null; this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.5);
           this.state = 'move'; this.dest = { ...this.leash }; this.path = null; break;
         }
         // world bosses unleash their signature ability on cooldown the moment they fight
-        if (this.owner === 2 && this.def.ability && this.abilityCd <= 0) this.game.useAbility(this);
+        if (this.owner === this.game.NEUTRAL && this.def.ability && this.abilityCd <= 0) this.game.useAbility(this);
         const inRange = this.distTo(t) <= this.attackRange(t);
         if (!inRange) {
           // hold stands its ground — wait if the target is still within reach (same
@@ -801,7 +801,7 @@ export class Building extends Entity {
       if (this.cooldown <= 0) {
         let best = null, bd = this.def.attack.range + this.radius;
         for (const e of this.game.allCombatants()) {
-          if (e.dead || e.owner === this.owner || e.owner === 2 || e.isBuilding) continue;
+          if (e.dead || e.owner === this.owner || e.owner === this.game.NEUTRAL || e.isBuilding) continue;
           const d = this.distTo(e);
           if (d < bd) { bd = d; best = e; }
         }
@@ -885,7 +885,7 @@ export class Building extends Entity {
 export class ResourceNode extends Entity {
   constructor(game, type, tx, ty) {
     const def = { hp: 1, radius: type === 'timber' ? 1.6 : 1.2, name: RESOURCE_NODES[type].name };
-    super(game, 2, def, type, (tx + 0.5) * TILE, (ty + 0.5) * TILE);
+    super(game, game.NEUTRAL, def, type, (tx + 0.5) * TILE, (ty + 0.5) * TILE);
     this.isResource = true;
     this.type = type;
     this.amount = RESOURCE_NODES[type].amount;
@@ -948,11 +948,17 @@ export class Game {
     this.localPlayer = opts.localPlayer ?? 0;
     this.net = null;
 
-    this.players = [
-      this.makePlayer(FACTIONS[playerFactionKey]),
-      this.makePlayer(FACTIONS[enemyFactionKey]),
-      { faction: { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW, name: 'The Wild' }, resources: {}, dmgMult: 1, armorAdd: 0, hpMult: 1, upgrades: new Set() },
-    ];
+    // Real players fill owner ids 0..numPlayers-1; the neutral "Wild" pseudo-player is
+    // always LAST (owner id === numPlayers). For 1v1 that keeps neutral at id 2 exactly
+    // as before — so every `owner === this.NEUTRAL` check is byte-identical at 2 players
+    // and simply scales when more seats are filled. opts.factions (a list of faction
+    // keys) drives 3-4 player free-for-all; absent, it's the classic two-faction match.
+    const factionKeys = (opts.factions && opts.factions.length >= 2)
+      ? opts.factions : [playerFactionKey, enemyFactionKey];
+    this.numPlayers = factionKeys.length;
+    this.NEUTRAL = this.numPlayers;   // owner id of the neutral pseudo-player
+    this.players = factionKeys.map(k => this.makePlayer(FACTIONS[k]));
+    this.players.push({ faction: { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW, name: 'The Wild' }, resources: {}, dmgMult: 1, armorAdd: 0, hpMult: 1, upgrades: new Set() });
 
     this.initRenderer();
     this.map = new GameMap(opts.seed, this.biomeKey);
@@ -1473,11 +1479,11 @@ export class Game {
       case 'aoe_strike': {
         const rawDmg = unit.effDmg(unit.def.attack?.dmg || 10);
         const dmgBase = rawDmg * (ab.dmgMult || 1);
-        const fxColor = unit.owner <= 1 ? this.players[unit.owner].faction.glow : (unit.def.telegraphColor || 0xff7a4d);
+        const fxColor = unit.owner < this.NEUTRAL ? this.players[unit.owner].faction.glow : (unit.def.telegraphColor || 0xff7a4d);
         // World bosses TELEGRAPH their slam: a warning ring blooms on the ground and
         // the blow lands a beat later, so a sharp player can pull units out of it.
         // (Player/AI abilities still strike instantly to preserve PvP balance.)
-        if (unit.owner === 2 && unit.def.boss) {
+        if (unit.owner === this.NEUTRAL && unit.def.boss) {
           this.telegraphAoe(unit, ab, dmgBase, fxColor);
           break;
         }
@@ -1492,7 +1498,7 @@ export class Game {
           Sound.abilityAoe();
         }
         for (const e of this.allCombatants()) {
-          if (e.dead || e.owner === unit.owner || (unit.owner !== 2 && e.owner === 2)) continue;
+          if (e.dead || e.owner === unit.owner || (unit.owner !== this.NEUTRAL && e.owner === this.NEUTRAL)) continue;
           if (unit.distTo(e) - e.radius <= ab.radius) {
             this.applyHit(unit, e, unit.def.attack || {}, dmgBase);
             if (ab.stunDur && e.isUnit) e.stunDur = Math.max(e.stunDur || 0, ab.stunDur);
@@ -1587,7 +1593,7 @@ export class Game {
       }
       // only what is STILL inside the marked zone is struck — step out to dodge
       for (const e of this.allCombatants()) {
-        if (e.dead || e.owner === u.owner || (u.owner !== 2 && e.owner === 2)) continue;
+        if (e.dead || e.owner === u.owner || (u.owner !== this.NEUTRAL && e.owner === this.NEUTRAL)) continue;
         if (Math.hypot(e.pos.x - tg.x, e.pos.z - tg.z) - e.radius <= tg.r) {
           this.applyHit(u, e, u.def.attack || {}, tg.dmgBase);
           if (tg.ab.stunDur && e.isUnit) e.stunDur = Math.max(e.stunDur || 0, tg.ab.stunDur);
@@ -1669,15 +1675,17 @@ export class Game {
       if (p.guarded) {
         const mult = this.neutralMult();
         for (let i = 0; i < 2; i++) {
-          const u = new Unit(this, 2, this.scaleNeutral(NEUTRALS.devourer, mult), 'devourer',
+          const u = new Unit(this, this.NEUTRAL,this.scaleNeutral(NEUTRALS.devourer, mult), 'devourer',
             n.pos.x + Math.cos(i * 2.5) * 4, n.pos.z + Math.sin(i * 2.5) * 4);
           u.leash = { x: u.pos.x, z: u.pos.z };
           this.units.push(u);
         }
       }
     }
-    // bases
-    for (const [owner, site] of [[0, this.map.basePlayer], [1, this.map.baseEnemy]]) {
+    // bases — one per real player (seat), placed at the map's ordered spawn sites.
+    // At 2 players this is exactly [0 → basePlayer, 1 → baseEnemy] as before.
+    for (let owner = 0; owner < this.numPlayers; owner++) {
+      const site = this.map.bases[owner] || this.map.bases[owner % this.map.bases.length];
       const p = this.players[owner];
       const mainKey = p.faction.main;
       const def = p.faction.buildings[mainKey];
@@ -1685,7 +1693,7 @@ export class Game {
       b.complete = true; b.progress = 1; b.hp = b.maxHp; b.mesh.scale.y = 1;
       b.removeScaffold();
       this.buildings.push(b);
-      if (owner === this.localPlayer) this.playerMain = b; else if (owner !== 2) this.enemyMain = b;
+      if (owner === this.localPlayer) this.playerMain = b; else if (owner !== this.NEUTRAL) this.enemyMain = b;
       // starting workers
       const wKey = p.faction.worker;
       for (let i = 0; i < 5; i++) {
@@ -1738,7 +1746,7 @@ export class Game {
       // boss stands a couple of tiles off the obelisk (the lair was cleared with margin 2)
       const w = findNearestWalkable(this.map, site.tx + 2, site.ty, 4, 1) || { x: site.tx + 2, y: site.ty };
       const bx = (w.x + 0.5) * TILE, bz = (w.y + 0.5) * TILE;
-      const u = new Unit(this, 2, this.scaleNeutral(def, mult), key, bx, bz);
+      const u = new Unit(this, this.NEUTRAL,this.scaleNeutral(def, mult), key, bx, bz);
       u.leash = { x: node.pos.x, z: node.pos.z };
       this.units.push(u);
       this.lairs.push({ x: node.pos.x, z: node.pos.z, boss: u });
@@ -1753,7 +1761,7 @@ export class Game {
     if (!w) return false;
     const def = NEUTRAL_BUILDING_DEFS.house_of_greene, size = def.size;
     if (!this.map.isWalkableClear(w.x, w.y, 1)) { /* still try */ }
-    const b = new Building(this, 2, { ...def }, 'house_of_greene', w.x - (size / 2 | 0), w.y - (size / 2 | 0));
+    const b = new Building(this, this.NEUTRAL, { ...def }, 'house_of_greene', w.x - (size / 2 | 0), w.y - (size / 2 | 0));
     b.complete = true; b.progress = 1; b.hp = b.maxHp; b.mesh.scale.y = 1; b.removeScaffold();
     this.buildings.push(b);
     const roster = ['landonian', 'boydonian', 'landonian', 'parker', 'boydonian', 'landonian', 'boydonian', 'warwagon'];
@@ -1762,7 +1770,7 @@ export class Game {
       const ring = key === 'warwagon' ? b.radius + 4.5 : b.radius + 3;
       const ux = b.pos.x + Math.cos(a) * ring, uz = b.pos.z + Math.sin(a) * ring;
       const d = NEUTRAL_UNIT_DEFS[key];
-      const u = new Unit(this, 2, { ...d, hp: d.hp }, key, ux, uz);
+      const u = new Unit(this, this.NEUTRAL,{ ...d, hp: d.hp }, key, ux, uz);
       u.leash = { x: ux, z: uz };
       this.units.push(u);
     }
@@ -1771,7 +1779,7 @@ export class Game {
       const ring = b.radius + 1.4;
       const ux = b.pos.x + Math.cos(angle) * ring, uz = b.pos.z + Math.sin(angle) * ring;
       const d = NEUTRAL_UNIT_DEFS[key];
-      const u = new Unit(this, 2, { ...d, hp: d.hp }, key, ux, uz);
+      const u = new Unit(this, this.NEUTRAL,{ ...d, hp: d.hp }, key, ux, uz);
       u.leash = { x: ux, z: uz };
       this.units.push(u);
     }
@@ -1789,7 +1797,7 @@ export class Game {
     const w = findNearestWalkable(this.map, tx, ty, 18, 1);
     if (!w) return false;
     const bx = (w.x + 0.5) * TILE, bz = (w.y + 0.5) * TILE;
-    const u = new Unit(this, 2, { ...SCOTT, hp: SCOTT.hp }, 'scott', bx, bz);
+    const u = new Unit(this, this.NEUTRAL,{ ...SCOTT, hp: SCOTT.hp }, 'scott', bx, bz);
     u.leash = { x: bx, z: bz };           // he holds his ground, then hunts what's near
     this.units.push(u);
     this._combat = null;
@@ -1799,7 +1807,7 @@ export class Game {
   }
 
   defFor(owner, kind, key) {
-    if (owner === 2) return kind === 'building' ? NEUTRAL_BUILDING_DEFS[key] : NEUTRAL_UNIT_DEFS[key];
+    if (owner === this.NEUTRAL) return kind === 'building' ? NEUTRAL_BUILDING_DEFS[key] : NEUTRAL_UNIT_DEFS[key];
     const f = this.players[owner].faction;
     return kind === 'building' ? f.buildings[key] : f.units[key];
   }
@@ -1861,7 +1869,7 @@ export class Game {
     this.recalcSupply();
     // re-task: workers resume gathering / return their load; soldiers idle (re-aggro naturally)
     for (const u of this.units) {
-      if (u.owner > 1 || !u.def.worker) continue;
+      if (u.owner >= this.NEUTRAL || !u.def.worker) continue;
       if (u.carry > 0) u.state = 'return';
       else { const n = this.resources.filter(r => r.amount > 0).sort((a, b) => u.distTo(a) - u.distTo(b))[0]; if (n) u.orderGather(n); }
     }
@@ -2146,7 +2154,7 @@ export class Game {
   // temples, banners at the seat of power. Decorative scene objects (not children, so
   // construction scaling never touches them); removed when the building falls.
   dressBuilding(b) {
-    if (b.owner > 1) return;
+    if (b.owner >= this.NEUTRAL) return;
     const types = b.def.main ? ['banner', 'amphorae', 'brazier']
       : /granary|store/.test(b.key) ? ['grain_sacks', 'amphorae', 'wood_pile']
       : /barrack|lodge|foundry|forge|gate|pit|den/.test(b.key) ? ['weapon_rack', 'banner']
@@ -2323,7 +2331,7 @@ export class Game {
   // shake the earth, and announce it. Killer defaults to the player if a neutral
   // or environment landed the blow.
   onBossSlain(boss, attacker) {
-    const owner = attacker && attacker.owner <= 1 ? attacker.owner : 0;
+    const owner = attacker && attacker.owner < this.NEUTRAL ? attacker.owner : 0;
     const r = this.players[owner].resources;
     for (const [k, v] of Object.entries(boss.def.bounty)) r[k] = (r[k] || 0) + v;
     const visible = this.map.fogStateAt(boss.pos.x, boss.pos.z) === 2;
@@ -2370,7 +2378,7 @@ export class Game {
     this.emit('selection');
     // Easter egg: razing the House of Greene spills a trove of forbidden knowledge
     if (b.key === 'house_of_greene') {
-      const owner = attacker && attacker.owner <= 1 ? attacker.owner : 0;
+      const owner = attacker && attacker.owner < this.NEUTRAL ? attacker.owner : 0;
       const r = this.players[owner].resources;
       for (const [k, v] of Object.entries(FIELDS_OF_EVIL.reward)) r[k] = (r[k] || 0) + v;
       if (owner === 0) { Sound.win(); this.emit('toast', '☩ The House of Greene has fallen. Their hoard of forbidden knowledge is yours.'); }
