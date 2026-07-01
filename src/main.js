@@ -8,6 +8,7 @@ import { UI } from './ui.js';
 import { Sound, Music } from './audio.js';
 import { Settings } from './settings.js';
 import { LockstepSession, WebSocketTransport } from './net.js';
+import { initDiscord } from './discord.js';
 
 const TRAITS = {
   covenant: 'Balanced economy · strong defenses · disciplined bronze infantry · temple favor',
@@ -1019,11 +1020,14 @@ window.__runReplaySync = (rep) => {
   return { desync: desynced, frames: rep.frames.length };
 };
 
-bindShell();
-buildMenu();
-
-// Deep-link: opening an invite link (?join=CODE) drops you straight into that lobby.
-(() => {
+// Boot. When running as a Discord Activity, complete the embedded-app handshake and
+// install the relay URL mapping BEFORE anything can open a socket; standalone play skips
+// it instantly. Never blocks the menu on failure.
+(async () => {
+  try { await initDiscord(); } catch (e) { console.warn('Discord init skipped', e); }
+  bindShell();
+  buildMenu();
+  // Deep-link: opening an invite link (?join=CODE) drops you straight into that lobby.
   const code = new URLSearchParams(location.search).get('join');
   if (code) { try { history.replaceState(null, '', location.pathname); } catch {} openLobby(code); }
 })();
