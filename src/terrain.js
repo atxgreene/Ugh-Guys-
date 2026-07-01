@@ -93,6 +93,9 @@ export class GameMap {
     this.basePlayer = { x: 18, y: 18 };
     this.baseEnemy = { x: GRID - 18, y: GRID - 18 };
     this.expansions = [{ x: 18, y: GRID - 22 }, { x: GRID - 18, y: 22 }];
+    // Ordered player spawn sites for free-for-all. Seats 0/1 keep the classic opposing
+    // corners (so 1v1 is unchanged); seats 2/3 take the pre-flattened cross corners.
+    this.bases = [this.basePlayer, this.baseEnemy, this.expansions[0], this.expansions[1]];
 
     for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
       const i = y * GRID + x;

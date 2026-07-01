@@ -1020,6 +1020,36 @@ window.__runReplaySync = (rep) => {
   return { desync: desynced, frames: rep.frames.length };
 };
 
+// Headless free-for-all determinism probe (used by the smoke suite). Builds two N-player
+// games from an identical (seed, biome, mood, faction list), steps both the same number
+// of sim ticks, and reports whether their checksums match — i.e. that the multi-player
+// simulation is bit-for-bit deterministic (the prerequisite for >2-player lockstep) — plus
+// how many mains spawned (one per seat) and where the neutral owner id landed.
+window.__ffaCheck = (numPlayers = 4, ticks = 180) => {
+  const fkeys = Object.keys(FACTIONS);
+  const factions = Array.from({ length: numPlayers }, (_, i) => fkeys[i % fkeys.length]);
+  const biome = Object.keys(BIOMES)[0];
+  const timeOfDay = BIOMES[biome].moods[0];
+  const seed = 1234567;
+  const run = () => {
+    stopGame();
+    const container = document.getElementById('game-container');
+    const g = new Game(container, factions[0], factions[1], { seed, biome, timeOfDay, factions });
+    window.__game = g; window.__controls = null;
+    for (let i = 0; i < ticks; i++) g.update(1 / SIM_HZ);
+    current = { game: g, ai: null, controls: null, ui: null, raf: 0 };
+    return {
+      sum: g.checksum(),
+      numPlayers: g.numPlayers,
+      neutral: g.NEUTRAL,
+      mains: g.buildings.filter(b => b.def.main && b.owner < g.NEUTRAL && !b.dead).length,
+      owners: [...new Set(g.buildings.filter(b => b.def.main).map(b => b.owner))].sort((a, b) => a - b),
+    };
+  };
+  const a = run(), b = run();
+  return { a, b, deterministic: a.sum === b.sum };
+};
+
 // Boot. When running as a Discord Activity, complete the embedded-app handshake and
 // install the relay URL mapping BEFORE anything can open a socket; standalone play skips
 // it instantly. Never blocks the menu on failure.
