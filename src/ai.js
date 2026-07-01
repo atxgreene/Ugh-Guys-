@@ -115,7 +115,7 @@ export class AI {
       for (const n of g.resources) {
         if (n.type !== want || n.amount <= 0) continue;
         // avoid guarded obelisks until guards are dead
-        if (n.type === 'knowledge' && g.units.some(u => u.owner === 2 && !u.dead && u.distTo(n) < 12)) continue;
+        if (n.type === 'knowledge' && g.units.some(u => u.owner === g.NEUTRAL && !u.dead && u.distTo(n) < 12)) continue;
         const d = w.distTo(n);
         if (d < bd) { bd = d; best = n; }
       }

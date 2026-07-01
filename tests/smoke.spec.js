@@ -121,6 +121,20 @@ test('replay reproduces the recorded match deterministically (no desync)', async
   expect(errors, `console errors during replay:\n${errors.join('\n')}`).toEqual([]);
 });
 
+test('free-for-all: a 4-player match spawns 4 bases and simulates deterministically', async ({ page }) => {
+  const errors = watchErrors(page);
+  await startMatch(page);   // boot the engine first (loads the module + hooks)
+  const res = await page.evaluate(() => window.__ffaCheck(4));
+  // one main per seat, owners 0..3, neutral relocated to id 4
+  expect(res.a.numPlayers).toBe(4);
+  expect(res.a.neutral).toBe(4);
+  expect(res.a.mains).toBe(4);
+  expect(res.a.owners).toEqual([0, 1, 2, 3]);
+  // same seed + faction list → bit-for-bit identical sim state (lockstep-safe)
+  expect(res.deterministic, 'two identical 4-player games diverged').toBe(true);
+  expect(errors, `console errors during FFA:\n${errors.join('\n')}`).toEqual([]);
+});
+
 test('stances: a selected fighter cycles aggressive → defensive → hold', async ({ page }) => {
   await startMatch(page);
   await skipIntro(page);
