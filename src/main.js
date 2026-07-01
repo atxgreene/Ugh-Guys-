@@ -317,9 +317,16 @@ function openLobby(prefillCode) {
   fSel.value = Settings.get('mpFaction') && FACTIONS[Settings.get('mpFaction')] ? Settings.get('mpFaction') : 'covenant';
   const nameInput = document.getElementById('mp-name');
   if (nameInput && !nameInput.value) nameInput.value = Settings.get('mpName') || '';
-  // relay: query override > saved > default; shown only inside Advanced
+  // relay: query override > saved > default; shown only inside Advanced.
+  // Heal stale endpoints: the relay moved off Fly.io to Cloudflare, but returning players
+  // have the dead wss://…fly.dev saved in localStorage (and we re-save it on start), so
+  // drop any retired host and fall back to the current default.
+  const isStaleRelay = (u) => !u || /fly\.dev/i.test(u);
+  let savedRelay = Settings.get('mpRelay');
+  if (isStaleRelay(savedRelay)) { savedRelay = ''; Settings.set('mpRelay', ''); }
   const qsRelay = new URLSearchParams(location.search).get('relay');
-  document.getElementById('mp-url').value = qsRelay || Settings.get('mpRelay') || DEFAULT_RELAY;
+  document.getElementById('mp-url').value =
+    (qsRelay && !isStaleRelay(qsRelay)) ? qsRelay : (savedRelay || DEFAULT_RELAY);
   document.getElementById('lobby-chat').style.display = 'none';
   document.getElementById('lobby-chat-log').innerHTML = '';
   document.getElementById('mp-start').disabled = true;
