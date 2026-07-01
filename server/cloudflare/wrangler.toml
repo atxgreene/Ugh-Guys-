@@ -15,9 +15,11 @@ compatibility_date = "2024-11-01"
 
 # Lock the relay to this game's origins. Wildcards ('*') cover Vercel's rotating preview
 # URLs and production aliases (all start with "aethercraft-") plus the clean prod host.
+# https://*.discordsays.com is the origin the game runs under as a Discord Activity —
+# Discord proxies the relay to here from https://<app-id>.discordsays.com.
 # Add a custom domain here too if you point one at the game. Empty = open (dev).
 [vars]
-ALLOWED_ORIGINS = "https://aethercraft.vercel.app,https://aethercraft-*.vercel.app"
+ALLOWED_ORIGINS = "https://aethercraft.vercel.app,https://aethercraft-*.vercel.app,https://*.discordsays.com"
 
 [[durable_objects.bindings]]
 name = "HUB"
