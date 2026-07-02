@@ -549,7 +549,7 @@ export class Controls {
     this.hoverRing.scale.setScalar(r);
     this.hoverRing.position.set(e.pos.x, this.game.map.heightAt(e.pos.x, e.pos.z) + 0.07, e.pos.z);
     this.hoverRing.material.color.set(
-      e.isResource ? 0xd8b75a : e.owner === this.game.localPlayer ? 0x9be86e : e.owner === this.game.NEUTRAL ? 0xcccc88 : e.owner >= 2 ? this.game.seatHex(e.owner) : 0xff7066);
+      e.isResource ? 0xd8b75a : e.owner === this.game.localPlayer ? 0x9be86e : e.owner === this.game.NEUTRAL ? 0xcccc88 : this.game.seatHex(e.owner));
     this.hoverRing.material.opacity = 0.42;
   }
 
@@ -602,7 +602,7 @@ export class Controls {
       const r = (e.radius + 0.3) * (1 + 0.04 * Math.sin(this.game.time * 5));
       ring.scale.setScalar(r);
       ring.position.set(e.pos.x, this.game.map.heightAt(e.pos.x, e.pos.z) + 0.08, e.pos.z);
-      ring.material.color.set(e.owner === this.game.localPlayer ? 0x66ff88 : e.owner === this.game.NEUTRAL ? 0xcccc88 : e.owner >= 2 ? this.game.seatHex(e.owner) : 0xff5544);
+      ring.material.color.set(e.owner === this.game.localPlayer ? 0x66ff88 : e.owner === this.game.NEUTRAL ? 0xcccc88 : this.game.seatHex(e.owner));
       ring.material.opacity = pulse;
     }
   }

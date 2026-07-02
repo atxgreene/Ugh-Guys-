@@ -119,7 +119,11 @@ function broadcastLobby(room, extra = {}) {
   for (const c of set) send(c, { kind: 'lobby', room, you: arr.indexOf(c), ...st, ...extra });
 }
 
-// Add a socket to a room, enforcing the size cap. Returns true on success.
+// Rooms whose match is live — locked to newcomers (with rooms bigger than 2 seats the
+// size cap alone no longer keeps a stranger with the code out of a running game).
+const startedRooms = new Set();
+
+// Add a socket to a room, enforcing the size cap + start lock. Returns true on success.
 function joinRoom(sock, room) {
   room = String(room || 'default').slice(0, 64);
   let set = rooms.get(room);
@@ -127,6 +131,7 @@ function joinRoom(sock, room) {
     if (rooms.size >= MAX_ROOMS) { send(sock, { kind: 'reject', reason: 'busy' }); return false; }
     set = new Set(); rooms.set(room, set);
   }
+  if (startedRooms.has(room) && !set.has(sock)) { send(sock, { kind: 'reject', reason: 'started' }); return false; }
   if (set.size >= MAX_ROOM && !set.has(sock)) { send(sock, { kind: 'reject', reason: 'full' }); return false; }
   sock.room = room; sock.ready = false;
   set.add(sock);
@@ -157,7 +162,12 @@ function handle(sock, frame) {
     if (sock.room) broadcastLobby(sock.room);
   } else if (msg.kind === 'start') {
     const set = rooms.get(sock.room);
-    if (set) for (const c of set) send(c, { kind: 'start', header: msg.header, players: [...set].map((_, i) => i) });
+    // only the host (seat 0) may launch, and only once — the client checks this too,
+    // but a hostile client must not be able to re-start or hijack a room
+    if (set && [...set][0] === sock && !startedRooms.has(sock.room)) {
+      startedRooms.add(sock.room);
+      for (const c of set) send(c, { kind: 'start', header: msg.header, players: [...set].map((_, i) => i) });
+    }
   } else if (msg.kind === 'packet') {
     broadcast(sock.room, { kind: 'packet', packet: msg.packet }, sock);
   } else if (msg.kind === 'chat') {
@@ -201,7 +211,7 @@ function leave(sock, keepQueue, gone) {
   sock.room = null; sock.ready = false;
   if (!set) return;
   set.delete(sock);
-  if (set.size === 0) { rooms.delete(room); return; }
+  if (set.size === 0) { rooms.delete(room); startedRooms.delete(room); return; }
   broadcastLobby(room, { left: true });
 }
 function drop(sock) { try { sock.destroy(); } catch {} leave(sock, false, true); }

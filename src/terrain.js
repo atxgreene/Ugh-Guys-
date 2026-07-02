@@ -217,8 +217,10 @@ export class GameMap {
       const rti = rty * GRID + rtx;
       if (this.riverTiles.has(rti)) c.lerp(cRiver, 0.9);
       else if (this.roadTiles.has(rti)) c.lerp(cRoad, 0.5);
-      // fine per-vertex lightness speckle so flat ground reads as textured, not flat paint
-      c.offsetHSL(0, 0, (noise(gx * 3.3 + 11.0, gy * 3.3 - 7.0) - 0.5) * 0.06);
+      // fine per-vertex lightness speckle so flat ground reads as textured, not flat
+      // paint. A uniform RGB scale preserves hue like an HSL lightness offset would,
+      // but skips the per-vertex RGB→HSL→RGB round trip (~37k-83k verts per build).
+      c.multiplyScalar(1 + (noise(gx * 3.3 + 11.0, gy * 3.3 - 7.0) - 0.5) * 0.12);
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
