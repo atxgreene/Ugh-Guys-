@@ -33,6 +33,12 @@ const MAX_FRAME = 0.25;
 
 function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch { return false; } }
 
+// Number of AI opponents for a skirmish (1 = classic 1v1; 2–3 = free-for-all).
+function opponentCount() {
+  const n = parseInt(Settings.get('opponents'), 10);
+  return n >= 1 && n <= 3 ? n : 1;
+}
+
 function saveGame(silent) {
   if (!current || current.game.over) return false;
   try {
@@ -153,6 +159,14 @@ function buildMenu() {
       `<option value="${k}">${labels[k] || k} (${MAP_SIZES[k]}×${MAP_SIZES[k]})</option>`).join('');
     sizeSel.value = MAP_SIZES[Settings.get('mapSize')] ? Settings.get('mapSize') : 'standard';
     sizeSel.onchange = () => Settings.set('mapSize', sizeSel.value);
+  }
+  // opponent count: 1 = classic 1v1; 2–3 add extra AI seats for a free-for-all
+  const oppSel = document.getElementById('sel-opponents');
+  if (oppSel) {
+    oppSel.innerHTML = [1, 2, 3].map(n =>
+      `<option value="${n}">${n} (${n + 1}-player${n > 1 ? ' free-for-all' : ''})</option>`).join('');
+    oppSel.value = String(opponentCount());
+    oppSel.onchange = () => Settings.set('opponents', oppSel.value);
   }
   refreshContinue();
 }
@@ -757,7 +771,16 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   document.getElementById('gameover').style.display = 'none';
 
   const container = document.getElementById('game-container');
-  const opts = loadData ? { load: loadData } : { ...(window.__forceOpts || {}), ...(biome ? { biome } : {}) };
+  // Free-for-all: the local player is seat 0, then N AI opponents fill seats 1..N.
+  // Saved games are always 1v1 (FFA isn't persisted). Seat 1 uses the chosen enemy
+  // faction; extra seats take random factions.
+  const opponents = loading ? 1 : opponentCount();
+  const others = Object.keys(FACTIONS).filter(k => k !== playerFactionKey);
+  const aiFactions = Array.from({ length: opponents }, (_, i) =>
+    i === 0 ? enemyKey : others[Math.floor(Math.random() * others.length)]);
+  const factions = [playerFactionKey, ...aiFactions];
+  const opts = loadData ? { load: loadData }
+    : { ...(window.__forceOpts || {}), ...(biome ? { biome } : {}), factions };
   const game = new Game(container, playerFactionKey, enemyKey, opts);
   const ui = new UI(game, returnToMenu);
   const controls = new Controls(game, ui);
@@ -770,8 +793,11 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   ui.onLoad = () => { togglePause(false); loadSavedGame(); };
   ui.onSaveAvailable = hasSave;
   ui.onDownloadReplay = downloadReplay;
-  game.ai = new AI(game);
-  if (loading && game._aiState) Object.assign(game.ai, game._aiState);
+  // one AI per opponent seat; game.ai keeps the first for save/load back-compat
+  game.ais = [];
+  for (let o = 1; o < game.numPlayers; o++) game.ais.push(new AI(game, o));
+  game.ai = game.ais[0] || null;
+  if (loading && game.ai && game._aiState) Object.assign(game.ai, game._aiState);
   // pin quality if the player chose a fixed level (auto leaves the loop in charge)
   if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
   window.__game = game; window.__controls = controls;
@@ -1036,7 +1062,7 @@ window.__runReplaySync = (rep) => {
 // of sim ticks, and reports whether their checksums match — i.e. that the multi-player
 // simulation is bit-for-bit deterministic (the prerequisite for >2-player lockstep) — plus
 // how many mains spawned (one per seat) and where the neutral owner id landed.
-window.__ffaCheck = (numPlayers = 4, ticks = 180) => {
+window.__ffaCheck = (numPlayers = 4, ticks = 600) => {
   const fkeys = Object.keys(FACTIONS);
   const factions = Array.from({ length: numPlayers }, (_, i) => fkeys[i % fkeys.length]);
   const biome = Object.keys(BIOMES)[0];
@@ -1046,9 +1072,13 @@ window.__ffaCheck = (numPlayers = 4, ticks = 180) => {
     stopGame();
     const container = document.getElementById('game-container');
     const g = new Game(container, factions[0], factions[1], { seed, biome, timeOfDay, factions });
+    // give every non-local seat an AI so the check exercises the multi-opponent paths
+    g.ais = [];
+    for (let o = 1; o < g.numPlayers; o++) g.ais.push(new AI(g, o));
+    g.ai = g.ais[0] || null;
     window.__game = g; window.__controls = null;
     for (let i = 0; i < ticks; i++) g.update(1 / SIM_HZ);
-    current = { game: g, ai: null, controls: null, ui: null, raf: 0 };
+    current = { game: g, ai: g.ai, controls: null, ui: null, raf: 0 };
     return {
       sum: g.checksum(),
       numPlayers: g.numPlayers,
@@ -1059,6 +1089,24 @@ window.__ffaCheck = (numPlayers = 4, ticks = 180) => {
   };
   const a = run(), b = run();
   return { a, b, deterministic: a.sum === b.sum };
+};
+
+// Headless free-for-all victory probe: build an N-player game, raze every opponent's
+// main, and report whether the match ended as a win for the local seat (last standing).
+window.__ffaVictoryCheck = (numPlayers = 3) => {
+  stopGame();
+  const fkeys = Object.keys(FACTIONS);
+  const factions = Array.from({ length: numPlayers }, (_, i) => fkeys[i % fkeys.length]);
+  const biome = Object.keys(BIOMES)[0];
+  const g = new Game(document.getElementById('game-container'), factions[0], factions[1],
+    { seed: 42, biome, timeOfDay: BIOMES[biome].moods[0], factions });
+  window.__game = g; window.__controls = null;
+  current = { game: g, ai: null, controls: null, ui: null, raf: 0 };
+  g.update(1 / SIM_HZ);
+  const enemyMains = g.buildings.filter(b => b.def.main && g.isEnemyOwner(b.owner));
+  const n = enemyMains.length;
+  for (const b of enemyMains) if (!g.over) g.removeBuilding(b, null);
+  return { over: g.over, winner: g.winner, enemyMains: n, numPlayers: g.numPlayers };
 };
 
 // Boot. When running as a Discord Activity, complete the embedded-app handshake and
