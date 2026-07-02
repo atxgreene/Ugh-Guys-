@@ -204,10 +204,12 @@ export class GameMap {
       const h = this.heightAt(wx, wz);
       pos.setY(i, h);
       const gx = wx / TILE, gy = wz / TILE;
-      const n = noise(gx * 0.2, gy * 0.2) * 0.8 + noise(gx * 0.7, gy * 0.7) * 0.2;
+      // three octaves — broad zones, mid variation, fine grain — for a richer wash
+      const n = noise(gx * 0.2, gy * 0.2) * 0.62 + noise(gx * 0.7, gy * 0.7) * 0.26 + noise(gx * 1.9, gy * 1.9) * 0.12;
       let c = cBase.clone().lerp(cAsh, n);
-      if (n > 0.62) c.lerp(cSand, (n - 0.62) * 1.6);
-      if (n < 0.3) c.lerp(cMoss, (0.3 - n) * 1.2);
+      if (n > 0.60) c.lerp(cSand, (n - 0.60) * 1.7);   // dry sandy high-noise patches
+      if (n < 0.32) c.lerp(cMoss, (0.32 - n) * 1.5);   // lush mossy low-noise patches
+      if (h < 1.0) c.lerp(cMoss, (1.0 - h) * 0.18);    // damp lowlands green up
       if (h > 3.2) c.lerp(cRock, Math.min(1, (h - 3.2) / 2.5));
       if (h < 0.35) c.lerp(cRock, 0.4); // dark lowland basins
       const rtx = Math.max(0, Math.min(GRID - 1, Math.floor(wx / TILE)));
@@ -215,6 +217,8 @@ export class GameMap {
       const rti = rty * GRID + rtx;
       if (this.riverTiles.has(rti)) c.lerp(cRiver, 0.9);
       else if (this.roadTiles.has(rti)) c.lerp(cRoad, 0.5);
+      // fine per-vertex lightness speckle so flat ground reads as textured, not flat paint
+      c.offsetHSL(0, 0, (noise(gx * 3.3 + 11.0, gy * 3.3 - 7.0) - 0.5) * 0.06);
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -225,7 +229,7 @@ export class GameMap {
     const matr = new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 1.0, metalness: 0.02,
       map: tm.map, normalMap: tm.normalMap, roughnessMap: tm.roughnessMap,
-      normalScale: new THREE.Vector2(0.85, 0.85),
+      normalScale: new THREE.Vector2(1.0, 1.0),
     });
     matr.color.setScalar(1.8); // compensate for albedo texture multiplying vertex colors
     // multiply fog texture into terrain color
