@@ -42,7 +42,7 @@ function originAllowed(origin) {
     return new RegExp(re).test(origin);
   });
 }
-const MAX_ROOM = Number(process.env.MAX_ROOM || 2);     // 1v1 lockstep → 2 seats
+const MAX_ROOM = Number(process.env.MAX_ROOM || 4);     // up to 4 seats (1v1 … 4-player FFA)
 const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS || 500);
 const MAX_ROOMS = Number(process.env.MAX_ROOMS || 200);
 const MAX_FRAME_BYTES = Number(process.env.MAX_FRAME_BYTES || 64 * 1024);

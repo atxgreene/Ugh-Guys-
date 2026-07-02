@@ -12,7 +12,7 @@
 // comfortably handles thousands of sockets, which is plenty for this game; if you ever
 // need to shard, split by room via idFromName(room) instead.
 
-const MAX_ROOM = 2;             // 1v1 lockstep → 2 seats; a stranger can't sneak in as a 3rd
+const MAX_ROOM = 4;             // up to 4 seats (1v1 … 4-player free-for-all); no strangers beyond that
 const MAX_FRAME_BYTES = 64 * 1024;
 const RATE_LIMIT = 60;          // messages/sec per socket
 const MAX_SOCKETS = 2000;

@@ -528,8 +528,15 @@ function updatePing(ms) {
 function lobbyStart() {
   if (!_mp.transport || _mp.you !== 0 || _mp.startSent) return;
   _mp.startSent = true;
-  const pf = _mp.factions[0] || localFaction() || 'covenant';
-  const ef = _mp.factions[1] || 'watchers';
+  // One faction per seat present in the room (2–4). Missing/invalid picks fall back to
+  // a rotating default so every seat always has a valid faction.
+  const n = Math.max(2, _mp.players?.length || 2);
+  const dflt = ['covenant', 'watchers', 'nephilim', 'covenant'];
+  const factions = [];
+  for (let i = 0; i < n; i++) {
+    const f = _mp.factions[i];
+    factions.push(f && FACTIONS[f] ? f : (i === 0 ? (localFaction() || dflt[0]) : dflt[i % dflt.length]));
+  }
   const bsel = Settings.get('biome');
   const biomeKeys = Object.keys(BIOMES);
   const biomeKey = bsel && bsel !== 'random' ? bsel : biomeKeys[Math.floor(Math.random() * biomeKeys.length)];
@@ -539,9 +546,10 @@ function lobbyStart() {
     seed: Math.floor(Math.random() * 1e9), biomeKey,
     timeOfDay: moods[Math.floor(Math.random() * moods.length)],
     mapSize: MAP_SIZES[msel] ? msel : 'standard',
-    difficulty: 'normal', pf, ef,
+    difficulty: 'normal', factions,
+    pf: factions[0], ef: factions[1],   // back-compat fields
   };
-  // the relay echoes 'start' back to seat 0 too, so both clients begin via onStart
+  // the relay echoes 'start' back to seat 0 too, so all clients begin via onStart
   _mp.transport.sendMessage({ kind: 'start', header });
 }
 
@@ -647,9 +655,12 @@ function startNetGame(transport, header, you, players) {
   document.getElementById('gameover').style.display = 'none';
 
   const container = document.getElementById('game-container');
-  const game = new Game(container, header.pf, header.ef, {
+  // N seats: header.factions lists every player's faction; fall back to pf/ef for
+  // headers from an older client.
+  const factions = header.factions && header.factions.length >= 2 ? header.factions : [header.pf, header.ef];
+  const game = new Game(container, factions[0], factions[1], {
     seed: header.seed, biome: header.biomeKey, timeOfDay: header.timeOfDay,
-    mapSize: header.mapSize, difficulty: header.difficulty, localPlayer: you,
+    mapSize: header.mapSize, difficulty: header.difficulty, localPlayer: you, factions,
   });
   const ui = new UI(game, returnToMenu);
   const controls = new Controls(game, ui);
@@ -666,7 +677,7 @@ function startNetGame(transport, header, you, players) {
   game.net = session;     // game.cmd now defers commands to the session
   session.start();
   controls.intro = 0; ui.hideIntroCard();
-  ui.toast(`⚔ Networked match — you are Player ${you + 1} (${FACTIONS[you === 0 ? header.pf : header.ef].name}). Press Enter to chat.`);
+  ui.toast(`⚔ Networked match — you are Player ${you + 1} (${FACTIONS[factions[you]]?.name || ''}). Press Enter to chat.`);
   if (Settings.get('music')) Music.start();
 
   setupMatchChat(transport, you);
