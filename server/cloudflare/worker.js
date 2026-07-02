@@ -45,6 +45,7 @@ export class RelayHub {
     this.rooms = new Map();   // room -> Set<ws>
     this.queue = [];          // ws[] waiting for a quick match
     this.meta = new Map();    // ws -> { room, ready, name, faction, rl }
+    this.started = new Set(); // rooms whose match is live — locked to newcomers
   }
 
   async fetch() {
@@ -87,6 +88,9 @@ export class RelayHub {
     room = String(room || 'default').slice(0, 64);
     let set = this.rooms.get(room);
     if (!set) { set = new Set(); this.rooms.set(room, set); }
+    // a live match is locked: with rooms bigger than 2 seats, the size cap alone no
+    // longer keeps a stranger with the code from being seated into a running game
+    if (this.started.has(room) && !set.has(ws)) { this.send(ws, { kind: 'reject', reason: 'started' }); return false; }
     if (set.size >= MAX_ROOM && !set.has(ws)) { this.send(ws, { kind: 'reject', reason: 'full' }); return false; }
     const m = this.meta.get(ws); m.room = room; m.ready = false;
     set.add(ws);
@@ -117,7 +121,12 @@ export class RelayHub {
       if (m.room) this.broadcastLobby(m.room);
     } else if (msg.kind === 'start') {
       const set = this.rooms.get(m.room);
-      if (set) for (const c of set) this.send(c, { kind: 'start', header: msg.header, players: [...set].map((_, i) => i) });
+      // only the host (seat 0) may launch, and only once — the client enforces this
+      // too, but a hostile client must not be able to re-start or hijack a room
+      if (set && [...set][0] === ws && !this.started.has(m.room)) {
+        this.started.add(m.room);
+        for (const c of set) this.send(c, { kind: 'start', header: msg.header, players: [...set].map((_, i) => i) });
+      }
     } else if (msg.kind === 'packet') {
       this.broadcast(m.room, { kind: 'packet', packet: msg.packet }, ws);
     } else if (msg.kind === 'chat') {
@@ -160,7 +169,7 @@ export class RelayHub {
     const set = room && this.rooms.get(room);
     if (!set) return;
     set.delete(ws);
-    if (set.size === 0) this.rooms.delete(room);
+    if (set.size === 0) { this.rooms.delete(room); this.started.delete(room); }
     else this.broadcastLobby(room, { left: true });
   }
   onClose(ws) { this.dequeue(ws); this.leave(ws, true); this.meta.delete(ws); }

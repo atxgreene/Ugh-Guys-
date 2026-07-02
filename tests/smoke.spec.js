@@ -130,6 +130,14 @@ test('free-for-all: a 4-player match spawns 4 bases and simulates deterministica
   expect(res.a.neutral).toBe(4);
   expect(res.a.mains).toBe(4);
   expect(res.a.owners).toEqual([0, 1, 2, 3]);
+  // EVERY seat must actually be in the game: supply recomputed (cap > 0 from its main,
+  // used > 0 from its starting workers). Guards against per-player systems that only
+  // iterate the classic [0, 1] owners and leave seats 2/3 inert.
+  for (let o = 0; o < 4; o++) {
+    expect(res.a.supply[o].cap, `seat ${o} supplyCap`).toBeGreaterThan(0);
+    expect(res.a.supply[o].used, `seat ${o} supplyUsed`).toBeGreaterThan(0);
+    expect(res.a.unitsPerSeat[o], `seat ${o} units`).toBeGreaterThan(0);
+  }
   // same seed + faction list → bit-for-bit identical sim state (lockstep-safe)
   expect(res.deterministic, 'two identical 4-player games diverged').toBe(true);
   expect(errors, `console errors during FFA:\n${errors.join('\n')}`).toEqual([]);
@@ -142,6 +150,20 @@ test('free-for-all victory: razing every opponent main wins as last standing', a
   expect(r.enemyMains).toBe(2);        // two AI opponents
   expect(r.over).toBe(true);           // match ended
   expect(r.winner).toBe(0);            // local player (seat 0) won
+  // first razing eliminates a seat mid-match (toast), second ends the game (no toast)
+  expect(r.eliminationToasts).toBe(1);
+});
+
+test('free-for-all save/load: an FFA match round-trips through serialize/deserialize', async ({ page }) => {
+  const errors = watchErrors(page);
+  await startMatch(page);
+  const r = await page.evaluate(() => window.__ffaSaveCheck(3));
+  expect(r.numPlayers).toBe(3);                       // seats restored, not collapsed to 1v1
+  expect(r.ais).toBe(2);                              // an AI per opponent seat
+  expect(r.after.units).toBe(r.before.units);         // no army silently dropped
+  expect(r.after.buildings).toBe(r.before.buildings);
+  expect(r.after.neutralUnits).toBe(r.before.neutralUnits);   // neutral owner id survived
+  expect(errors, `console errors during FFA save/load:\n${errors.join('\n')}`).toEqual([]);
 });
 
 test('stances: a selected fighter cycles aggressive → defensive → hold', async ({ page }) => {
