@@ -283,7 +283,9 @@
       border: 1px solid #8a4a5e; padding: 10px 26px; font-size: 14px; cursor: pointer; font-family: inherit;
       letter-spacing: 2px; border-radius: 4px; }
     #btn-mp:hover { background: linear-gradient(180deg, #50283a, #301620); border-color: #ff9fc6; }
-    #lobby { position: absolute; inset: 0; z-index: 48; display: none; align-items: center; justify-content: center;
+    /* Above the menu (z 50): on short screens overflowing menu content would otherwise
+       sit over the lobby and intercept taps. Below loading/countdown (z 60). */
+    #lobby { position: absolute; inset: 0; z-index: 52; display: none; align-items: center; justify-content: center;
       background: rgba(8,6,12,0.78); }
     #lobby.show { display: flex; }
     .lobby-card { width: min(440px, 92vw); max-height: 92vh; overflow-y: auto; background: linear-gradient(180deg, #1c1622, #120e16);
@@ -515,6 +517,42 @@
       #selinfo { width: 36%; }
       .cmd { width: 66px; height: 46px; }
       .fcard { width: min(82vw, 280px); }
+    }
+    /* ---------- phones (short landscape viewports, e.g. iPhone) ---------- */
+    /* The desktop layout assumes ~700px of height; a phone in landscape has ~390.
+       Compact everything, let the menu scroll, and drop the keyboard cheatsheet
+       (it means nothing to touch). Safe-area insets keep the HUD off the notch. */
+    @media (max-height: 560px) {
+      #menu { justify-content: flex-start; overflow-y: auto; gap: 12px;
+        padding: 12px max(12px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+      #menu h1 { font-size: 26px; letter-spacing: 5px; }
+      #menu .subtitle { font-size: 12px; margin-top: -8px; }
+      #menu .choose { font-size: 11px; }
+      .factions { gap: 10px; }
+      .fcard { width: 208px; padding: 10px; }
+      .fcard h2 { font-size: 15px; margin-bottom: 6px; }
+      .fcard p { font-size: 10.5px; min-height: 0; }
+      .fcard .traits { font-size: 9.5px; margin-top: 6px; }
+      .menu-difficulty { margin-top: 0; }
+      /* two-column grid: a wrapping flex row collapses to one item per line here
+         (fit-content sizing inside the centered menu column) and wastes height */
+      .menu-setup { display: grid; grid-template-columns: repeat(2, auto); gap: 8px 22px; justify-content: center; }
+      .menu-setup label { justify-content: flex-end; }
+      #menu .hint { display: none; }
+      #gameover h1 { font-size: 40px; letter-spacing: 8px; }
+      /* in-match HUD: reclaim vertical space for the battlefield */
+      #topbar { height: 36px; font-size: 12.5px; gap: 12px;
+        padding: 0 max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); }
+      #resources { gap: 12px; }
+      #minimap { width: 128px; height: 128px; }
+      #minimap-wrap { left: max(8px, env(safe-area-inset-left)); bottom: 8px; padding: 6px; }
+      #panel { left: calc(max(8px, env(safe-area-inset-left)) + 148px); right: max(8px, env(safe-area-inset-right));
+        bottom: 8px; min-height: 92px; padding: 8px 10px; gap: 10px; }
+      #selinfo { width: 200px; padding-right: 8px; }
+      .sel-name { font-size: 14px; }
+      .cmd { width: 96px; height: 54px; font-size: 11px; }
+      #dialogue { bottom: 118px; }
+      #coach { bottom: 116px; }
     }
   </style>
 </head>
