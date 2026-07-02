@@ -920,7 +920,7 @@ export class Game {
     // a saved game pins the exact map (seed/biome/mood) so it reloads identically
     const load = opts.load || null;
     this.loadedGame = !!load;   // AI skips the opening-stockpile handicap on a restored game
-    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay, difficulty: load.difficulty, mapSize: load.mapSize }; }
+    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay, difficulty: load.difficulty, mapSize: load.mapSize, factions: load.factions }; }
     // Battlefield size — pinned by a save, else the player's setting. Must be set
     // before the map (and WORLD-dependent atmosphere) is built. Live binding means
     // GRID/WORLD elsewhere pick up the new scale automatically.
@@ -957,8 +957,11 @@ export class Game {
     // as before — so every `owner === this.NEUTRAL` check is byte-identical at 2 players
     // and simply scales when more seats are filled. opts.factions (a list of faction
     // keys) drives 3-4 player free-for-all; absent, it's the classic two-faction match.
-    const factionKeys = (opts.factions && opts.factions.length >= 2)
+    let factionKeys = (opts.factions && opts.factions.length >= 2)
       ? opts.factions : [playerFactionKey, enemyFactionKey];
+    // The map provides exactly 4 spawn sites (map.bases); more seats would stack bases
+    // on shared tiles. Clamp here so every caller inherits the limit.
+    if (factionKeys.length > 4) factionKeys = factionKeys.slice(0, 4);
     this.numPlayers = factionKeys.length;
     this.NEUTRAL = this.numPlayers;   // owner id of the neutral pseudo-player
     this.players = factionKeys.map(k => this.makePlayer(FACTIONS[k]));
@@ -991,7 +994,9 @@ export class Game {
       v: 1, frame: 0, frames: [],
       pending: [],
       header: { seed: this.map.seed, biomeKey: this.biomeKey, timeOfDay: this.timeOfDay,
-        mapSize: this.mapSizeKey, difficulty: this.difficulty, pf: this.pfKey, ef: this.efKey },
+        mapSize: this.mapSizeKey, difficulty: this.difficulty, pf: this.pfKey, ef: this.efKey,
+        // full seat list so FFA replays reconstruct every seat (pf/ef cover old files)
+        factions: this.players.slice(0, this.numPlayers).map(p => p.faction.key) },
     };
   }
 
@@ -1018,9 +1023,24 @@ export class Game {
   // this so the same code serves owner 0 in single-player and owner N in a net game.
   get me() { return this.players[this.localPlayer]; }
 
-  // Per-seat HUD colours (minimap, health bars, rings). Wraps if more seats than colours.
-  seatCss(owner) { return SEAT_CSS[owner % SEAT_CSS.length]; }
-  seatHex(owner) { return SEAT_HEX[owner % SEAT_HEX.length]; }
+  // THE hostility predicate: two distinct real (non-neutral) seats are enemies.
+  // Single source of truth for the sim, the AI and the UI — grow teams/alliances here.
+  hostile(a, b) { return a !== b && a < this.NEUTRAL && b < this.NEUTRAL; }
+  // A real, non-neutral seat that isn't the local player (UI/probe convenience).
+  isEnemyOwner(owner) { return this.hostile(this.localPlayer, owner); }
+
+  // Per-seat HUD colours (minimap, health bars, rings). Every seat has a stable palette
+  // slot, but the LOCAL seat always takes slot 0 (green) and the seat that would have
+  // had slot 0 takes the local seat's slot — generalizing the classic "you are green,
+  // the enemy is red" scheme to N seats while keeping all opponents distinct.
+  seatColorIndex(owner) {
+    const n = SEAT_CSS.length;
+    if (owner === this.localPlayer) return 0;
+    if (owner === 0) return this.localPlayer % n;
+    return owner % n;
+  }
+  seatCss(owner) { return SEAT_CSS[this.seatColorIndex(owner)]; }
+  seatHex(owner) { return SEAT_HEX[this.seatColorIndex(owner)]; }
 
   initRenderer() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -1701,7 +1721,7 @@ export class Game {
       b.complete = true; b.progress = 1; b.hp = b.maxHp; b.mesh.scale.y = 1;
       b.removeScaffold();
       this.buildings.push(b);
-      if (owner === this.localPlayer) this.playerMain = b; else if (owner !== this.NEUTRAL) this.enemyMain = b;
+      if (owner === this.localPlayer) this.playerMain = b;
       // starting workers
       const wKey = p.faction.worker;
       for (let i = 0; i < 5; i++) {
@@ -1828,8 +1848,10 @@ export class Game {
       v: 1, t: this.time, timeOfDay: this.timeOfDay, biomeKey: this.biomeKey, seed: this.map.seed,
       difficulty: this.difficulty, mapSize: this.mapSizeKey,
       pf: this.pfKey, ef: this.efKey,
-      players: [0, 1].map(o => { const p = this.players[o]; return {
-        res: { ...p.resources }, up: [...p.upgrades], dmgMult: p.dmgMult, armorAdd: p.armorAdd, hpMult: p.hpMult }; }),
+      // full seat list so an FFA match round-trips; pf/ef stay for pre-FFA saves
+      factions: this.players.slice(0, this.numPlayers).map(p => p.faction.key),
+      players: this.players.slice(0, this.numPlayers).map(p => ({
+        res: { ...p.resources }, up: [...p.upgrades], dmgMult: p.dmgMult, armorAdd: p.armorAdd, hpMult: p.hpMult })),
       units: this.units.filter(u => !u.dead).map(u => ({ o: u.owner, k: u.key,
         x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), hp: Math.round(u.hp),
         cy: u.carry || 0, ct: u.carryType || null, leash: u.leash || null,
@@ -1861,7 +1883,7 @@ export class Game {
       b.trainQueue = (bs.q || []).map(j => ({ key: j.key, t: j.t, total: j.total, upgrade: j.up }));
       b.rally = bs.rally || null;
       this.buildings.push(b);
-      if (def.main) { if (bs.o === this.localPlayer) this.playerMain = b; else if (bs.o !== 2) this.enemyMain = b; }
+      if (def.main && bs.o === this.localPlayer) this.playerMain = b;
     }
     for (const us of d.units || []) {
       const def = this.defFor(us.o, 'unit', us.k); if (!def) continue;
@@ -2019,7 +2041,7 @@ export class Game {
     for (const [k, v] of Object.entries(cost || {})) r[k] += v;
   }
   recalcSupply() {
-    for (const owner of [0, 1]) {
+    for (let owner = 0; owner < this.numPlayers; owner++) {
       const p = this.players[owner];
       p.supplyUsed = this.units.filter(u => u.owner === owner && !u.dead).reduce((s, u) => s + (u.def.supply || 1), 0);
       p.supplyCap = Math.min(SUPPLY_CAP, this.buildings.filter(b => b.owner === owner && b.complete && !b.dead)
@@ -2391,23 +2413,35 @@ export class Game {
       for (const [k, v] of Object.entries(FIELDS_OF_EVIL.reward)) r[k] = (r[k] || 0) + v;
       if (owner === 0) { Sound.win(); this.emit('toast', '☩ The House of Greene has fallen. Their hoard of forbidden knowledge is yours.'); }
     }
-    // Elimination / victory. A seat is out when it has no main left; the local player
-    // loses the instant they're eliminated, and wins once every other real seat is out.
-    // At 2 players this is exactly the old playerMain/enemyMain check.
+    // Elimination / victory. A seat is out when it has no main left; the match ends when
+    // at most one seat still stands. At 2 players this is exactly the old
+    // playerMain/enemyMain check (either main's death ends the match on the same tick).
+    //
+    // Determinism: `over` gates sim behaviour (update() slow-mo), so in a NETWORKED
+    // match it must flip on the same sim tick on every client. The alive-count test is
+    // objective (pure sim state); only the winner-vs-loser reading of it is local. A
+    // mid-match elimination of the local seat therefore must NOT end a net game — the
+    // sim keeps running identically everywhere and the fallen player spectates.
     if (!this.over && b.def.main) {
       const hasMain = (o) => this.buildings.some(x => x.owner === o && x.def.main && !x.dead);
-      if (b.owner === this.localPlayer && !hasMain(this.localPlayer)) {
-        this.endGame(1, b.pos);
-      } else if (this.isEnemyOwner(b.owner) && !hasMain(b.owner)) {
-        let remaining = 0;
-        for (let o = 0; o < this.numPlayers; o++) if (o !== this.localPlayer && hasMain(o)) remaining++;
-        if (remaining === 0 && hasMain(this.localPlayer)) this.endGame(0, b.pos);
+      const alive = [];
+      for (let o = 0; o < this.numPlayers; o++) if (hasMain(o)) alive.push(o);
+      if (alive.length <= 1) {
+        this.endGame(alive[0] === this.localPlayer ? 0 : 1, b.pos);
+      } else if (b.owner === this.localPlayer && !alive.includes(this.localPlayer)) {
+        if (this.net) {
+          if (!this.localEliminated) {
+            this.localEliminated = true;   // UI-only flag; never read by the sim
+            this.emit('toast', '☠ Your stronghold has fallen — you remain as a spectre while the survivors fight on.');
+          }
+        } else {
+          this.endGame(1, b.pos);   // offline: you're out, the match is over for you
+        }
+      } else if (b.owner < this.NEUTRAL && b.owner !== this.localPlayer && !alive.includes(b.owner)) {
+        this.emit('toast', `⚑ The ${this.players[b.owner].faction.name} have fallen — ${alive.length} houses remain.`);
       }
     }
   }
-
-  // A real, non-neutral seat that isn't the local player.
-  isEnemyOwner(owner) { return owner < this.NEUTRAL && owner !== this.localPlayer; }
 
   depleteNode(n) {
     this.map.blocked[this.map.idx(n.tx, n.ty)] = 0;
@@ -2557,7 +2591,7 @@ export class Game {
     }
 
     // macro ability timers (active economy: Marshal the Stores)
-    for (const o of [0, 1]) {
+    for (let o = 0; o < this.numPlayers; o++) {
       const p = this.players[o];
       if (p.empowerCd > 0) p.empowerCd = Math.max(0, p.empowerCd - dt);
       if (p.gatherBoostT > 0) p.gatherBoostT = Math.max(0, p.gatherBoostT - dt);
@@ -2642,8 +2676,8 @@ export class Game {
     this.updateSky(dt);
     this.shake = Math.max(0, this.shake - dt * 2.2);
 
+    // every AI seat (skirmish/replay: seats 1..N-1 via spawnAIs; net matches: none)
     if (this.ais) for (const ai of this.ais) ai.update(dt);
-    else if (this.ai) this.ai.update(dt);
   }
 
   updateSky(dt) {
@@ -2724,6 +2758,9 @@ export class Game {
     this.composer?.dispose?.();
     this.scene.environment?.dispose?.();
     this.renderer.dispose();
+    // dispose() frees GPU resources but not the WebGL context itself; release it so
+    // repeated headless games (tests, replays) don't hit the browser's live-context cap
+    this.renderer.forceContextLoss?.();
     this.renderer.domElement.remove();
   }
 }

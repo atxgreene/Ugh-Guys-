@@ -204,6 +204,16 @@ function buildIdMap(game) {
   return m;
 }
 
+// One AI per non-local seat. Single source of the ai/ais wiring so skirmish, replays
+// and the headless probes all drive AI seats identically (a replayed FFA match must
+// re-run every AI, not just seat 1). game.ai stays aliased to the first AI because
+// save/load persists that seat's strategic state.
+function spawnAIs(game) {
+  game.ais = [];
+  for (let o = 1; o < game.numPlayers; o++) game.ais.push(new AI(game, o));
+  game.ai = game.ais[0] || null;
+}
+
 function startReplay(rep) {
   stopGame();
   document.getElementById('menu').style.display = 'none';
@@ -215,11 +225,12 @@ function startReplay(rep) {
   const h = rep.header;
   const container = document.getElementById('game-container');
   const game = new Game(container, h.pf, h.ef, { seed: h.seed, biome: h.biomeKey,
-    timeOfDay: h.timeOfDay, mapSize: h.mapSize, difficulty: h.difficulty, replay: true });
+    timeOfDay: h.timeOfDay, mapSize: h.mapSize, difficulty: h.difficulty, replay: true,
+    factions: h.factions });   // FFA replays rebuild every seat (absent in old files → 1v1)
   const ui = new UI(game, returnToMenu);
   const controls = new Controls(game, ui);
   ui.controls = controls; game.controls = controls;
-  game.ai = new AI(game);              // the AI re-runs deterministically from the seed
+  spawnAIs(game);              // the AIs re-run deterministically from the seed
   controls.onPause = () => { game.paused = !game.paused; ui.setPaused(game.paused, false); };
   ui.onPause = controls.onPause; ui.onResume = () => { game.paused = false; ui.setPaused(false, false); };
   if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
@@ -782,10 +793,7 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   ui.onLoad = () => { togglePause(false); loadSavedGame(); };
   ui.onSaveAvailable = hasSave;
   ui.onDownloadReplay = downloadReplay;
-  // one AI per opponent seat; game.ai keeps the first for save/load back-compat
-  game.ais = [];
-  for (let o = 1; o < game.numPlayers; o++) game.ais.push(new AI(game, o));
-  game.ai = game.ais[0] || null;
+  spawnAIs(game);
   if (loading && game.ai && game._aiState) Object.assign(game.ai, game._aiState);
   // pin quality if the player chose a fixed level (auto leaves the loop in charge)
   if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
@@ -1030,8 +1038,9 @@ window.__runReplaySync = (rep) => {
   const h = rep.header;
   const container = document.getElementById('game-container');
   const game = new Game(container, h.pf, h.ef, { seed: h.seed, biome: h.biomeKey,
-    timeOfDay: h.timeOfDay, mapSize: h.mapSize, difficulty: h.difficulty, replay: true });
-  game.ai = new AI(game);              // the AI re-runs deterministically from the seed
+    timeOfDay: h.timeOfDay, mapSize: h.mapSize, difficulty: h.difficulty, replay: true,
+    factions: h.factions });   // FFA replays rebuild every seat (absent in old files → 1v1)
+  spawnAIs(game);              // the AIs re-run deterministically from the seed
   if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
   window.__game = game; window.__controls = null;
   let desynced = false;
@@ -1046,34 +1055,39 @@ window.__runReplaySync = (rep) => {
   return { desync: desynced, frames: rep.frames.length };
 };
 
+// Shared bootstrap for the headless FFA probes: a fresh N-player game with an AI on
+// every non-local seat, wired into the same globals the live paths use.
+function bootHeadlessFFA(numPlayers, seed) {
+  stopGame();
+  const fkeys = Object.keys(FACTIONS);
+  const factions = Array.from({ length: numPlayers }, (_, i) => fkeys[i % fkeys.length]);
+  const biome = Object.keys(BIOMES)[0];
+  const g = new Game(document.getElementById('game-container'), factions[0], factions[1],
+    { seed, biome, timeOfDay: BIOMES[biome].moods[0], factions });
+  spawnAIs(g);
+  window.__game = g; window.__controls = null;
+  current = { game: g, ai: g.ai, controls: null, ui: null, raf: 0 };
+  return g;
+}
+
 // Headless free-for-all determinism probe (used by the smoke suite). Builds two N-player
 // games from an identical (seed, biome, mood, faction list), steps both the same number
 // of sim ticks, and reports whether their checksums match — i.e. that the multi-player
 // simulation is bit-for-bit deterministic (the prerequisite for >2-player lockstep) — plus
-// how many mains spawned (one per seat) and where the neutral owner id landed.
+// per-seat supply/army tallies proving every AI seat actually plays (trains units).
 window.__ffaCheck = (numPlayers = 4, ticks = 600) => {
-  const fkeys = Object.keys(FACTIONS);
-  const factions = Array.from({ length: numPlayers }, (_, i) => fkeys[i % fkeys.length]);
-  const biome = Object.keys(BIOMES)[0];
-  const timeOfDay = BIOMES[biome].moods[0];
-  const seed = 1234567;
   const run = () => {
-    stopGame();
-    const container = document.getElementById('game-container');
-    const g = new Game(container, factions[0], factions[1], { seed, biome, timeOfDay, factions });
-    // give every non-local seat an AI so the check exercises the multi-opponent paths
-    g.ais = [];
-    for (let o = 1; o < g.numPlayers; o++) g.ais.push(new AI(g, o));
-    g.ai = g.ais[0] || null;
-    window.__game = g; window.__controls = null;
+    const g = bootHeadlessFFA(numPlayers, 1234567);
     for (let i = 0; i < ticks; i++) g.update(1 / SIM_HZ);
-    current = { game: g, ai: g.ai, controls: null, ui: null, raf: 0 };
     return {
       sum: g.checksum(),
       numPlayers: g.numPlayers,
       neutral: g.NEUTRAL,
       mains: g.buildings.filter(b => b.def.main && b.owner < g.NEUTRAL && !b.dead).length,
       owners: [...new Set(g.buildings.filter(b => b.def.main).map(b => b.owner))].sort((a, b) => a - b),
+      supply: g.players.slice(0, g.numPlayers).map(p => ({ used: p.supplyUsed, cap: p.supplyCap })),
+      unitsPerSeat: Array.from({ length: g.numPlayers }, (_, o) =>
+        g.units.filter(u => u.owner === o && !u.dead).length),
     };
   };
   const a = run(), b = run();
@@ -1083,19 +1097,43 @@ window.__ffaCheck = (numPlayers = 4, ticks = 600) => {
 // Headless free-for-all victory probe: build an N-player game, raze every opponent's
 // main, and report whether the match ended as a win for the local seat (last standing).
 window.__ffaVictoryCheck = (numPlayers = 3) => {
-  stopGame();
-  const fkeys = Object.keys(FACTIONS);
-  const factions = Array.from({ length: numPlayers }, (_, i) => fkeys[i % fkeys.length]);
-  const biome = Object.keys(BIOMES)[0];
-  const g = new Game(document.getElementById('game-container'), factions[0], factions[1],
-    { seed: 42, biome, timeOfDay: BIOMES[biome].moods[0], factions });
-  window.__game = g; window.__controls = null;
-  current = { game: g, ai: null, controls: null, ui: null, raf: 0 };
+  const g = bootHeadlessFFA(numPlayers, 42);
   g.update(1 / SIM_HZ);
   const enemyMains = g.buildings.filter(b => b.def.main && g.isEnemyOwner(b.owner));
   const n = enemyMains.length;
+  const toasts = [];
+  g.on('toast', (t) => toasts.push(t));
   for (const b of enemyMains) if (!g.over) g.removeBuilding(b, null);
-  return { over: g.over, winner: g.winner, enemyMains: n, numPlayers: g.numPlayers };
+  return { over: g.over, winner: g.winner, enemyMains: n, numPlayers: g.numPlayers,
+    eliminationToasts: toasts.length };
+};
+
+// Headless save/load round-trip probe: serialize a running N-player FFA game, restore it
+// through the exact path loadSavedGame uses, and report whether every seat survived.
+window.__ffaSaveCheck = (numPlayers = 3, ticks = 120) => {
+  let g = bootHeadlessFFA(numPlayers, 777);
+  for (let i = 0; i < ticks; i++) g.update(1 / SIM_HZ);
+  const data = g.serialize();
+  const before = {
+    units: g.units.filter(u => !u.dead).length,
+    buildings: g.buildings.filter(b => !b.dead).length,
+    neutralUnits: g.units.filter(u => u.owner === g.NEUTRAL && !u.dead).length,
+  };
+  stopGame();
+  g = new Game(document.getElementById('game-container'), data.pf, data.ef, { load: data });
+  spawnAIs(g);
+  window.__game = g; window.__controls = null;
+  current = { game: g, ai: g.ai, controls: null, ui: null, raf: 0 };
+  return {
+    before,
+    after: {
+      units: g.units.filter(u => !u.dead).length,
+      buildings: g.buildings.filter(b => !b.dead).length,
+      neutralUnits: g.units.filter(u => u.owner === g.NEUTRAL && !u.dead).length,
+    },
+    numPlayers: g.numPlayers,
+    ais: g.ais.length,
+  };
 };
 
 // Boot. When running as a Discord Activity, complete the embedded-app handshake and

@@ -69,7 +69,7 @@ export class AI {
   myBuildings() { return this.game.buildings.filter(b => b.owner === this.owner && !b.dead); }
 
   // A real, non-neutral player that isn't us — i.e. someone to fight.
-  isEnemy(owner) { return owner < this.game.NEUTRAL && owner !== this.owner; }
+  isEnemy(owner) { return this.game.hostile(this.owner, owner); }
   // Nearest enemy base site (tile coords) to our main — the fallback attack anchor
   // when no enemy structure is currently known.
   enemyBaseSite(main) {
@@ -272,9 +272,16 @@ export class AI {
       if (w) {
         const t = this.enemyBaseSite(main);
         w.orderMove(t.x, t.z);
-        // return home after a while
-        setTimeout(() => { if (!w.dead) w.orderMove(main.pos.x + 6, main.pos.z + 6); }, 25000);
+        // recall on SIM time, not wall-clock: a setTimeout here mutates unit state at a
+        // real-time instant, which replays (which re-run the AI from the seed) can't
+        // reproduce — the recall must land on the same sim tick in every run.
+        this.scout = w;
+        this.scoutHomeAt = g.time + 25;
       }
+    }
+    if (this.scout && g.time >= this.scoutHomeAt) {
+      if (!this.scout.dead) this.scout.orderMove(main.pos.x + 6, main.pos.z + 6);
+      this.scout = null;
     }
   }
 
