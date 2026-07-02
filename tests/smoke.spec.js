@@ -166,6 +166,30 @@ test('free-for-all save/load: an FFA match round-trips through serialize/deseria
   expect(errors, `console errors during FFA save/load:\n${errors.join('\n')}`).toEqual([]);
 });
 
+test('PWA: manifest + service worker are served, and the game boots OFFLINE once cached', async ({ page, context }) => {
+  // manifest + icons reachable
+  const mf = await page.request.get('/manifest.webmanifest');
+  expect(mf.ok()).toBe(true);
+  expect((await mf.json()).icons.length).toBeGreaterThanOrEqual(3);
+  expect((await page.request.get('/icon-180.png')).ok()).toBe(true);
+  expect((await page.request.get('/sw.js')).ok()).toBe(true);
+
+  // first visit installs the SW; reload lets it control the page and cache the build
+  await page.goto('/');
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await page.waitForSelector('#faction-cards .fcard', { timeout: 15_000 });
+
+  // sever the network entirely — the installed app must still boot and play
+  await context.setOffline(true);
+  await page.reload();
+  await page.waitForSelector('#faction-cards .fcard', { timeout: 15_000 });
+  await page.click('#faction-cards .fcard');
+  await page.waitForFunction(() => window.__game && window.__game.units.length > 0, null, { timeout: 20_000 });
+  expect(await page.evaluate(() => window.__game.units.length)).toBeGreaterThan(0);
+  await context.setOffline(false);
+});
+
 test('stances: a selected fighter cycles aggressive → defensive → hold', async ({ page }) => {
   await startMatch(page);
   await skipIntro(page);

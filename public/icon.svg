@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- App icon: the Watcher's eye over a pre-flood dusk. Bold at 40px, rich at 512. -->
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#2a2438"/>
+      <stop offset="55%" stop-color="#151322"/>
+      <stop offset="100%" stop-color="#0a0a10"/>
+    </radialGradient>
+    <radialGradient id="iris" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#d6ff9e"/>
+      <stop offset="35%" stop-color="#8ef04e"/>
+      <stop offset="75%" stop-color="#4fae2c"/>
+      <stop offset="100%" stop-color="#2c661d"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#66e23a" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#66e23a" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#66e23a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7a5a2c"/>
+      <stop offset="45%" stop-color="#e6c074"/>
+      <stop offset="60%" stop-color="#d9ad5e"/>
+      <stop offset="100%" stop-color="#5a4424"/>
+    </linearGradient>
+    <linearGradient id="peak" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a3544"/>
+      <stop offset="100%" stop-color="#14121c"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#sky)"/>
+
+  <!-- doomed red star, low on the horizon -->
+  <circle cx="404" cy="332" r="26" fill="#ff3a22" opacity="0.85"/>
+  <circle cx="404" cy="332" r="52" fill="#ff3a22" opacity="0.18"/>
+
+  <!-- mountain silhouettes -->
+  <path d="M0 512 L0 372 L92 292 L168 366 L246 286 L338 380 L420 322 L512 396 L512 512 Z" fill="url(#peak)"/>
+  <path d="M0 512 L0 428 L120 356 L228 442 L344 372 L446 452 L512 412 L512 512 Z" fill="#0c0b12"/>
+
+  <!-- the Watcher's eye -->
+  <circle cx="256" cy="210" r="150" fill="url(#glow)"/>
+  <g>
+    <!-- almond outline -->
+    <path d="M76 210 Q256 84 436 210 Q256 336 76 210 Z" fill="#0b0d12" stroke="url(#rim)" stroke-width="14"/>
+    <!-- iris + pupil -->
+    <circle cx="256" cy="210" r="74" fill="url(#iris)"/>
+    <circle cx="256" cy="210" r="30" fill="#08130a"/>
+    <circle cx="232" cy="186" r="12" fill="#eaffd2" opacity="0.9"/>
+    <!-- lower lid shadow -->
+    <path d="M96 218 Q256 322 416 218 Q256 300 96 218 Z" fill="#000" opacity="0.35"/>
+  </g>
+</svg>

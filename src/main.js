@@ -8,7 +8,7 @@ import { UI } from './ui.js';
 import { Sound, Music } from './audio.js';
 import { Settings } from './settings.js';
 import { LockstepSession, WebSocketTransport } from './net.js';
-import { initDiscord } from './discord.js';
+import { initDiscord, isDiscordActivity } from './discord.js';
 
 const TRAITS = {
   covenant: 'Balanced economy · strong defenses · disciplined bronze infantry · temple favor',
@@ -1171,6 +1171,11 @@ window.__ffaSaveCheck = (numPlayers = 3, ticks = 120) => {
 // it instantly. Never blocks the menu on failure.
 (async () => {
   try { await initDiscord(); } catch (e) { console.warn('Discord init skipped', e); }
+  // Offline/installable PWA. Skipped inside the Discord Activity iframe (the proxied
+  // discordsays origin makes SW scope meaningless there) and on unsupported browsers.
+  if ('serviceWorker' in navigator && !isDiscordActivity()) {
+    try { navigator.serviceWorker.register('./sw.js'); } catch (e) { console.warn('SW registration failed', e); }
+  }
   bindShell();
   buildMenu();
   // Deep-link: opening an invite link (?join=CODE) drops you straight into that lobby.
