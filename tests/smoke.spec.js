@@ -198,6 +198,21 @@ test('records: a finished match unlocks achievements and persists them', async (
   expect(again).toEqual([]);
 });
 
+test('environment: the new biomes and Blood Moon mood boot and render clean', async ({ page }) => {
+  const errors = watchErrors(page);
+  for (const [biome, timeOfDay] of [['salt_waste', 'bloodmoon'], ['drowned_delta', 'storm']]) {
+    await page.goto('/');
+    await page.waitForSelector('#faction-cards .fcard', { timeout: 15_000 });
+    await page.evaluate((cfg) => { window.__forceOpts = cfg; }, { biome, timeOfDay, seed: 90210 });
+    await page.click('#faction-cards .fcard');
+    await page.waitForFunction(() => window.__game && window.__game.units.length > 0, null, { timeout: 20_000 });
+    const got = await page.evaluate(() => ({ biome: window.__game.map.biomeKey, mood: window.__game.timeOfDay }));
+    expect(got.biome).toBe(biome);
+    expect(got.mood).toBe(timeOfDay);
+  }
+  expect(errors, `console errors booting new biomes:\n${errors.join('\n')}`).toEqual([]);
+});
+
 test('PWA: manifest + service worker are served, and the game boots OFFLINE once cached', async ({ page, context }) => {
   // manifest + icons reachable
   const mf = await page.request.get('/manifest.webmanifest');
