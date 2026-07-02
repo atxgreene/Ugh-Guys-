@@ -1,0 +1,17 @@
+{
+  "name": "Shadow of the Watchers",
+  "short_name": "Watchers",
+  "description": "Ancient apocalyptic real-time strategy. Three factions, living battlefields, and the Flood drawing near.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0a0a10",
+  "theme_color": "#0a0a10",
+  "categories": ["games", "strategy"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
