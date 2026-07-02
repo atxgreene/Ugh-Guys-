@@ -73,6 +73,9 @@ const TIME_PRESETS = {
   storm: { name: 'The Gathering Flood', sun: 0x9aa0b2, sunI: 2.1, hemiSky: 0x4c586e, hemiGround: 0x2c2c36, hemiI: 1.6,
            rim: 0x6a7cc0, rimI: 1.0, fog: 0x2a313f, fogD: 0.0052, bg: 0x232836, env: 0.74,
            skyTop: '#10141e', skyHorizon: '#3a4150', skyGround: '#0c0e14', exposure: 1.5, storm: 1.0, lightning: true },
+  bloodmoon: { name: 'The Blood Moon', sun: 0xd8907a, sunI: 2.0, hemiSky: 0x5c3a48, hemiGround: 0x2a2022, hemiI: 1.55,
+           rim: 0xff6a5a, rimI: 1.25, fog: 0x2a1520, fogD: 0.0046, bg: 0x1c0f16, env: 0.72,
+           skyTop: '#120510', skyHorizon: '#7a2432', skyGround: '#0a0508', exposure: 1.65, storm: 0.5, night: true },
 };
 
 // ---- replay command (de)serialization: entities ↔ stable ids ----

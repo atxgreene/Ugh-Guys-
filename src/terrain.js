@@ -75,6 +75,20 @@ export const BIOMES = {
     clutter: { rock: 0.26, altar: 0.16, dead_tree: 0.16, boundary_stone: 0.14, brazier: 0.1, banner: 0.08, grain_sacks: 0.06, amphorae: 0.04 },
     moods: ['dawn', 'noon', 'dusk'],
   },
+  salt_waste: {
+    name: 'Salt Wastes of Uz',
+    // bleached pans and bone-dry hardpan; what lived here did not leave whole
+    base: 0x6e6a5e, ash: 0x8d887a, rock: 0x4a463e, sand: 0x9a927e, moss: 0x5c6a58,
+    clutter: { giant_bones: 0.22, boundary_stone: 0.18, rock: 0.16, skull_totem: 0.14, ruin: 0.12, dead_tree: 0.1, tablet: 0.08 },
+    moods: ['noon', 'dusk', 'bloodmoon'],
+  },
+  drowned_delta: {
+    name: 'The Drowned Delta',
+    // black silt and drowning green — the first lands the Flood has already tasted
+    base: 0x2e3c34, ash: 0x44523f, rock: 0x222a26, sand: 0x565c44, moss: 0x33584a,
+    clutter: { dead_tree: 0.24, wood_pile: 0.16, cart: 0.14, amphorae: 0.14, ruin: 0.12, rock: 0.1, grain_sacks: 0.1 },
+    moods: ['storm', 'dawn', 'bloodmoon'],
+  },
 };
 
 export class GameMap {
