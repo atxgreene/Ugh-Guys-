@@ -9,6 +9,7 @@ import { Sound, Music } from './audio.js';
 import { Settings } from './settings.js';
 import { LockstepSession, WebSocketTransport } from './net.js';
 import { initDiscord, isDiscordActivity } from './discord.js';
+import { onGameOver as achievementsOnGameOver, recordsSummary } from './achievements.js';
 
 const TRAITS = {
   covenant: 'Balanced economy · strong defenses · disciplined bronze infantry · temple favor',
@@ -39,6 +40,32 @@ function opponentCount() {
   return n >= 1 && n <= 3 ? n : 1;
 }
 
+// Selected game mode for a fresh match ('standard' skirmish | 'survival' The Deluge).
+function selectedMode() {
+  return Settings.get('mode') === 'survival' ? 'survival' : 'standard';
+}
+
+// The Daily Trial: one fixed, shared challenge per UTC day. Everything — seed, land,
+// mood, mode, faction, difficulty — derives deterministically from the date, so every
+// player faces the identical trial and can compare fates.
+function dailyConfig() {
+  const date = new Date().toISOString().slice(0, 10);          // YYYY-MM-DD (UTC)
+  let h = 2166136261;                                           // FNV-1a over the date
+  for (const c of date) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+  const seed = h >>> 0;
+  const day = Math.floor(Date.parse(date) / 86400000);
+  const biomes = Object.keys(BIOMES);
+  const biome = biomes[seed % biomes.length];
+  const factions = Object.keys(FACTIONS);
+  return {
+    date, seed, biome,
+    timeOfDay: BIOMES[biome].moods[day % BIOMES[biome].moods.length],
+    mode: day % 2 ? 'survival' : 'standard',                    // alternates daily
+    faction: factions[day % factions.length],
+    difficulty: 'hard',
+  };
+}
+
 function saveGame(silent) {
   if (!current || current.game.over) return false;
   try {
@@ -62,6 +89,24 @@ function loadSavedGame() {
     const { data } = JSON.parse(raw);
     showLoading(() => startGameNow(data.pf, data.ef, data));
   } catch (e) { console.error('Load failed', e); }
+}
+
+// Records panel: achievements + headline bests, rendered from local storage.
+function showRecords() {
+  const ov = document.getElementById('records');
+  if (!ov) return;
+  const r = recordsSummary();
+  const done = r.achievements.filter(a => a.done).length;
+  document.getElementById('rec-head').textContent =
+    `🏆 Records — ${done}/${r.achievements.length} achievements`;
+  document.getElementById('rec-bests').innerHTML =
+    `<span>🌊 Deepest stand: <b>wave ${r.bestWave}</b></span>` +
+    `<span>☀ Daily Trials: <b>${r.dailyWon}</b> won of <b>${r.dailyDone}</b></span>`;
+  document.getElementById('rec-list').innerHTML = r.achievements.map(a =>
+    `<div class="rec-item ${a.done ? 'done' : ''}"><span class="rec-mark">${a.done ? '✦' : '·'}</span>` +
+    `<span><b>${a.name}</b><br><i>${a.desc}</i></span></div>`).join('');
+  ov.classList.add('show');
+  document.getElementById('rec-close').onclick = () => ov.classList.remove('show');
 }
 
 function togglePause(force) {
@@ -168,6 +213,37 @@ function buildMenu() {
     oppSel.value = String(opponentCount());
     oppSel.onchange = () => Settings.set('opponents', oppSel.value);
   }
+  // mode: classic skirmish, or The Deluge (survive escalating monster waves)
+  const modeSel = document.getElementById('sel-mode');
+  if (modeSel) {
+    modeSel.innerHTML = '<option value="standard">Skirmish</option><option value="survival">The Deluge (survival)</option>';
+    modeSel.value = selectedMode();
+    const syncMode = () => {
+      // opponent pickers mean nothing against the flood
+      const survival = modeSel.value === 'survival';
+      if (enemySel) enemySel.disabled = survival;
+      if (oppSel) oppSel.disabled = survival;
+    };
+    modeSel.onchange = () => { Settings.set('mode', modeSel.value); syncMode(); };
+    syncMode();
+  }
+  // Daily Trial: one shared, date-seeded challenge per day
+  const daily = document.getElementById('btn-daily');
+  if (daily) {
+    const cfg = dailyConfig();
+    const done = (Settings.get('daily') || {})[cfg.date];
+    daily.textContent = `☀ Daily Trial — ${cfg.date}` +
+      (done ? (done.won ? ' ✓ won' : cfg.mode === 'survival' ? ` (wave ${done.wave})` : ' (fell)') : '');
+    daily.onclick = () => {
+      Sound.click();
+      window.__forceOpts = { seed: cfg.seed, biome: cfg.biome, timeOfDay: cfg.timeOfDay,
+        mode: cfg.mode, daily: cfg.date, difficulty: cfg.difficulty };
+      showLoading(() => startGameNow(cfg.faction, null));
+    };
+  }
+  // Records: achievements + bests
+  const rec = document.getElementById('btn-records');
+  if (rec) rec.onclick = () => { Sound.click(); showRecords(); };
   refreshContinue();
 }
 
@@ -210,7 +286,8 @@ function buildIdMap(game) {
 // save/load persists that seat's strategic state.
 function spawnAIs(game) {
   game.ais = [];
-  for (let o = 1; o < game.numPlayers; o++) game.ais.push(new AI(game, o));
+  // survival has no rival seats — the wave director IS the opposition
+  if (game.mode !== 'survival') for (let o = 1; o < game.numPlayers; o++) game.ais.push(new AI(game, o));
   game.ai = game.ais[0] || null;
 }
 
@@ -226,7 +303,7 @@ function startReplay(rep) {
   const container = document.getElementById('game-container');
   const game = new Game(container, h.pf, h.ef, { seed: h.seed, biome: h.biomeKey,
     timeOfDay: h.timeOfDay, mapSize: h.mapSize, difficulty: h.difficulty, replay: true,
-    factions: h.factions });   // FFA replays rebuild every seat (absent in old files → 1v1)
+    factions: h.factions, mode: h.mode });   // FFA replays rebuild every seat (absent in old files → 1v1)
   const ui = new UI(game, returnToMenu);
   const controls = new Controls(game, ui);
   ui.controls = controls; game.controls = controls;
@@ -719,6 +796,7 @@ function startNetGame(transport, header, you, players) {
     onDesync: () => { game.netDesync = true; ui.toast('⚠ Desync — the match has drifted out of sync.'); },
   });
   game.net = session;     // game.cmd now defers commands to the session
+  game.on('gameover', (w) => achievementsOnGameOver(game, w, (t) => ui.toast(t)));
   session.start();
   controls.intro = 0; ui.hideIntroCard();
   ui.toast(`⚔ Networked match — you are Player ${you + 1} (${FACTIONS[factions[you]]?.name || ''}). Press Enter to chat.`);
@@ -809,9 +887,13 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   const aiFactions = Array.from({ length: opponents }, (_, i) =>
     i === 0 ? enemyKey : others[Math.floor(Math.random() * others.length)]);
   const factions = [playerFactionKey, ...aiFactions];
+  // mode: an explicit override (Daily Trial / tests) wins, else the menu selection;
+  // loads carry their own mode inside the save
+  const mode = window.__forceOpts?.mode ?? selectedMode();
   const opts = loadData ? { load: loadData }
-    : { ...(window.__forceOpts || {}), ...(biome ? { biome } : {}), factions };
+    : { mode, ...(window.__forceOpts || {}), ...(biome ? { biome } : {}), factions };
   const game = new Game(container, playerFactionKey, enemyKey, opts);
+  window.__forceOpts = null;   // one-shot override, never leaks into the next match
   const ui = new UI(game, returnToMenu);
   const controls = new Controls(game, ui);
   ui.controls = controls;
@@ -825,6 +907,8 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   ui.onDownloadReplay = downloadReplay;
   spawnAIs(game);
   if (loading && game.ai && game._aiState) Object.assign(game.ai, game._aiState);
+  // records + achievements observe every finished offline match
+  game.on('gameover', (w) => achievementsOnGameOver(game, w, (t) => ui.toast(t)));
   // pin quality if the player chose a fixed level (auto leaves the loop in charge)
   if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
   window.__game = game; window.__controls = controls;
@@ -832,7 +916,10 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   if (Settings.get('music')) Music.start();   // user gesture (faction click) already unlocked audio
 
   if (loading) { controls.intro = 0; ui.hideIntroCard(); ui.toast(`Campaign restored — ${game.map.biome.name}.`); }
-  else {
+  else if (game.mode === 'survival') {
+    ui.showIntroCard(FACTIONS[playerFactionKey]);
+    ui.toast(`${game.map.biome.name} — the Deluge gathers. The first wave breaks in little over a minute; build fast.`);
+  } else {
     ui.showIntroCard(FACTIONS[playerFactionKey]);
     ui.toast(`${game.map.biome.name} — the ${FACTIONS[enemyKey].name} stir beyond the ridge…`);
     showCoachHints();   // gentle first-match nudges (only on a fresh game)
@@ -1069,7 +1156,7 @@ window.__runReplaySync = (rep) => {
   const container = document.getElementById('game-container');
   const game = new Game(container, h.pf, h.ef, { seed: h.seed, biome: h.biomeKey,
     timeOfDay: h.timeOfDay, mapSize: h.mapSize, difficulty: h.difficulty, replay: true,
-    factions: h.factions });   // FFA replays rebuild every seat (absent in old files → 1v1)
+    factions: h.factions, mode: h.mode });   // FFA replays rebuild every seat (absent in old files → 1v1)
   spawnAIs(game);              // the AIs re-run deterministically from the seed
   if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
   window.__game = game; window.__controls = null;
@@ -1164,6 +1251,42 @@ window.__ffaSaveCheck = (numPlayers = 3, ticks = 120) => {
     numPlayers: g.numPlayers,
     ais: g.ais.length,
   };
+};
+
+// Headless records probe: finish a match via the victory probe, run the achievements
+// evaluation exactly as the UI would, and report what unlocked + the records summary.
+window.__recordsCheck = () => {
+  const out = window.__ffaVictoryCheck(3);
+  const g = window.__game;
+  const toasts = [];
+  const fresh = achievementsOnGameOver(g, g.winner, (t) => toasts.push(t));
+  const summary = recordsSummary();
+  return { winner: g.winner, freshIds: fresh.map(a => a.id), toasts: toasts.length,
+    unlockedCount: summary.achievements.filter(a => a.done).length };
+};
+
+// Headless survival probe: run The Deluge deterministically and report wave/attacker
+// state; two identical runs must checksum-match (waves are sim events).
+window.__survivalCheck = (ticks = 5400) => {
+  const run = () => {
+    stopGame();
+    const biome = Object.keys(BIOMES)[0];
+    const g = new Game(document.getElementById('game-container'), 'covenant', 'watchers',
+      { seed: 424242, biome, timeOfDay: BIOMES[biome].moods[0], mode: 'survival' });
+    spawnAIs(g);
+    window.__game = g; window.__controls = null;
+    current = { game: g, ai: g.ai, controls: null, ui: null, raf: 0 };
+    for (let i = 0; i < ticks; i++) g.update(1 / SIM_HZ);
+    return {
+      sum: g.checksum(),
+      mode: g.mode, wave: g.wave, ais: g.ais.length,
+      mains: g.buildings.filter(b => b.def.main && !b.dead).map(b => b.owner),
+      raiders: g.units.filter(u => u.owner === g.NEUTRAL && !u.dead && !u.leash).length,
+      over: g.over,
+    };
+  };
+  const a = run(), b = run();
+  return { a, b, deterministic: a.sum === b.sum };
 };
 
 // Boot. When running as a Discord Activity, complete the embedded-app handshake and
