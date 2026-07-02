@@ -920,7 +920,7 @@ export class Game {
     // a saved game pins the exact map (seed/biome/mood) so it reloads identically
     const load = opts.load || null;
     this.loadedGame = !!load;   // AI skips the opening-stockpile handicap on a restored game
-    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay, difficulty: load.difficulty, mapSize: load.mapSize, factions: load.factions }; }
+    if (load) { opts = { seed: load.seed, biome: load.biomeKey, timeOfDay: load.timeOfDay, difficulty: load.difficulty, mapSize: load.mapSize, factions: load.factions, mode: load.mode }; }
     // Battlefield size — pinned by a save, else the player's setting. Must be set
     // before the map (and WORLD-dependent atmosphere) is built. Live binding means
     // GRID/WORLD elsewhere pick up the new scale automatically.
@@ -951,6 +951,16 @@ export class Game {
     // when in a networked match (commands are deferred to it instead of run inline).
     this.localPlayer = opts.localPlayer ?? 0;
     this.net = null;
+    // Game mode. 'standard' is the classic build-and-destroy match; 'survival' (The
+    // Deluge) pits the lone player base against deterministic, escalating monster
+    // waves — no enemy seat, score is how many waves you outlast. Mode is part of the
+    // sim (waves spawn in update), so it rides the replay header and saves.
+    this.mode = opts.mode === 'survival' ? 'survival' : 'standard';
+    this.wave = 0;                 // survival: last wave that has risen
+    this.nextWaveAt = 70;          // survival: sim time of the next wave
+    this.isDaily = opts.daily || null;   // date string when this is the Daily Trial (UI-only)
+    this.slainBosses = [];         // boss keys felled by the local player's seat (records)
+    this.greeneRazed = false;      // House of Greene destroyed by seat 0 (records)
 
     // Real players fill owner ids 0..numPlayers-1; the neutral "Wild" pseudo-player is
     // always LAST (owner id === numPlayers). For 1v1 that keeps neutral at id 2 exactly
@@ -995,6 +1005,7 @@ export class Game {
       pending: [],
       header: { seed: this.map.seed, biomeKey: this.biomeKey, timeOfDay: this.timeOfDay,
         mapSize: this.mapSizeKey, difficulty: this.difficulty, pf: this.pfKey, ef: this.efKey,
+        mode: this.mode,   // survival waves are sim events — playback must run the same mode
         // full seat list so FFA replays reconstruct every seat (pf/ef cover old files)
         factions: this.players.slice(0, this.numPlayers).map(p => p.faction.key) },
     };
@@ -1712,7 +1723,9 @@ export class Game {
     }
     // bases — one per real player (seat), placed at the map's ordered spawn sites.
     // At 2 players this is exactly [0 → basePlayer, 1 → baseEnemy] as before.
+    // Survival: only the player holds ground; the rest of the world is the enemy.
     for (let owner = 0; owner < this.numPlayers; owner++) {
+      if (this.mode === 'survival' && owner > 0) continue;
       const site = this.map.bases[owner] || this.map.bases[owner % this.map.bases.length];
       const p = this.players[owner];
       const mainKey = p.faction.main;
@@ -1847,6 +1860,7 @@ export class Game {
     return {
       v: 1, t: this.time, timeOfDay: this.timeOfDay, biomeKey: this.biomeKey, seed: this.map.seed,
       difficulty: this.difficulty, mapSize: this.mapSizeKey,
+      mode: this.mode, wave: this.wave, nextWaveAt: +this.nextWaveAt.toFixed(2),
       pf: this.pfKey, ef: this.efKey,
       // full seat list so an FFA match round-trips; pf/ef stay for pre-FFA saves
       factions: this.players.slice(0, this.numPlayers).map(p => p.faction.key),
@@ -1870,6 +1884,7 @@ export class Game {
 
   deserialize(d) {
     this.time = d.t || 0;
+    if (d.mode === 'survival') { this.wave = d.wave || 0; this.nextWaveAt = d.nextWaveAt ?? this.time + 40; }
     (d.players || []).forEach((ps, o) => { const p = this.players[o];
       p.resources = { ...ps.res }; p.upgrades = new Set(ps.up || []);
       p.dmgMult = ps.dmgMult ?? 1; p.armorAdd = ps.armorAdd ?? 0; p.hpMult = ps.hpMult ?? 1; });
@@ -2357,6 +2372,61 @@ export class Game {
     this.emit('selection');
   }
 
+  // ---- survival mode: The Deluge ----
+  // Escalating monster waves march on the player's base. Everything here is pure
+  // simulation (this.rand + sim time only), so waves are identical across replays,
+  // saves and — if survival is ever played over the wire — lockstep clients.
+  updateSurvival() {
+    if (this.mode !== 'survival' || this.over || this.time < this.nextWaveAt) return;
+    this.wave++;
+    const w = this.wave;
+    // cadence tightens as the flood rises; size and stat scaling climb steadily.
+    // The opening waves are deliberately soft (weaker than an obelisk guard) — the
+    // player is still raising walls; by wave 10 the horrors outclass lair guards.
+    this.nextWaveAt = this.time + Math.max(26, 48 - w * 1.5);
+    const mult = this.neutralMult() * (0.7 + w * 0.1);
+    const count = Math.min(24, 1 + w);
+    const bossWave = w % 5 === 0;
+    // one or two gates on the map border, kept away from the corners
+    const gates = [];
+    for (let g = 0; g < (w >= 6 ? 2 : 1); g++) {
+      const side = Math.floor(this.rand() * 4);
+      const along = 10 + this.rand() * (GRID - 20);
+      const tx = side === 0 ? along : side === 1 ? GRID - 7 : side === 2 ? along : 7;
+      const ty = side === 0 ? 7 : side === 1 ? along : side === 2 ? GRID - 7 : along;
+      const wk = findNearestWalkable(this.map, Math.floor(tx), Math.floor(ty), 12, 1);
+      if (wk) gates.push(wk);
+    }
+    if (!gates.length) gates.push(this.map.tileOf(WORLD / 2, TILE * 8));
+    const target = this.playerMain && !this.playerMain.dead
+      ? this.playerMain.pos : { x: (this.map.basePlayer.x + 0.5) * TILE, z: (this.map.basePlayer.y + 0.5) * TILE };
+    const spawnAt = (def, key, gate) => {
+      const a = this.rand() * Math.PI * 2, r = 1 + this.rand() * 3;
+      const u = new Unit(this, this.NEUTRAL, this.scaleNeutral(def, mult), key,
+        (gate.x + 0.5) * TILE + Math.cos(a) * r, (gate.y + 0.5) * TILE + Math.sin(a) * r);
+      this.units.push(u);
+      u.orderMove(target.x + (this.rand() - 0.5) * 8, target.z + (this.rand() - 0.5) * 8, true);
+      return u;
+    };
+    for (let i = 0; i < count; i++) spawnAt(NEUTRALS.devourer, 'devourer', gates[i % gates.length]);
+    if (bossWave) {
+      // every fifth wave a champion of the deep leads; the tenth wakes SCOTT himself
+      const bossKeys = ['leviathan', 'nephil_titan', 'watcher_sentinel'];
+      if (w === 10 && !this.scottSummoned) {
+        this.scottSummoned = true;
+        spawnAt(SCOTT, 'scott', gates[0]);
+      } else {
+        const key = bossKeys[Math.floor(this.rand() * bossKeys.length)];
+        spawnAt(MONSTERS[key], key, gates[0]);
+      }
+      this.emit('toast', `☠ Wave ${w} — a champion of the Deluge rises. Hold the line.`);
+      this.addShake(0.5);
+    } else {
+      this.emit('toast', `🌊 Wave ${w} breaks upon the land — ${count} horrors march on your walls.`);
+    }
+    if (this.controls) Sound.alert?.();
+  }
+
   // Reward + spectacle when a world boss falls: pay the bounty to its slayer,
   // shake the earth, and announce it. Killer defaults to the player if a neutral
   // or environment landed the blow.
@@ -2376,6 +2446,7 @@ export class Game {
       this.addShake(0.7);
     }
     if (owner === 0) {
+      this.slainBosses.push(boss.key);   // records/achievements read this at game end
       Sound.win();
       const spoils = Object.entries(boss.def.bounty).map(([k, v]) => `${v} ${k}`).join(', ');
       this.emit('toast', `☠ ${boss.def.name} is slain! Its hoard — ${spoils} — is yours.`);
@@ -2411,7 +2482,7 @@ export class Game {
       const owner = attacker && attacker.owner < this.NEUTRAL ? attacker.owner : 0;
       const r = this.players[owner].resources;
       for (const [k, v] of Object.entries(FIELDS_OF_EVIL.reward)) r[k] = (r[k] || 0) + v;
-      if (owner === 0) { Sound.win(); this.emit('toast', '☩ The House of Greene has fallen. Their hoard of forbidden knowledge is yours.'); }
+      if (owner === 0) { this.greeneRazed = true; Sound.win(); this.emit('toast', '☩ The House of Greene has fallen. Their hoard of forbidden knowledge is yours.'); }
     }
     // Elimination / victory. A seat is out when it has no main left; the match ends when
     // at most one seat still stands. At 2 players this is exactly the old
@@ -2424,6 +2495,12 @@ export class Game {
     // sim keeps running identically everywhere and the fallen player spectates.
     if (!this.over && b.def.main) {
       const hasMain = (o) => this.buildings.some(x => x.owner === o && x.def.main && !x.dead);
+      // Survival has one seat and no victory-by-conquest: the match ends only when the
+      // player's last main falls (endless waves — the score is how long you stood).
+      if (this.mode === 'survival') {
+        if (!hasMain(this.localPlayer)) this.endGame(1, b.pos);
+        return;
+      }
       const alive = [];
       for (let o = 0; o < this.numPlayers; o++) if (hasMain(o)) alive.push(o);
       if (alive.length <= 1) {
@@ -2678,6 +2755,7 @@ export class Game {
 
     // every AI seat (skirmish/replay: seats 1..N-1 via spawnAIs; net matches: none)
     if (this.ais) for (const ai of this.ais) ai.update(dt);
+    this.updateSurvival();
   }
 
   updateSky(dt) {

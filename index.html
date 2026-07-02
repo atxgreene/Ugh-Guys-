@@ -252,6 +252,33 @@
     .set-close:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); border-color: #e6c074; }
 
     /* multiplayer lobby */
+    /* Daily Trial + Records */
+    #btn-daily { margin-top: 2px; background: linear-gradient(180deg, #3a2e1c, #221a10); color: #ffd56e;
+      border: 1px solid #7a5a2c; padding: 9px 22px; cursor: pointer; font-family: inherit; border-radius: 4px;
+      font-size: 14px; letter-spacing: 1px; box-shadow: inset 0 1px 0 rgba(230,192,116,0.2); }
+    #btn-daily:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); border-color: #e6c074; }
+    #btn-records { margin-top: 2px; background: linear-gradient(180deg, #262c22, #151a12); color: #b6e29a;
+      border: 1px solid #4a6a3a; padding: 8px 20px; cursor: pointer; font-family: inherit; border-radius: 4px;
+      font-size: 13px; letter-spacing: 1px; }
+    #btn-records:hover { border-color: #9be86e; }
+    #records { position: absolute; inset: 0; z-index: 60; display: none; align-items: center;
+      justify-content: center; background: rgba(5,5,8,0.75); }
+    #records.show { display: flex; }
+    #rec-card { width: min(680px, 92vw); max-height: 84vh; overflow: auto; padding: 22px 26px;
+      background: linear-gradient(180deg, rgba(34,30,22,0.98), rgba(16,14,11,0.98));
+      border: 2px solid transparent; border-image: linear-gradient(135deg, #5a4424, #b88a3e, #5a4424) 1;
+      border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,0.8); }
+    #rec-card h2 { color: #e6c074; font-weight: normal; letter-spacing: 2px; margin-bottom: 10px; }
+    #rec-bests { display: flex; gap: 26px; color: #b8aa88; font-size: 14px; margin-bottom: 14px; }
+    #rec-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; }
+    .rec-item { display: flex; gap: 10px; align-items: flex-start; padding: 7px 9px; border-radius: 4px;
+      background: rgba(0,0,0,0.25); color: #6a6478; font-size: 12.5px; line-height: 1.45; }
+    .rec-item.done { color: #d8d2c4; background: rgba(230,192,116,0.08); }
+    .rec-item.done .rec-mark { color: #ffd56e; }
+    .rec-mark { font-size: 16px; }
+    #rec-close { margin-top: 16px; background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6c074;
+      border: 1px solid #7a5a2c; padding: 7px 20px; cursor: pointer; font-family: inherit; border-radius: 4px; }
+
     #btn-mp { margin-top: 2px; background: linear-gradient(180deg, #3a1c2c, #221016); color: #ff9fc6;
       border: 1px solid #8a4a5e; padding: 10px 26px; font-size: 14px; cursor: pointer; font-family: inherit;
       letter-spacing: 2px; border-radius: 4px; }
@@ -510,12 +537,15 @@
         </div>
       </div>
       <div class="menu-setup">
+        <label><span class="md-label">Mode</span><select id="sel-mode"></select></label>
         <label><span class="md-label">Opponent</span><select id="sel-enemy"></select></label>
         <label><span class="md-label">Opponents</span><select id="sel-opponents"></select></label>
         <label><span class="md-label">Land</span><select id="sel-biome"></select></label>
         <label><span class="md-label">Map Size</span><select id="sel-mapsize"></select></label>
       </div>
       <button id="btn-continue" style="display:none">Continue Campaign</button>
+      <button id="btn-daily">☀ Daily Trial</button>
+      <button id="btn-records">🏆 Records</button>
       <button id="btn-replay" style="display:none">▶ Watch a Replay</button>
       <button id="btn-mp" style="display:none">⚔ Multiplayer (beta)</button>
       <input id="replay-file" type="file" accept=".json,application/json" style="display:none" />
@@ -663,6 +693,14 @@
     <div id="net-ping" style="display:none"></div>
     <div id="selbox"></div>
     <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button><button id="btn-dlreplay" style="display:none">⭳ Download Replay</button></div>
+    <div id="records">
+      <div id="rec-card">
+        <h2 id="rec-head">🏆 Records</h2>
+        <div id="rec-bests"></div>
+        <div id="rec-list"></div>
+        <button id="rec-close">Close</button>
+      </div>
+    </div>
     <div id="pausemenu">
       <h1>PAUSED</h1>
       <div class="pm-buttons">

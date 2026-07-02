@@ -166,6 +166,38 @@ test('free-for-all save/load: an FFA match round-trips through serialize/deseria
   expect(errors, `console errors during FFA save/load:\n${errors.join('\n')}`).toEqual([]);
 });
 
+test('survival (The Deluge): waves rise deterministically and march without an AI seat', async ({ page }) => {
+  const errors = watchErrors(page);
+  await startMatch(page);
+  const res = await page.evaluate(() => window.__survivalCheck(4800));   // ~80s of sim
+  expect(res.a.mode).toBe('survival');
+  expect(res.a.ais).toBe(0);                    // no rival seat — the flood is the enemy
+  expect(res.a.wave).toBeGreaterThanOrEqual(1); // the first wave has risen
+  expect(res.a.raiders).toBeGreaterThan(0);     // and its horrors are on the field
+  // no zombie state: either the player's main stands, or the match ended in defeat
+  expect(res.a.mains.length === 1 || res.a.over === true).toBe(true);
+  if (res.a.mains.length) expect(res.a.mains).toEqual([0]);   // only the player holds ground
+  expect(res.deterministic, 'two identical survival runs diverged').toBe(true);
+  expect(errors, `console errors during survival:\n${errors.join('\n')}`).toEqual([]);
+});
+
+test('records: a finished match unlocks achievements and persists them', async ({ page }) => {
+  await startMatch(page);
+  const r = await page.evaluate(() => window.__recordsCheck());
+  expect(r.winner).toBe(0);
+  expect(r.freshIds).toContain('first_win');    // a win unlocks the first achievement
+  expect(r.freshIds).toContain('swift');        // razed in the opening minute → under 15:00
+  expect(r.toasts).toBe(r.freshIds.length);     // every unlock announced
+  expect(r.unlockedCount).toBeGreaterThanOrEqual(r.freshIds.length);
+  // persistence: a second evaluation unlocks nothing new (already stored)
+  const again = await page.evaluate(() => {
+    const g = window.__game;
+    // re-run the evaluation against the same finished game
+    return window.__recordsCheck().freshIds;
+  });
+  expect(again).toEqual([]);
+});
+
 test('PWA: manifest + service worker are served, and the game boots OFFLINE once cached', async ({ page, context }) => {
   // manifest + icons reachable
   const mf = await page.request.get('/manifest.webmanifest');
