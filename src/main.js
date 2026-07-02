@@ -386,10 +386,25 @@ function ensureTransport(room) {
     if (left) appendChat(chatLog, { sys: true, text: 'A player left.' });
   };
   transport.onChat = (msg) => appendChat(chatLog, { from: msg.from, text: msg.text }, _mp.you);
-  transport.onStart = (msg) => { if (_mp.started) return; _mp.started = true; beginNetMatch(transport, msg.header, _mp.you, msg.players); };
+  transport.onStart = (msg) => {
+    if (_mp.started) return;
+    // Race guard: if we joined between the host clicking Start and the relay processing
+    // it, the header's seat list may not cover our seat — entering would seat us as the
+    // neutral pseudo-player and corrupt the match. Bail out instead.
+    const seats = (msg.header?.factions?.length >= 2 ? msg.header.factions.length : 2);
+    if (_mp.you >= seats || _mp.you >= (msg.players?.length ?? 2)) {
+      mpStatus('The match started just before you joined — ask for a new code.');
+      try { transport.close(); } catch {}
+      setStage('choose');
+      return;
+    }
+    _mp.started = true;
+    beginNetMatch(transport, msg.header, _mp.you, msg.players);
+  };
   transport.onPong = (msg) => updatePing(Date.now() - msg.t);
   transport.onReject = (msg) => {
-    const why = msg.reason === 'full' ? 'That room is already full (1v1).'
+    const why = msg.reason === 'full' ? 'That room is already full.'
+      : msg.reason === 'started' ? 'That match has already begun — ask for a new code.'
       : msg.reason === 'busy' ? 'The relay is at capacity — try again shortly.'
       : 'The relay refused the connection.';
     mpStatus(why);
@@ -529,13 +544,13 @@ function lobbyStart() {
   if (!_mp.transport || _mp.you !== 0 || _mp.startSent) return;
   _mp.startSent = true;
   // One faction per seat present in the room (2–4). Missing/invalid picks fall back to
-  // a rotating default so every seat always has a valid faction.
-  const n = Math.max(2, _mp.players?.length || 2);
-  const dflt = ['covenant', 'watchers', 'nephilim', 'covenant'];
+  // a rotation over the live faction registry so every seat always has a valid key.
+  const n = Math.max(2, _mp.players?.length ?? 0);
+  const fkeys = Object.keys(FACTIONS);
   const factions = [];
   for (let i = 0; i < n; i++) {
     const f = _mp.factions[i];
-    factions.push(f && FACTIONS[f] ? f : (i === 0 ? (localFaction() || dflt[0]) : dflt[i % dflt.length]));
+    factions.push(f && FACTIONS[f] ? f : (i === 0 ? (localFaction() || fkeys[0]) : fkeys[i % fkeys.length]));
   }
   const bsel = Settings.get('biome');
   const biomeKeys = Object.keys(BIOMES);
@@ -656,8 +671,12 @@ function startNetGame(transport, header, you, players) {
 
   const container = document.getElementById('game-container');
   // N seats: header.factions lists every player's faction; fall back to pf/ef for
-  // headers from an older client.
+  // headers from an older client. The HEADER is the authority on how many seats the
+  // match has — if the relay seated a straggler after the host clicked Start, every
+  // client trims the roster to the header so the lockstep session never waits on a
+  // seat the sim doesn't model (the straggler itself bails in onStart).
   const factions = header.factions && header.factions.length >= 2 ? header.factions : [header.pf, header.ef];
+  players = players.filter(p => p < factions.length);
   const game = new Game(container, factions[0], factions[1], {
     seed: header.seed, biome: header.biomeKey, timeOfDay: header.timeOfDay,
     mapSize: header.mapSize, difficulty: header.difficulty, localPlayer: you, factions,
