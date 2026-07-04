@@ -2,6 +2,7 @@
 // events) and persists unlocks locally; it never mutates the simulation, so it can't
 // affect determinism, replays or lockstep.
 import { Settings } from './settings.js';
+import { Sound } from './audio.js';
 
 // Each def: id, name, desc, and a check run when a game ends. `g` is the Game.
 export const ACHIEVEMENTS = [
@@ -63,6 +64,9 @@ export function onGameOver(game, winner, toast) {
     Settings.set('daily', log);
   }
   for (const a of fresh) toast?.(`🏆 ${a.name} — ${a.desc}`);
+  // a single bright flourish for the batch, held off a beat so it doesn't collide with
+  // the win/lose jingle that plays at the same moment
+  if (fresh.length) setTimeout(() => Sound.achievement(), 900);
   return fresh;
 }
 

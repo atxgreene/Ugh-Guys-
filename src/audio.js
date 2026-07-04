@@ -3,6 +3,53 @@ let ctx = null;
 let lastHit = 0;
 let sfxVol = 1;   // master multiplier for all SFX (settings panel)
 
+// ---------- Faction voicing ----------
+// Each faction sings in its own key and timbre. The ambient drone (Music.start),
+// the tolling bell, the battle layer, and the little acknowledge blips a unit gives
+// when you select or command it are all drawn from the faction's own palette, so the
+// three sides *sound* different, not just look different.
+//   root/filter/sweep — the drone's fundamental, its lowpass cutoff, and how far the
+//     slow filter sweep travels.  stack — [ratio, detune, osc-type, gain] voices layered
+//     over the root (ratios pick the intervals: 1.5 = fifth, 2 = octave, 1.06 = a dread
+//     minor-second, 1.414 = a tritone).  combat — the tense two-voice battle drone.
+//     bell — notes the distant bell tolls.  ack — the pitched blips for select/command.
+const VOICES = {
+  // Warm, hymnal, faithful: an open perfect-fifth/octave/major-tenth stack, bright chime.
+  covenant: {
+    root: 36.71, filter: 440, sweep: 175,
+    stack: [[1, 0, 'sawtooth', 0.46], [1.5, 4, 'sawtooth', 0.32], [2, -4, 'triangle', 0.4], [3, 7, 'sine', 0.16], [5.04, 0, 'sine', 0.06]],
+    combat: [[87.3, 'sawtooth'], [110, 'square']],
+    bell: [146.8, 174.6, 220],                 // D3 F3 A3 — a temple chime
+    ack: [523.25, 659.25, 783.99],             // C5 E5 G5 — clear, rising
+  },
+  // Monstrous, low, dissonant: a full step deeper, with a minor-second and tritone of dread.
+  nephilim: {
+    root: 30.87, filter: 300, sweep: 130,
+    stack: [[1, 0, 'sawtooth', 0.5], [1.5, -6, 'sawtooth', 0.3], [2, 5, 'sawtooth', 0.34], [1.0667, 3, 'square', 0.1], [1.414, 0, 'triangle', 0.08]],
+    combat: [[82.4, 'sawtooth'], [116.5, 'square']],   // E2 + Bb2 tritone
+    bell: [98, 116.5, 138.6],                  // low, tritone-tinged toll
+    ack: [196, 233.08, 155.56],                // G3 Bb3 Eb3 — guttural, falling
+  },
+  // Alien, hollow, uncanny: bare octaves + a high detuned shimmer, crystalline whole-tone chime.
+  watchers: {
+    root: 49.0, filter: 560, sweep: 220,
+    stack: [[1, 0, 'sine', 0.5], [2, 9, 'triangle', 0.34], [4, -11, 'sine', 0.14], [6, 14, 'sine', 0.05], [1.5, 0, 'sine', 0.12]],
+    combat: [[98, 'sine'], [138.6, 'square']],
+    bell: [392, 466.16, 587.33],               // high crystalline chime
+    ack: [659.25, 739.99, 830.61],             // E5 F#5 G#5 — whole-tone, eerie
+  },
+  // Neutral hall ambience for the menu — calm, no allegiance.
+  menu: {
+    root: 41.2, filter: 380, sweep: 150,
+    stack: [[1, 0, 'sine', 0.42], [1.5, 3, 'triangle', 0.3], [2, -3, 'sine', 0.34], [3, 6, 'sine', 0.12]],
+    combat: [[87.3, 'sawtooth'], [110, 'square']],
+    bell: [164.8, 207.65, 246.94],
+    ack: [440, 554.37, 659.25],
+  },
+};
+let voice = VOICES.menu;     // active acknowledge palette (Sound.setFaction)
+let ackIdx = 0;              // cycles select() through the palette for variety
+
 function ac() {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
   if (ctx.state === 'suspended') ctx.resume();
@@ -64,34 +111,46 @@ const Music = {
     try { this._nodes.combat.gain.setTargetAtTime(x * this.vol * 0.18, ac().currentTime, rising ? 0.4 : 1.8); } catch {}
   },
 
-  start() {
+  // Switch the ambient drone to a faction's voice, crossfading if something's already
+  // playing (menu ambience → in-game, or seat A → seat B). A no-op if already on it.
+  play(faction) {
+    if (this.playing) {
+      if (this._faction === faction) return;
+      this.stop();   // fades the old graph out over ~0.8s while the new one fades in
+    }
+    this.start(faction);
+  },
+
+  // faction: 'covenant' | 'nephilim' | 'watchers' | 'menu' — picks the drone's key/timbre.
+  start(faction) {
     if (this.playing) return;
     let a; try { a = ac(); } catch { return; }
     this.playing = true;
+    const V = VOICES[faction] || VOICES.menu;
+    this._faction = faction;
+    const menu = faction === 'menu';
     const master = a.createGain();
     master.gain.value = 0;
     master.connect(a.destination);
-    master.gain.setTargetAtTime(this.vol * 0.16, a.currentTime, 2.5); // gentle fade-in
+    // menu ambience sits back a touch so it never fights the UI
+    master.gain.setTargetAtTime(this.vol * (menu ? 0.11 : 0.16), a.currentTime, 2.5); // gentle fade-in
 
     // a warm lowpass the whole drone breathes through
     const lp = a.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 0.7;
+    lp.type = 'lowpass'; lp.frequency.value = V.filter; lp.Q.value = 0.7;
     lp.connect(master);
     // slow filter sweep (the "evolving" part)
     const sweep = a.createOscillator(), sweepGain = a.createGain();
     sweep.type = 'sine'; sweep.frequency.value = 0.045;
-    sweepGain.gain.value = 180;
+    sweepGain.gain.value = V.sweep;
     sweep.connect(sweepGain).connect(lp.frequency);
     sweep.start();
 
-    // drone voices: D1 root, A1 fifth, D2 octave — slightly detuned for movement
+    // drone voices: the faction's stack over its root, slightly detuned for movement
     const voices = [];
-    for (const [freq, detune, type, g] of [
-      [36.7, 0, 'sawtooth', 0.5], [55.0, +4, 'sawtooth', 0.34],
-      [73.4, -5, 'triangle', 0.4], [110.0, +7, 'sine', 0.18],
-    ]) {
+    for (const [ratio, detune, type, g] of V.stack) {
       const o = a.createOscillator(), vg = a.createGain();
-      o.type = type; o.frequency.value = freq; o.detune.value = detune;
+      o.type = type; o.frequency.value = V.root * ratio; o.detune.value = detune;
       vg.gain.value = g;
       o.connect(vg).connect(lp);
       o.start();
@@ -110,7 +169,7 @@ const Music = {
     const combat = a.createGain();
     combat.gain.value = 0;
     combat.connect(master);
-    for (const [freq, type] of [[87.3, 'sawtooth'], [110.0, 'square']]) {  // F2 minor third + A2
+    for (const [freq, type] of V.combat) {  // faction-voiced battle drone
       const o = a.createOscillator(); o.type = type; o.frequency.value = freq;
       const g = a.createGain(); g.gain.value = 0.16;
       o.connect(g).connect(combat); o.start(); voices.push(o);
@@ -130,7 +189,7 @@ const Music = {
       try {
         const t = a.currentTime;
         const o = a.createOscillator(), g = a.createGain();
-        o.type = 'sine'; o.frequency.value = [146.8, 174.6, 220][Math.floor(Math.random() * 3)];
+        o.type = 'sine'; o.frequency.value = V.bell[Math.floor(Math.random() * V.bell.length)];
         g.gain.setValueAtTime(0.0001, t);
         g.gain.exponentialRampToValueAtTime(this.vol * 0.09, t + 0.6);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 7);
@@ -159,9 +218,14 @@ const Music = {
 export { Music };
 
 export const Sound = {
+  // Point the acknowledge blips (select/command) at a faction's palette.
+  setFaction(key) { voice = VOICES[key] || VOICES.menu; ackIdx = 0; },
   click()      { tone(620, 0.05, 'square', 0.05); },
-  select()     { tone(440, 0.06, 'triangle', 0.06); },
-  command()    { tone(520, 0.07, 'triangle', 0.06, 120); },
+  // a unit answers when picked — cycles through the faction's 2-3 blips so it isn't monotone
+  select()     { const f = voice.ack[ackIdx++ % voice.ack.length]; this._lastAck = f; tone(f, 0.06, 'triangle', 0.06); },
+  _lastAck: 0,   // test hook: last acknowledge pitch emitted (works with or without audio)
+  // a firm "yes sir" for an order: the palette's root, an octave down, with a little rise
+  command()    { tone(voice.ack[0] * 0.5, 0.07, 'triangle', 0.06, 110); },
   place()      { tone(220, 0.2, 'sine', 0.1, -80); noiseBurst(0.12, 0.05, 400); },
   trained()    { tone(660, 0.1, 'triangle', 0.08, 160); },
   upgrade()    { tone(520, 0.3, 'sine', 0.1, 300); },
@@ -196,5 +260,19 @@ export const Sound = {
   error()      { tone(160, 0.15, 'square', 0.07); },
   win()        { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.35, 'triangle', 0.1), i * 160)); },
   lose()       { [392, 330, 262, 196].forEach((f, i) => setTimeout(() => tone(f, 0.45, 'sawtooth', 0.07), i * 220)); },
+  // a boss falls: a low horn swell climbing to a bright peak, over a deep toll + rubble
+  bossSlain()  {
+    [174.6, 261.63, 349.23, 523.25].forEach((f, i) => setTimeout(() => tone(f, 0.5, 'sawtooth', 0.09, 0), i * 140));
+    tone(65, 1.2, 'sine', 0.12, -18); noiseBurst(0.5, 0.06, 200);
+  },
+  // an achievement unlocks: a quick, bright three-note flourish (distinct from win)
+  achievement(){ [784, 1047, 1319].forEach((f, i) => setTimeout(() => tone(f, 0.22, 'triangle', 0.08, 60), i * 90)); },
+  // a survival/flood wave breaks: a war-horn that climbs a little higher each wave
+  wave(n = 1)  {
+    const base = 130 + Math.min(10, n) * 6;
+    tone(base, 0.5, 'sawtooth', 0.09, 40);
+    setTimeout(() => tone(base * 1.5, 0.4, 'square', 0.07, 20), 160);
+    noiseBurst(0.3, 0.05, 180);
+  },
   setVolume(v) { sfxVol = Math.max(0, Math.min(1, v)); },
 };

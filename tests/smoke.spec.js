@@ -394,6 +394,16 @@ test('heroes: one-hero cap holds, XP levels them up, and rank survives save/load
   expect(r.savedMaxHp).toBe(r.liveMaxHp);       // …and the levelled max HP
 });
 
+test('audio identity: each faction has its own blips + drone voice, and stingers fire', async ({ page }) => {
+  await startMatch(page);
+  const r = await page.evaluate(() => window.__audioCheck());
+  expect(r.distinct).toBe(true);        // covenant / nephilim / watchers acknowledge on different pitches
+  expect(r.cov).toBeGreaterThan(0);     // a real pitch came out of the palette
+  expect(r.cycles).toBe(true);          // repeated selects cycle through the palette (not monotone)
+  expect(r.droneSwitched).toBe(true);   // the ambient drone re-voices when the faction changes
+  expect(r.stingersOk).toBe(true);      // bossSlain / achievement / wave stingers run without throwing
+});
+
 test('onboarding: the coach reacts to game state (not a fixed timer)', async ({ page }) => {
   // fresh player state so the coach is armed
   await page.addInitScript(() => { try { localStorage.removeItem('sotw_settings'); } catch {} });
