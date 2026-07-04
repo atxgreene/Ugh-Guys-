@@ -199,7 +199,9 @@ export class GameMap {
          + h(x0, y0 + 1) * (1 - tx) * ty + h(x0 + 1, y0 + 1) * tx * ty;
   }
 
-  buildMesh() {
+  // fogFloor: how dark unseen/explored (non-visible) ground goes. Dark sky moods pass a
+  // higher floor so the battlefield stays readable instead of collapsing to black.
+  buildMesh(fogFloor = 0.14) {
     // 2x grid density for smoother hill silhouettes; heights sampled bilinearly
     const SEG = GRID * 2 - 1;
     const geo = new THREE.PlaneGeometry(WORLD, WORLD, SEG, SEG);
@@ -258,7 +260,7 @@ export class GameMap {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFogUv = vec2(position.x, position.z) / worldSizeV;');
       shader.fragmentShader = 'uniform sampler2D fogMap;\nvarying vec2 vFogUv;\n' + shader.fragmentShader
         .replace('#include <dithering_fragment>',
-          'float fogV = texture2D(fogMap, vFogUv).r;\ngl_FragColor.rgb *= (0.12 + 0.88 * fogV);\n#include <dithering_fragment>');
+          `float fogV = texture2D(fogMap, vFogUv).r;\ngl_FragColor.rgb *= (${fogFloor.toFixed(3)} + ${(1 - fogFloor).toFixed(3)} * fogV);\n#include <dithering_fragment>`);
     };
     const mesh = new THREE.Mesh(geo, matr);
     mesh.receiveShadow = true;

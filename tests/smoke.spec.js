@@ -335,6 +335,42 @@ test.describe('touch controls', () => {
   });
 });
 
+test('onboarding: the coach reacts to game state (not a fixed timer)', async ({ page }) => {
+  // fresh player state so the coach is armed
+  await page.addInitScript(() => { try { localStorage.removeItem('sotw_settings'); } catch {} });
+  await startMatch(page);
+  await skipIntro(page);
+  // the coach ticks ~1/s and shows its first lesson once time passes its trigger;
+  // it must appear on its own without any timed sequence
+  const shown = await page.evaluate(async () => {
+    const el = document.getElementById('coach');
+    for (let i = 0; i < 40; i++) {           // up to ~4s of real polling
+      window.__stepSim(0.5);                  // advance sim time so triggers can fire
+      if (el.classList.contains('show') && el.textContent.length > 10) return el.textContent;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    return null;
+  });
+  expect(shown, 'coach never surfaced a tip').toBeTruthy();
+  // it surfaced a real lesson from the core-loop vocabulary (not an empty/placeholder)
+  expect(shown.toLowerCase()).toMatch(/gather|build|granary|barracks|soldiers|population/);
+});
+
+test('night moods hold a brighter fog-of-war floor than daylight', async ({ page }) => {
+  const floorFor = async (mood) => {
+    await page.goto('/');
+    await page.waitForSelector('#faction-cards .fcard', { timeout: 15_000 });
+    await page.evaluate((m) => { window.__forceOpts = { biome: 'basalt_highland', timeOfDay: m, seed: 99 }; }, mood);
+    await page.click('#faction-cards .fcard');
+    await page.waitForFunction(() => window.__game && window.__game.units.length > 0, null, { timeout: 20_000 });
+    return page.evaluate(() => window.__game.preset.fogFloor ?? 0.14);
+  };
+  const night = await floorFor('night');
+  const noon = await floorFor('noon');
+  expect(night).toBeGreaterThan(noon);      // the dark mood keeps the ground readable
+  expect(night).toBeGreaterThanOrEqual(0.22);
+});
+
 test('stances: a selected fighter cycles aggressive → defensive → hold', async ({ page }) => {
   await startMatch(page);
   await skipIntro(page);

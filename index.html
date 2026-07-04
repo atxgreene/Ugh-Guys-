@@ -246,6 +246,11 @@
     .seg button.on { background: linear-gradient(180deg, #4a3a24, #2a2014); color: #ffd56e; border-color: #e6c074;
       box-shadow: inset 0 1px 0 rgba(230,192,116,0.25), 0 0 10px rgba(230,192,116,0.18); }
     .set-toggle { display: flex; align-items: center; justify-content: space-between; }
+    .seg-btn { background: linear-gradient(180deg, #2c2519, #1a150d); color: #cdbf9a;
+      border: 1px solid #6a4e26; padding: 8px 16px; cursor: pointer; font-family: inherit; border-radius: 4px;
+      font-size: 13px; letter-spacing: 1px; }
+    .seg-btn:hover:not(:disabled) { border-color: #b88a3e; }
+    .seg-btn:disabled { color: #9be86e; border-color: #4a6a3a; cursor: default; }
     .set-close { margin-top: 20px; width: 100%; background: linear-gradient(180deg, #3a2e1c, #221a10);
       color: #e6c074; border: 1px solid #7a5a2c; padding: 11px; font-size: 15px; cursor: pointer;
       font-family: inherit; letter-spacing: 2px; border-radius: 4px; }
@@ -703,6 +708,10 @@
         <div class="set-row">
           <label>Sound effects <span class="val" id="set-svol-val">100%</span></label>
           <input type="range" id="set-svol" min="0" max="1" step="0.05" value="1" />
+        </div>
+        <div class="set-row">
+          <label>Coaching tips</label>
+          <button class="seg-btn" id="set-tips">Replay tips</button>
         </div>
         <button class="set-close" id="set-close">Done</button>
       </div>
