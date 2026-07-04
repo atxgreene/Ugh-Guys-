@@ -1352,6 +1352,39 @@ window.__survivalCheck = (ticks = 5400) => {
   return { a, b, deterministic: a.sum === b.sum };
 };
 
+// Headless hero probe: verify the one-hero cap, that XP/levels accrue on kills, and
+// that a levelled hero round-trips through serialize/deserialize.
+window.__heroCheck = () => {
+  stopGame();
+  const g = new Game(document.getElementById('game-container'), 'covenant', 'watchers',
+    { seed: 5, biome: Object.keys(BIOMES)[0], timeOfDay: 'noon' });
+  window.__game = g; window.__controls = null;
+  current = { game: g, ai: null, controls: null, ui: null, raf: 0 };
+  const heroKey = Object.entries(g.players[0].faction.units).find(([, d]) => d.hero)[0];
+  const bp = g.map.basePlayer;
+  const noHeroYet = g.hasHero(0);                 // false before any hero exists
+  const hero = g.spawnUnit(0, heroKey, (bp.x + 2) * 2, (bp.y + 2) * 2);
+  const capBlockedWhileAlive = g.hasHero(0);      // the cap predicate sees the living hero
+  const startLevel = hero.level;
+  for (let i = 0; i < 30; i++) {
+    const foe = g.spawnUnit(1, g.players[1].faction.worker, hero.pos.x + 2, hero.pos.z + 2);
+    foe.die(hero);   // hero gets the kill credit → XP
+  }
+  const leveled = hero.level > startLevel;
+  const dmgScales = hero.effDmg(100) > 100;   // level damage bonus applied
+  const data = g.serialize();                 // save/load must preserve the rank
+  stopGame();
+  const g2 = new Game(document.getElementById('game-container'), data.pf, data.ef, { load: data });
+  window.__game = g2; current = { game: g2, ai: null, controls: null, ui: null, raf: 0 };
+  const restored = g2.units.find(u => u.hero);
+  const capFreeAfterDeath = (() => { hero.dead = true; return !g.hasHero(0); })();
+  return {
+    noHeroYet, capBlockedWhileAlive, capFreeAfterDeath,
+    leveled, level: hero.level, dmgScales,
+    savedLevel: restored?.level ?? 0, savedMaxHp: restored?.maxHp ?? 0, liveMaxHp: hero.maxHp,
+  };
+};
+
 // Boot. When running as a Discord Activity, complete the embedded-app handshake and
 // install the relay URL mapping BEFORE anything can open a socket; standalone play skips
 // it instantly. Never blocks the menu on failure.

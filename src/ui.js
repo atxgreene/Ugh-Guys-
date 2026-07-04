@@ -245,11 +245,16 @@ export class UI {
     } else if (sel.length === 1) {
       const e = sel[0];
       const hp = `${Math.ceil(e.hp)}/${e.maxHp}`;
-      info = `<div class="sel-name">${e.def.name || e.def.name}</div>`;
+      const heroRank = e.hero ? ` <span class="hero-rank">★ Lv ${e.level}</span>` : '';
+      info = `<div class="sel-name">${e.def.name || e.def.name}${heroRank}</div>`;
       if (e.isResource) {
         info += `<div class="sel-hp">${Math.floor(e.amount)} remaining</div>`;
       } else {
         info += `<div class="sel-hp">HP ${hp}</div>`;
+        if (e.hero && e.level < 5) {
+          const need = [0, 12, 30, 56, 92][e.level];
+          info += `<div class="sel-hp" style="color:#c9a86a">XP ${e.xp}/${need} to Lv ${e.level + 1}</div>`;
+        }
       }
       info += `<div class="sel-desc">${e.def.desc || ''}</div>`;
       if (e.isBuilding && !e.complete) info += `<div class="sel-hp">Construction ${Math.floor(e.progress * 100)}%</div>`;
