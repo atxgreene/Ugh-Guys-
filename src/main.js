@@ -749,10 +749,15 @@ function setupMatchChat(transport, youSeat) {
   };
   window.addEventListener('keydown', onKey);
 
+  // touch has no Enter key — a 💬 button opens the same composer
+  const chatBtn = document.getElementById('btn-chat');
+  if (chatBtn) { chatBtn.style.display = 'block'; chatBtn.onclick = () => openComposer(); }
+
   // tear down when the match ends so listeners don't leak into the next game
   _chatCleanup = () => {
     window.removeEventListener('keydown', onKey);
     input.onkeydown = null;
+    if (chatBtn) { chatBtn.style.display = 'none'; chatBtn.onclick = null; }
     wrap.style.display = 'none';
     wrap.classList.remove('typing');
     log.innerHTML = '';
@@ -768,6 +773,7 @@ function startNetGame(transport, header, you, players) {
   document.getElementById('menu').style.display = 'none';
   document.getElementById('topbar').style.display = 'flex';
   document.getElementById('minimap-wrap').style.display = 'block';
+  document.getElementById('groupbar')?.classList.add('show');
   document.getElementById('panel').style.display = 'flex';
   document.getElementById('gameover').style.display = 'none';
 
@@ -875,6 +881,7 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   document.getElementById('menu').style.display = 'none';
   document.getElementById('topbar').style.display = 'flex';
   document.getElementById('minimap-wrap').style.display = 'block';
+  document.getElementById('groupbar')?.classList.add('show');
   document.getElementById('panel').style.display = 'flex';
   document.getElementById('gameover').style.display = 'none';
 
@@ -987,6 +994,7 @@ function returnToMenu() {
   document.getElementById('menu').style.display = 'flex';
   document.getElementById('topbar').style.display = 'none';
   document.getElementById('minimap-wrap').style.display = 'none';
+  document.getElementById('groupbar')?.classList.remove('show');
   document.getElementById('panel').style.display = 'none';
   document.getElementById('gameover').style.display = 'none';
   const pm = document.getElementById('pausemenu'); if (pm) pm.style.display = 'none';

@@ -110,7 +110,7 @@
     .queue { font-size: 12px; margin-top: 6px; color: #b8aa88; }
     .queue progress { width: 90px; height: 8px; }
     #commands { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
-    .cmd { width: 104px; height: 64px; color: #d8c8a8;
+    .cmd { width: 104px; height: 64px; color: #d8c8a8; touch-action: none;
       background: linear-gradient(180deg, #2c2519, #1a150d);
       border: 1px solid #6a4e26; cursor: pointer; font-family: inherit; border-radius: 4px;
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 2px;
@@ -439,11 +439,46 @@
     #coach.show { display: block; animation: dlgIn .3s ease; }
 
     /* "best on desktop" notice for touch / small screens */
-    #touchnote { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 47;
+    /* top-center so it never covers the command card (it used to overlap on tablets) */
+    #touchnote { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); z-index: 47;
       display: none; max-width: 92vw; padding: 8px 16px; text-align: center;
       background: rgba(20,16,10,0.92); border: 1px solid #7a5a2c; border-radius: 20px;
       color: #cdbf9a; font-size: 12px; letter-spacing: 0.5px; }
     #touchnote.show { display: block; }
+
+    /* control-group bar: Army + group chips, sits just above the command panel */
+    #groupbar { position: absolute; z-index: 11; left: 246px; bottom: 148px; display: none; gap: 7px; }
+    #groupbar.show { display: flex; }
+    .gchip { min-width: 46px; height: 34px; padding: 0 12px; cursor: pointer; font-family: inherit; touch-action: none;
+      background: linear-gradient(180deg, rgba(44,37,25,0.92), rgba(26,21,13,0.94)); color: #cdbf9a;
+      border: 1px solid #6a4e26; border-radius: 17px; font-size: 13px; letter-spacing: 1px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+    .gchip:hover { border-color: #b88a3e; }
+    .gchip-set { color: #ffd56e; border-color: #b88a3e; }
+
+    /* floating cancel while placing a building (Escape is unreachable on touch) */
+    #place-cancel { position: absolute; z-index: 36; left: 50%; bottom: 158px; transform: translateX(-50%);
+      display: none; padding: 10px 22px; cursor: pointer; font-family: inherit;
+      background: linear-gradient(180deg, #4a2018, #2a1210); color: #ff9a8a;
+      border: 1px solid #a04a3a; border-radius: 22px; font-size: 14px; letter-spacing: 1px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6); }
+
+    /* in-match chat opener for touch (Enter is the keyboard path) */
+    #btn-chat { position: absolute; z-index: 33; right: 12px; top: 84px; display: none;
+      width: 42px; height: 42px; cursor: pointer; font-size: 18px; font-family: inherit;
+      background: linear-gradient(180deg, rgba(44,37,25,0.92), rgba(26,21,13,0.94));
+      border: 1px solid #6a4e26; border-radius: 50%; color: #e6c074; }
+
+    /* battle alerts are tappable (jump the camera to the trouble) */
+    .toast-alert { pointer-events: auto; cursor: pointer; }
+
+    /* fingers need bigger targets than pointers */
+    @media (pointer: coarse) {
+      .cmd { min-width: 92px; min-height: 56px; }
+      .cmd-act { min-width: 70px; }
+      #btn-help, #btn-settings { min-width: 40px; min-height: 36px; }
+      .gchip { height: 40px; min-width: 54px; }
+    }
     #touchnote b { color: #e6c074; }
     #touchnote .tn-x { margin-left: 10px; color: #8a7a52; cursor: pointer; }
 
@@ -553,6 +588,9 @@
       .cmd { width: 96px; height: 54px; font-size: 11px; }
       #dialogue { bottom: 118px; }
       #coach { bottom: 116px; }
+      #groupbar { left: calc(max(8px, env(safe-area-inset-left)) + 148px); bottom: 122px; }
+      #place-cancel { bottom: 118px; }
+      #btn-chat { top: 46px; }
     }
   </style>
 </head>
@@ -607,6 +645,9 @@
       <button id="btn-menu">Surrender</button>
     </div>
     <div class="hud" id="minimap-wrap"><canvas id="minimap" width="208" height="208"></canvas></div>
+    <div class="hud" id="groupbar"></div>
+    <button id="place-cancel">✕ Cancel building</button>
+    <button id="btn-chat" title="Chat (Enter)">💬</button>
     <div class="hud" id="panel" style="display:none;">
       <div id="selinfo"></div>
       <div id="commands"></div>
@@ -667,7 +708,7 @@
       </div>
     </div>
     <div id="touchnote">
-      <b>⚔ Best on desktop.</b> Touch controls are basic — drag to pan, pinch to zoom, tap to select &amp; command.
+      <b>⚔ Touch commander.</b> Drag to pan · pinch to zoom · two-finger twist to turn · tap to select &amp; command · <b>hold-drag</b> to box-select · group chips at the panel.
       <span class="tn-x" id="touchnote-x">✕</span>
     </div>
 

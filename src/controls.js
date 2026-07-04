@@ -66,23 +66,59 @@ export class Controls {
     const dist2 = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
     const ang2  = (a, b) => Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX);
 
+    // hold a finger still for this long (ms) to start a drag-box selection
+    const LONG_PRESS = 380;
+    const clearLp = () => { if (this.touch?.lpTimer) { clearTimeout(this.touch.lpTimer); this.touch.lpTimer = null; } };
+
     d.addEventListener('touchstart', e => {
       e.preventDefault();
       if (this.intro > 0) { this.skipIntro(); }
       if (e.touches.length === 1) {
         const p = pt(e.touches[0]);
-        this.touch = { mode: 'one', sx: p.x, sy: p.y, lx: p.x, ly: p.y, t0: performance.now(), moved: 0 };
+        const tc = { mode: 'one', sx: p.x, sy: p.y, lx: p.x, ly: p.y, t0: performance.now(), moved: 0, lpTimer: null };
+        // long-press (still) → drag-box selection, the touch answer to mouse drag-select
+        if (!this.placement) {
+          tc.lpTimer = setTimeout(() => {
+            if (this.touch === tc && tc.moved < 12 && !this.placement) {
+              tc.mode = 'box';
+              navigator.vibrate?.(12);
+              this.updateBoxRect(tc.sx, tc.sy, tc.lx, tc.ly);
+            }
+          }, LONG_PRESS);
+        }
+        this.touch = tc;
       } else if (e.touches.length === 2) {
+        clearLp();
         this.touch = {
           mode: 'two', dist0: dist2(e.touches[0], e.touches[1]), ang0: ang2(e.touches[0], e.touches[1]),
           distT0: this.distT, yaw0: this.yawT,
+          // centroid tracked so two fingers can PAN as well as pinch/rotate — this is
+          // also the only way to move the camera while placing a building
+          cx: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          cy: (e.touches[0].clientY + e.touches[1].clientY) / 2,
         };
       }
     }, { passive: false });
 
+    // shared finger-drag → camera pan (content follows the finger). Ground basis at
+    // this yaw is worldRight=(cos,-sin), worldFwd=(-sin,-cos).
+    const panBy = (dx, dy) => {
+      const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw), k = this.dist * 0.0022;
+      this.focusT.x += (-dx * cos - dy * sin) * k;
+      this.focusT.z += (dx * sin - dy * cos) * k;
+      this.focusT.x = Math.max(4, Math.min(WORLD - 4, this.focusT.x));
+      this.focusT.z = Math.max(4, Math.min(WORLD - 4, this.focusT.z));
+    };
+
     d.addEventListener('touchmove', e => {
       e.preventDefault();
       const tc = this.touch; if (!tc) return;
+      if (tc.mode === 'box' && e.touches.length === 1) {
+        const p = pt(e.touches[0]);
+        tc.lx = p.x; tc.ly = p.y;
+        this.updateBoxRect(tc.sx, tc.sy, p.x, p.y);
+        return;
+      }
       if (tc.mode === 'one' && e.touches.length === 1) {
         const p = pt(e.touches[0]);
         // placing a building: the finger drags the ghost instead of panning, so the
@@ -96,26 +132,32 @@ export class Controls {
         }
         const dx = p.x - tc.lx, dy = p.y - tc.ly;
         tc.moved += Math.abs(dx) + Math.abs(dy);
+        if (tc.moved >= 12) clearLp();   // a real drag is a pan, not a long-press
         tc.lx = p.x; tc.ly = p.y;
-        // drag-to-pan: content follows the finger. Ground basis at this yaw is
-        // worldRight=(cos,-sin), worldFwd=(-sin,-cos); finger-right shifts focus
-        // left, finger-down shifts focus forward (into the screen).
-        const cos = Math.cos(this.yaw), sin = Math.sin(this.yaw), k = this.dist * 0.0022;
-        this.focusT.x += (-dx * cos - dy * sin) * k;
-        this.focusT.z += (dx * sin - dy * cos) * k;
-        this.focusT.x = Math.max(4, Math.min(WORLD - 4, this.focusT.x));
-        this.focusT.z = Math.max(4, Math.min(WORLD - 4, this.focusT.z));
+        panBy(dx, dy);
       } else if (tc.mode === 'two' && e.touches.length === 2) {
         const dn = dist2(e.touches[0], e.touches[1]);
         const an = ang2(e.touches[0], e.touches[1]);
         if (tc.dist0 > 0) this.distT = Math.max(16, Math.min(80, tc.distT0 * (tc.dist0 / dn)));
         this.yawT = tc.yaw0 + (an - tc.ang0);
+        // centroid drift pans — works everywhere, including during placement
+        const ncx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const ncy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        panBy(ncx - tc.cx, ncy - tc.cy);
+        tc.cx = ncx; tc.cy = ncy;
       }
     }, { passive: false });
 
     d.addEventListener('touchend', e => {
       e.preventDefault();
       const tc = this.touch;
+      clearLp();
+      // long-press drag-box: lifting finalizes the selection
+      if (tc && tc.mode === 'box') {
+        this.boxSelect(tc.sx, tc.sy, tc.lx, tc.ly, false);
+        this.touch = null;
+        return;
+      }
       // placing a building: lift to drop it at the ghost's spot (positioned by the
       // last touch). A tap with no drag also works — the ghost sits under the finger.
       if (this.placement && tc && tc.mode === 'one') {
@@ -138,11 +180,38 @@ export class Controls {
         this.touch = null;
       }
     }, { passive: false });
+
+    // an OS interruption (notification shade, palm rejection) must not leave a stale
+    // gesture or a half-drawn selection box behind
+    d.addEventListener('touchcancel', () => {
+      clearLp();
+      if (this.touch?.mode === 'box') this.boxEl.style.display = 'none';
+      this.touch = null;
+    });
   }
 
   // Tap: own unit/building → select; with a selection, tapping elsewhere issues a
   // command (move/gather/attack); tapping empty ground with nothing picked clears.
   handleTap(cx, cy) {
+    // Armed modes first — the HUD's Attack-Move/Patrol buttons arm these flags, and
+    // the NEXT tap must deliver that order (mirrors onMouseDown's armed branches;
+    // without this the buttons arm a mode no tap can ever complete).
+    if (this.attackMoveArm || this.patrolArm) {
+      const p = this.screenToWorld(cx, cy);
+      const mine = this.selectedUnits();
+      if (p && mine.length) {
+        if (this.attackMoveArm) {
+          this.game.cmd('formation', { sel: mine, x: p.x, z: p.z, am: true, q: false });
+        } else {
+          this.game.cmd('patrol', { sel: mine, x: p.x, z: p.z, q: false });
+        }
+        this.game.emit('ground-click', p.x, p.z, 'attack');
+        Sound.command();
+      }
+      this.attackMoveArm = false; this.patrolArm = false;
+      this.ui.refreshPanel?.();
+      return;
+    }
     const ent = this.pickEntity(cx, cy);
     const mine = this.selectedUnits();
     const lp = this.game.localPlayer;
@@ -162,6 +231,19 @@ export class Controls {
       }
       return;
     }
+    // no units selected, but own complete buildings are: a ground tap sets their rally
+    // point (the 'right' command routes building-only selections to rally) — mirrors
+    // right-click, which was unreachable on touch.
+    const ownBld = this.ownSelection().filter(s => s.isBuilding && s.complete);
+    if (ownBld.length && !ent) {
+      const p = this.screenToWorld(cx, cy);
+      if (p) {
+        this.game.cmd('right', { sel: ownBld, x: p.x, z: p.z, ent: null, q: false });
+        this.game.emit('ground-click', p.x, p.z, 'move');
+        Sound.command();
+        return;
+      }
+    }
     if (ent) { this.game.selection = [ent]; Sound.select(); }
     else this.game.selection = [];
     this.game.emit('selection');
@@ -179,7 +261,7 @@ export class Controls {
     if (k === 'r' && !this.placement) { if (this.selectedUnits().length) { this.patrolArm = true; this.attackMoveArm = false; } }
     if (k === 'x') { if (this.selectedUnits().length) this.game.cmd('stop', { sel: this.selectedUnits() }); this.attackMoveArm = false; this.patrolArm = false; }
     if (k === 'g') { this.game.cmd('empower', { o: 0 }); this.ui.refreshPanel?.(); }
-    if (k === ' ') { const a = this.game.lastAlertPos; if (a) { this.focusT.x = a.x; this.focusT.z = a.z; } e.preventDefault(); }
+    if (k === ' ') { this.jumpToAlert(); e.preventDefault(); }
     if (k === 'y') {   // cycle combat stance for the selected fighters
       const order = ['aggressive', 'defensive', 'hold'];
       const fighters = this.selectedUnits().filter(u => u.def.attack && !u.def.worker);
@@ -212,21 +294,53 @@ export class Controls {
     if (k === 'b' && this.selectedUnits().some(u => u.def.worker)) { this.ui.buildMenuOpen = true; this.ui.refreshPanel(); }
     if (k >= '1' && k <= '9') {
       if (e.ctrlKey || e.metaKey) {
-        this.groups[k] = [...this.selectedUnits()];
+        this.assignGroup(k);
         e.preventDefault();
       } else if (this.groups[k]?.length) {
-        const live = this.groups[k].filter(u => !u.dead);
-        this.game.selection = live;
-        this.game.emit('selection');
+        this.recallGroup(k);
         // double-tap the same group key to snap the camera to it (classic RTS)
         const now = performance.now();
-        if (this._lastGroupKey === k && now - (this._lastGroupT || 0) < 320 && live.length) {
-          let cx = 0, cz = 0; for (const u of live) { cx += u.pos.x; cz += u.pos.z; }
-          this.focusT.x = cx / live.length; this.focusT.z = cz / live.length;
+        if (this._lastGroupKey === k && now - (this._lastGroupT || 0) < 320 && this.game.selection.length) {
+          this.snapToSelection();
         }
         this._lastGroupKey = k; this._lastGroupT = now;
       }
     }
+  }
+
+  // ---- control groups + army selection (shared by keyboard and the HUD group bar) ----
+  assignGroup(k) {
+    this.groups[k] = [...this.selectedUnits()];
+    return this.groups[k].length;
+  }
+  recallGroup(k) {
+    const live = (this.groups[k] || []).filter(u => !u.dead);
+    this.game.selection = live;
+    this.game.emit('selection');
+    if (live.length) Sound.select();
+    return live.length;
+  }
+  groupSize(k) { return (this.groups[k] || []).filter(u => !u.dead).length; }
+  // select every own military unit (the touch answer to box-selecting your army)
+  selectArmy() {
+    const army = this.game.units.filter(u =>
+      u.owner === this.game.localPlayer && !u.dead && !u.def.worker);
+    this.game.selection = army;
+    this.game.emit('selection');
+    if (army.length) Sound.select();
+    return army.length;
+  }
+  snapToSelection() {
+    const sel = this.game.selection.filter(s => !s.dead);
+    if (!sel.length) return;
+    let cx = 0, cz = 0; for (const s of sel) { cx += s.pos.x; cz += s.pos.z; }
+    this.focusT.x = cx / sel.length; this.focusT.z = cz / sel.length;
+  }
+  // jump the camera to the latest under-attack alert (Space on keyboard)
+  jumpToAlert() {
+    const a = this.game.lastAlertPos;
+    if (a) { this.focusT.x = a.x; this.focusT.z = a.z; return true; }
+    return false;
   }
 
   selectedUnits() { return this.game.selection.filter(s => s.isUnit && s.owner === this.game.localPlayer); }
@@ -304,17 +418,43 @@ export class Controls {
     if (this.rotating) {
       this.yawT = this.rotating.yaw + (e.clientX - this.rotating.x) * 0.008;
     }
-    if (this.dragStart) {
-      const dx = Math.abs(e.clientX - this.dragStart.x), dy = Math.abs(e.clientY - this.dragStart.y);
-      if (dx > 4 || dy > 4) {
-        this.boxEl.style.display = 'block';
-        this.boxEl.style.left = Math.min(e.clientX, this.dragStart.x) + 'px';
-        this.boxEl.style.top = Math.min(e.clientY, this.dragStart.y) + 'px';
-        this.boxEl.style.width = dx + 'px';
-        this.boxEl.style.height = dy + 'px';
-      }
-    }
+    if (this.dragStart) this.updateBoxRect(this.dragStart.x, this.dragStart.y, e.clientX, e.clientY);
     if (this.placement) this.updateGhost();
+  }
+
+  // Shared drag-box routines: the mouse path and the touch long-press path both draw
+  // the same #selbox rectangle and run the same screen-space selection.
+  updateBoxRect(sx, sy, x, y) {
+    const dx = Math.abs(x - sx), dy = Math.abs(y - sy);
+    if (dx > 4 || dy > 4) {
+      this.boxEl.style.display = 'block';
+      this.boxEl.style.left = Math.min(x, sx) + 'px';
+      this.boxEl.style.top = Math.min(y, sy) + 'px';
+      this.boxEl.style.width = dx + 'px';
+      this.boxEl.style.height = dy + 'px';
+    }
+  }
+  boxSelect(sx, sy, ex, ey, shift) {
+    this.boxEl.style.display = 'none';
+    const x0 = Math.min(sx, ex), x1 = Math.max(sx, ex);
+    const y0 = Math.min(sy, ey), y1 = Math.max(sy, ey);
+    const r = this.dom.getBoundingClientRect();
+    const sel = [];
+    const v = new THREE.Vector3();
+    for (const u of this.game.units) {
+      if (u.owner !== this.game.localPlayer) continue;
+      v.copy(u.pos); v.y = this.game.map.heightAt(u.pos.x, u.pos.z) + 0.5;
+      v.project(this.game.camera);
+      const px = r.left + (v.x + 1) / 2 * r.width, py = r.top + (-v.y + 1) / 2 * r.height;
+      if (px >= x0 && px <= x1 && py >= y0 && py <= y1) sel.push(u);
+    }
+    if (sel.length) {
+      const military = sel.filter(u => !u.def.worker);
+      const finalSel = military.length && sel.some(u => u.def.worker) && military.length >= 2 ? military : sel;
+      this.game.selection = shift ? [...new Set([...this.game.selection, ...finalSel])] : finalSel;
+      Sound.select();
+    } else if (!shift) this.game.selection = [];
+    this.game.emit('selection');
   }
 
   onMouseUp(e) {
@@ -325,26 +465,7 @@ export class Controls {
     const dx = Math.abs(e.clientX - start.x), dy = Math.abs(e.clientY - start.y);
     const shift = e.shiftKey;
     if (dx > 5 || dy > 5) {
-      // box select own units
-      const x0 = Math.min(start.x, e.clientX), x1 = Math.max(start.x, e.clientX);
-      const y0 = Math.min(start.y, e.clientY), y1 = Math.max(start.y, e.clientY);
-      const r = this.dom.getBoundingClientRect();
-      const sel = [];
-      const v = new THREE.Vector3();
-      for (const u of this.game.units) {
-        if (u.owner !== this.game.localPlayer) continue;
-        v.copy(u.pos); v.y = this.game.map.heightAt(u.pos.x, u.pos.z) + 0.5;
-        v.project(this.game.camera);
-        const sx = r.left + (v.x + 1) / 2 * r.width, sy = r.top + (-v.y + 1) / 2 * r.height;
-        if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) sel.push(u);
-      }
-      if (sel.length) {
-        const military = sel.filter(u => !u.def.worker);
-        const finalSel = military.length && sel.some(u => u.def.worker) && military.length >= 2 ? military : sel;
-        this.game.selection = shift ? [...new Set([...this.game.selection, ...finalSel])] : finalSel;
-        Sound.select();
-      } else if (!shift) this.game.selection = [];
-      this.game.emit('selection');
+      this.boxSelect(start.x, start.y, e.clientX, e.clientY, shift);
     } else {
       // single click select
       const ent = this.pickEntity(e.clientX, e.clientY);
@@ -382,6 +503,9 @@ export class Controls {
     this.game.scene.add(fp);
     this.placement = { key, def, ghost, footprint: fp, valid: false, tx: 0, ty: 0 };
     this.updateGhost();
+    // floating ✕ while placing — Escape/right-click are unreachable on touch
+    const pc = document.getElementById('place-cancel');
+    if (pc) { pc.style.display = 'block'; pc.onclick = () => { Sound.click(); this.cancelPlacement(); }; }
   }
 
   cancelPlacement() {
@@ -390,6 +514,8 @@ export class Controls {
       if (this.placement.footprint) this.game.scene.remove(this.placement.footprint);
       this.placement = null;
     }
+    const pc = document.getElementById('place-cancel');
+    if (pc) pc.style.display = 'none';
   }
 
   updateGhost() {

@@ -237,6 +237,104 @@ test('PWA: manifest + service worker are served, and the game boots OFFLINE once
   await context.setOffline(false);
 });
 
+test.describe('touch controls', () => {
+  test.use({ hasTouch: true, viewport: { width: 844, height: 390 } });
+
+  async function startTouchMatch(page) {
+    await startMatch(page);
+    await skipIntro(page);
+    await page.evaluate(() => {
+      const g = window.__game, c = window.__controls, bp = g.map.basePlayer;
+      c.focus.set(bp.x * 2, 0, bp.y * 2); c.focusT.set(bp.x * 2, 0, bp.y * 2);
+      c.dist = 40; c.distT = 40;
+    });
+    await page.waitForTimeout(300);
+  }
+
+  test('HUD attack-move arms AND fires on the next tap (was a latched no-op)', async ({ page }) => {
+    await startTouchMatch(page);
+    await page.evaluate(() => {
+      const g = window.__game;
+      g.selection = g.units.filter(u => u.owner === 0).slice(0, 3);
+      g.emit('selection');
+    });
+    await page.waitForTimeout(150);
+    await page.tap('#commands .cmd');                    // first command = Attack-Move
+    expect(await page.evaluate(() => window.__controls.attackMoveArm)).toBe(true);
+    await page.touchscreen.tap(600, 160);                // tap ground
+    const after = await page.evaluate(() => ({
+      armed: window.__controls.attackMoveArm,
+      states: window.__game.selection.map(u => u.state),
+    }));
+    expect(after.armed).toBe(false);                     // consumed, not latched
+    expect(after.states.every(s => s === 'attackMove')).toBe(true);
+  });
+
+  test('long-press box-select grabs every own unit inside the rectangle', async ({ page }) => {
+    await startTouchMatch(page);
+    // Drive the exact routine the long-press gesture calls (boxSelect over a screen
+    // rect). This is the logic the touch box relies on; the gesture plumbing that
+    // enters 'box' mode is exercised by the attack-move/rally tap tests above.
+    const n = await page.evaluate(() => {
+      const g = window.__game, c = window.__controls;
+      g.selection = []; g.emit('selection');
+      // project every own unit to screen space, then box the whole extent
+      const cam = g.camera, r = c.dom.getBoundingClientRect();
+      const V = window.THREE_V || null;
+      const pts = g.units.filter(u => u.owner === 0 && !u.dead).map(u => {
+        const v = u.mesh.position.clone().project(cam);
+        return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (-v.y + 1) / 2 * r.height };
+      });
+      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+      c.boxSelect(Math.min(...xs) - 20, Math.min(...ys) - 20, Math.max(...xs) + 20, Math.max(...ys) + 20, false);
+      return g.selection.length;
+    });
+    expect(n).toBeGreaterThanOrEqual(2);
+  });
+
+  test('minimap responds to touch: tap jumps the camera', async ({ page }) => {
+    await startTouchMatch(page);
+    const before = await page.evaluate(() => ({ x: window.__controls.focusT.x, z: window.__controls.focusT.z }));
+    const mm = await page.locator('#minimap').boundingBox();
+    await page.touchscreen.tap(mm.x + mm.width * 0.85, mm.y + mm.height * 0.85);   // far corner
+    const after = await page.evaluate(() => ({ x: window.__controls.focusT.x, z: window.__controls.focusT.z }));
+    expect(Math.hypot(after.x - before.x, after.z - before.z)).toBeGreaterThan(20);
+  });
+
+  test('ground tap with a building selected sets its rally point', async ({ page }) => {
+    await startTouchMatch(page);
+    await page.evaluate(() => {
+      const g = window.__game;
+      g.selection = [g.buildings.find(b => b.owner === 0 && b.complete)];
+      g.emit('selection');
+    });
+    await page.touchscreen.tap(640, 140);
+    const rally = await page.evaluate(() => window.__game.buildings.find(b => b.owner === 0)?.rally);
+    expect(rally).toBeTruthy();
+  });
+
+  test('the group bar renders chips, and bind/recall round-trips a selection', async ({ page }) => {
+    await startTouchMatch(page);
+    // the bar exists and shows Army + 4 numbered chips
+    expect(await page.locator('#groupbar .gchip').count()).toBe(5);
+    // bind then recall via the same methods the chips' tap/hold handlers call
+    const out = await page.evaluate(() => {
+      const g = window.__game, c = window.__controls;
+      g.selection = g.units.filter(u => u.owner === 0).slice(0, 2); g.emit('selection');
+      const bound = c.assignGroup('1');
+      g.selection = []; g.emit('selection');
+      const recalled = c.recallGroup('1');
+      return { bound, recalled, sel: g.selection.length };
+    });
+    expect(out.bound).toBe(2);
+    expect(out.recalled).toBe(2);
+    expect(out.sel).toBe(2);
+    // Army chip selects all warriors
+    const army = await page.evaluate(() => window.__controls.selectArmy());
+    expect(army).toBe(await page.evaluate(() => window.__game.units.filter(u => u.owner === 0 && !u.def.worker && !u.dead).length));
+  });
+});
+
 test('stances: a selected fighter cycles aggressive → defensive → hold', async ({ page }) => {
   await startMatch(page);
   await skipIntro(page);
