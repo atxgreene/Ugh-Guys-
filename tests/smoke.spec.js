@@ -335,6 +335,21 @@ test.describe('touch controls', () => {
   });
 });
 
+test('wild events: hidden content is seeded onto normal maps and announced', async ({ page }) => {
+  await startMatch(page);
+  const scott = await page.evaluate(() => window.__wildCheck(92));   // seed%100 = 92 → Scott band
+  expect(scott.scott).toBe(true);                                     // the boss actually spawned
+  expect(scott.notes.join(' ')).toContain('SCOTT');                  // and the map announces him
+  const foe = await page.evaluate(() => window.__wildCheck(5));       // seed%100 = 5 → Fields of Evil band
+  expect(foe.foe).toBe(true);
+  expect(foe.notes.join(' ')).toContain('Fields of Evil');
+  const plain = await page.evaluate(() => window.__wildCheck(50));    // no special encounter
+  expect(plain.scott).toBe(false);
+  expect(plain.foe).toBe(false);
+  // lairs guard obelisks on every map → always at least one wild-encounter note
+  expect(plain.notes.length + plain.lairs).toBeGreaterThan(0);
+});
+
 test('heroes: one-hero cap holds, XP levels them up, and rank survives save/load', async ({ page }) => {
   await startMatch(page);
   const r = await page.evaluate(() => window.__heroCheck());

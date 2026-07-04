@@ -930,6 +930,8 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
     ui.showIntroCard(FACTIONS[playerFactionKey]);
     ui.toast(`${game.map.biome.name} — the ${FACTIONS[enemyKey].name} stir beyond the ridge…`);
     showCoachHints();   // gentle first-match nudges (only on a fresh game)
+    // announce the wild encounters seeded onto this map, staggered after the opener
+    (game.wildEventNotes || []).forEach((note, i) => setTimeout(() => ui.toast(note), 5500 + i * 4500));
   }
 
   let last = performance.now();
@@ -1382,6 +1384,23 @@ window.__heroCheck = () => {
     noHeroYet, capBlockedWhileAlive, capFreeAfterDeath,
     leveled, level: hero.level, dmgScales,
     savedLevel: restored?.level ?? 0, savedMaxHp: restored?.maxHp ?? 0, liveMaxHp: hero.maxHp,
+  };
+};
+
+// Headless wild-event probe: build a standard match on a fixed seed and report which
+// seeded encounters spawned + their announcements.
+window.__wildCheck = (seed) => {
+  stopGame();
+  const g = new Game(document.getElementById('game-container'), 'covenant', 'watchers',
+    { seed, biome: Object.keys(BIOMES)[0], timeOfDay: 'noon' });
+  window.__game = g; window.__controls = null;
+  current = { game: g, ai: null, controls: null, ui: null, raf: 0 };
+  return {
+    seed, r: g.map.seed % 100,
+    scott: g.units.some(u => u.key === 'scott'),
+    foe: !!g.fieldsOfEvil,
+    lairs: g.lairs?.length || 0,
+    notes: g.wildEventNotes || [],
   };
 };
 

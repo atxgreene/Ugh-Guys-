@@ -1787,9 +1787,7 @@ export class Game {
     }
     this.spawnMonsterLairs();
     this.recalcSupply();
-    // Easter egg: a rare hidden encampment, deterministic per seed (also summonable
-    // any match by typing the secret code, or via window.__game.spawnFieldsOfEvil()).
-    if (this.map.seed % 100 < 18) this.spawnFieldsOfEvil(Math.floor(GRID * 0.5), Math.floor(GRID * 0.12));
+    this.rollWildEvents();
   }
 
   // Neutral strength scalar from match difficulty — bosses and guardians hit
@@ -1831,6 +1829,31 @@ export class Game {
       u.leash = { x: node.pos.x, z: node.pos.z };
       this.units.push(u);
       this.lairs.push({ x: node.pos.x, z: node.pos.z, boss: u });
+    }
+  }
+
+  // Wild encounters, seeded per match (deterministic → replay/lockstep safe) so the
+  // game's hidden content — the Fields of Evil, SCOTT, the boss lairs — is DISCOVERED
+  // in normal play instead of hiding behind typed cheat codes. Announced at match start
+  // (main.js reads wildEventNotes) so players know to go hunting. Cheat codes still work.
+  rollWildEvents() {
+    this.wildEventNotes = [];
+    if (this.mode === 'survival') return;   // the Deluge is the event
+    const seed = this.map.seed, r = seed % 100;
+    // ~18%: a feuding camp around the House of Greene, to the north
+    if (r < 18) {
+      if (this.spawnFieldsOfEvil(Math.floor(GRID * 0.5), Math.floor(GRID * 0.12)))
+        this.wildEventNotes.push('⚑ Strange banners fly to the north — the Fields of Evil feud, and the House of Greene hoards forbidden lore.');
+    // ~8%: SCOTT prowls the wilds as a rare roaming world boss (elsewhere: cheat / survival wave 10)
+    } else if (r >= 92) {
+      const cx = Math.floor(GRID * (0.30 + (seed % 7) * 0.055));
+      const cy = Math.floor(GRID * (0.30 + (seed % 5) * 0.07));
+      if (this.summonScott(cx, cy))
+        this.wildEventNotes.push('◎ A green-eyed sentinel prowls the wilds. Fell SCOTT for a trove — but mind his rings.');
+    }
+    // the boss lairs always guard knowledge obelisks — point players at the prize
+    if (this.lairs?.length) {
+      this.wildEventNotes.push(`☠ ${this.lairs.length} monstrous lair${this.lairs.length > 1 ? 's' : ''} guard rich knowledge obelisks. A bold host can claim the bounty.`);
     }
   }
 
