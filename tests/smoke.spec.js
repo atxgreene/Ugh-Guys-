@@ -404,6 +404,41 @@ test('audio identity: each faction has its own blips + drone voice, and stingers
   expect(r.stingersOk).toBe(true);      // bossSlain / achievement / wave stingers run without throwing
 });
 
+test('upgrades: a tier-2 upgrade is gated behind its tier-1 and the two stack', async ({ page }) => {
+  await startMatch(page);
+  const r = await page.evaluate(() => window.__upgradeCheck());
+  expect(r.tier2Blocked).toBe(true);                    // tier-2 refused before tier-1 is researched
+  expect(r.tier1Queued).toBe(true);                     // tier-1 queues fine
+  expect(r.tier2Now).toBe(true);                        // tier-2 opens up once tier-1 completes
+  expect(r.dmg1).toBeCloseTo(r.dmg0 * 1.2, 5);          // Tempered Bronze: +20%
+  expect(r.dmg2).toBeCloseTo(r.dmg1 * 1.25, 5);         // Consecrated Edges stacks: +25% more
+});
+
+test('abilities: heal mends a wounded ally; summon raises temporary, supply-free thralls', async ({ page }) => {
+  await startMatch(page);
+  const r = await page.evaluate(() => window.__abilityCheck());
+  // heal
+  expect(r.healed).toBe(true);
+  expect(r.healAfter).toBeGreaterThan(r.healBefore);      // the ally was mended
+  // summon
+  expect(r.summonOk).toBe(true);
+  expect(r.summonedNow).toBe(3);                          // three thralls rose
+  expect(r.supAfter).toBe(r.supBefore);                   // and they cost no supply
+  expect(r.summonedLater).toBe(0);                        // they crumbled once their time ran out
+});
+
+test('daily result: the shareable summary reflects the match outcome', async ({ page }) => {
+  await startMatch(page);
+  const text = await page.evaluate(() => window.__dailyShareCheck({
+    game: { isDaily: '2026-07-04', mode: 'survival', wave: 12, time: 512 },
+    stats: { killed: 47, razed: 3, lost: 9, trained: 20 },
+  }));
+  expect(text).toContain('Daily 2026-07-04');
+  expect(text).toContain('wave 12');
+  expect(text).toContain('8:32');        // 512s → 8:32
+  expect(text).toContain('⚔ 47');
+});
+
 test('onboarding: the coach reacts to game state (not a fixed timer)', async ({ page }) => {
   // fresh player state so the coach is armed
   await page.addInitScript(() => { try { localStorage.removeItem('sotw_settings'); } catch {} });

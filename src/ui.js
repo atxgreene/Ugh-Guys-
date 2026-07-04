@@ -356,6 +356,8 @@ export class UI {
       for (const upKey of building.def.upgrades || []) {
         const up = UPGRADES[upKey];
         if (this.game.me.upgrades.has(upKey)) continue;
+        // a tier-2 upgrade stays hidden until its tier-1 prerequisite is researched
+        if (up.requires && !this.game.me.upgrades.has(up.requires)) continue;
         cmds.push({
           icon: '⬆', label: up.name, sub: costStr(up.cost),
           tip: `${up.name} — ${costStr(up.cost)}\n${up.desc}`,
@@ -564,7 +566,56 @@ export class UI {
         dl.style.display = has ? 'inline-block' : 'none';
         if (has) dl.onclick = () => this.onDownloadReplay?.();
       }
+      // Daily Trial: a compact, spoiler-free result to share (copy / share sheet)
+      const sh = document.getElementById('btn-share');
+      if (sh) {
+        if (g.isDaily) {
+          sh.style.display = 'inline-block';
+          sh.textContent = '☀ Share Result';
+          sh.onclick = () => this.shareDailyResult(winner, sh);
+        } else sh.style.display = 'none';
+      }
     }, 2200);
+  }
+
+  // A compact, shareable summary of a finished Daily Trial — same shape for everyone
+  // who played that day's fixed challenge, so results are directly comparable. No seed
+  // or map spoilers; just the outcome and the chronicle. Pure function of the game state.
+  dailyShareText(winner) {
+    const g = this.game, survival = g.mode === 'survival', s = g.stats;
+    const t = Math.floor(g.time), dur = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    const outcome = survival
+      ? `🌊 Held to wave ${g.wave} · ⏱ ${dur}`
+      : (winner === 0 ? `🏆 Victory · ⏱ ${dur}` : `💀 Fell · ⏱ ${dur}`);
+    const faction = g.me?.faction?.name || '';
+    return [
+      `Shadow of the Watchers ☀ Daily ${g.isDaily}`,
+      `${faction} · ${survival ? 'The Deluge' : 'Conquest'} · Hard`,
+      outcome,
+      `⚔ ${s.killed}  ☩ ${s.razed}  🕯 ${s.lost}  ⛏ ${s.trained}`,
+    ].join('\n');
+  }
+
+  // Copy the share text (and offer the OS share sheet where available). Falls back to a
+  // legacy execCommand copy if the async clipboard API is blocked.
+  async shareDailyResult(winner, btn) {
+    const text = this.dailyShareText(winner);
+    let ok = false;
+    try {
+      if (navigator.share) { await navigator.share({ text }); ok = true; }
+      else if (navigator.clipboard) { await navigator.clipboard.writeText(text); ok = true; }
+    } catch { ok = false; }
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        ok = document.execCommand('copy'); document.body.removeChild(ta);
+      } catch { ok = false; }
+    }
+    if (btn) { btn.textContent = ok ? '✓ Copied!' : '⚠ Copy failed'; setTimeout(() => { btn.textContent = '☀ Share Result'; }, 2200); }
+    if (ok) this.toast('☀ Daily result copied — share your fate.');
+    return text;
   }
 
   // opening faction card over the flyover

@@ -78,9 +78,9 @@ export const FACTIONS = {
         armor: 3, speed: 6.5, supply: 2, model: 'guard', tags: ['heavy'],
         desc: 'Sworn wardens of the inner sanctuary. Anathema to corrupted flesh.',
         trainedAt: 'temple',
-        ability: { name: 'Sacred Ward', icon: '☩', cooldown: 30, duration: 8, type: 'aoe_friendly',
-          radius: 7, buff: { armorAdd: 2 },
-          desc: 'Consecrate the ground: all nearby allies gain +2 armor for 8 s.' },
+        ability: { name: 'Sacred Balm', icon: '✚', cooldown: 22, type: 'heal',
+          radius: 7, amount: 70, repair: true, selfToo: true,
+          desc: 'Lay on hands: restore 70 HP to every nearby ally and mend allied walls.' },
       }),
       prophet: U({
         name: 'Prophet', cost: { grain: 100, favor: 60 }, hp: 80, buildTime: 20,
@@ -122,7 +122,7 @@ export const FACTIONS = {
       }),
       foundry: B({
         name: 'Bronze Foundry', cost: { grain: 80, timber: 80, bronze: 40 }, hp: 550, buildTime: 24,
-        size: 3, trains: ['chariot'], upgrades: ['cov_weapons', 'cov_armor'],
+        size: 3, trains: ['chariot'], upgrades: ['cov_weapons', 'cov_weapons2', 'cov_armor', 'cov_armor2'],
         requires: 'barracks', model: 'foundry',
         desc: 'Furnaces of tin and copper. Arms the host and builds the chariots of war.',
       }),
@@ -228,7 +228,7 @@ export const FACTIONS = {
       archive: B({
         name: 'Forbidden Archive', cost: { grain: 100, timber: 80, bronze: 60 }, hp: 550, buildTime: 28,
         size: 3, trains: ['skyfire'], favorRate: 8, knowledgeRate: 2,
-        upgrades: ['wat_script', 'wat_flesh'], requires: 'obsidian_gate', model: 'archive',
+        upgrades: ['wat_script', 'wat_script2', 'wat_flesh', 'wat_flesh2'], requires: 'obsidian_gate', model: 'archive',
         desc: 'Tablets that should have burned. Each shelf is a sin and a weapon.',
       }),
       hybrid_pit: B({
@@ -308,9 +308,9 @@ export const FACTIONS = {
         speed: 6.5, supply: 2, model: 'shaman', tags: ['light'], sight: 16,
         desc: 'Burns the marrow of giants and speaks with what answers.',
         trainedAt: 'totem',
-        ability: { name: "Ancestor's Fury", icon: '☠', cooldown: 32, duration: 10, type: 'aoe_friendly',
-          radius: 10, buff: { dmgMult: 1.3 },
-          desc: "The drowned world's echo: nearby allied units gain +30% damage for 10 s." },
+        ability: { name: 'Raise the Drowned', icon: '☠', cooldown: 34, type: 'summon',
+          unit: 'raider', count: 3, duration: 18,
+          desc: 'Call the drowned dead back to the fight: 3 raiders rise for 18 s, then crumble to silt.' },
       }),
       hero_og: U({
         name: 'Og, Last of the Giants', hero: true, cost: { grain: 320, bronze: 160, knowledge: 60 }, hp: 880, buildTime: 55,
@@ -337,7 +337,7 @@ export const FACTIONS = {
       }),
       war_lodge: B({
         name: 'War Lodge', cost: { grain: 90, timber: 90 }, hp: 650, buildTime: 20,
-        size: 3, trains: ['raider', 'champion'], upgrades: ['nep_fury'], model: 'lodge',
+        size: 3, trains: ['raider', 'champion'], upgrades: ['nep_fury', 'nep_fury2'], model: 'lodge',
         desc: 'Where boasts are made and then, occasionally, kept.',
       }),
       beast_den: B({
@@ -347,7 +347,7 @@ export const FACTIONS = {
       }),
       totem: B({
         name: 'Totem of Dread', cost: { grain: 90, timber: 100, bronze: 30 }, hp: 500, buildTime: 24,
-        size: 2, trains: ['shaman'], favorRate: 7, upgrades: ['nep_hide'],
+        size: 2, trains: ['shaman'], favorRate: 7, upgrades: ['nep_hide', 'nep_hide2'],
         requires: 'war_lodge', model: 'totem',
         desc: 'Skulls of the drowned world. Enemies remember why they fear the mountains.',
       }),
@@ -361,21 +361,39 @@ export const FACTIONS = {
   },
 };
 
+// Upgrades come in two tiers per line. A tier-2 (`requires` set) only appears in the
+// building menu once its tier-1 is researched, so each line is a small tech choice:
+// invest again in the same line for a bigger effect, or spread across lines.
 export const UPGRADES = {
+  // — Covenant —
   cov_weapons: { name: 'Tempered Bronze', cost: { bronze: 120, grain: 80 }, time: 25,
     effect: { dmgMult: 1.2 }, desc: '+20% unit damage.' },
+  cov_weapons2:{ name: 'Consecrated Edges', cost: { bronze: 220, favor: 90 }, time: 40, requires: 'cov_weapons',
+    effect: { dmgMult: 1.25 }, desc: '+25% more unit damage (stacks with Tempered Bronze).' },
   cov_armor:   { name: 'Scale Hauberks', cost: { bronze: 100, grain: 100 }, time: 25,
     effect: { armorAdd: 1 }, desc: '+1 unit armor.' },
+  cov_armor2:  { name: 'Sanctified Plate', cost: { bronze: 200, favor: 80 }, time: 40, requires: 'cov_armor',
+    effect: { armorAdd: 2 }, desc: '+2 more unit armor (stacks with Scale Hauberks).' },
   cov_zeal:    { name: 'Anointing Oil', cost: { favor: 80, grain: 60 }, time: 30,
     effect: { hpMult: 1.15 }, desc: '+15% unit health.' },
+  // — Watchers —
   wat_script:  { name: 'Burning Script', cost: { knowledge: 40, bronze: 80 }, time: 25,
     effect: { dmgMult: 1.2 }, desc: '+20% unit damage.' },
+  wat_script2: { name: 'Elder Script', cost: { knowledge: 90, bronze: 140 }, time: 40, requires: 'wat_script',
+    effect: { dmgMult: 1.25 }, desc: '+25% more unit damage (stacks with Burning Script).' },
   wat_flesh:   { name: 'Graven Flesh', cost: { knowledge: 30, grain: 100 }, time: 25,
     effect: { hpMult: 1.2 }, desc: '+20% unit health.' },
+  wat_flesh2:  { name: 'Obsidian Flesh', cost: { knowledge: 80, grain: 160 }, time: 40, requires: 'wat_flesh',
+    effect: { hpMult: 1.25 }, desc: '+25% more unit health (stacks with Graven Flesh).' },
+  // — Nephilim —
   nep_fury:    { name: 'Blood of the First', cost: { favor: 60, grain: 100 }, time: 25,
     effect: { dmgMult: 1.2 }, desc: '+20% unit damage.' },
+  nep_fury2:   { name: 'Blood of the Fallen', cost: { favor: 120, bronze: 120 }, time: 40, requires: 'nep_fury',
+    effect: { dmgMult: 1.25 }, desc: '+25% more unit damage (stacks with Blood of the First).' },
   nep_hide:    { name: 'Scarred Hides', cost: { grain: 120, bronze: 60 }, time: 25,
     effect: { armorAdd: 1 }, desc: '+1 unit armor.' },
+  nep_hide2:   { name: 'Titan Hides', cost: { grain: 200, bronze: 140 }, time: 40, requires: 'nep_hide',
+    effect: { armorAdd: 2 }, desc: '+2 more unit armor (stacks with Scarred Hides).' },
 };
 
 // Neutral guardians of forbidden knowledge obelisks.

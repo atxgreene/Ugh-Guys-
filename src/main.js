@@ -1520,6 +1520,77 @@ window.__audioCheck = () => {
   return { cov, nep, wat, distinct, cycles, droneSwitched, stingersOk };
 };
 
+// Headless upgrade probe: verifies a tier-2 upgrade is gated behind its tier-1 at the
+// simulation layer, and that the two tiers stack multiplicatively.
+window.__upgradeCheck = () => {
+  stopGame();
+  const g = new Game(document.getElementById('game-container'), 'covenant', 'watchers',
+    { seed: 7, biome: Object.keys(BIOMES)[0], timeOfDay: 'noon' });
+  window.__game = g; current = { game: g, ai: null, controls: null, ui: null, raf: 0 };
+  const p = g.players[0];
+  Object.assign(p.resources, { bronze: 99999, grain: 99999, favor: 99999, timber: 99999, knowledge: 99999 });
+  const bldg = { owner: 0, trainQueue: [] };
+  const dmg0 = p.dmgMult;
+  const tier2Blocked = g.queueUpgrade(bldg, 'cov_weapons2') === false && !p.upgrades.has('cov_weapons2');
+  const tier1Queued = g.queueUpgrade(bldg, 'cov_weapons') === true;
+  g.finishUpgrade(0, 'cov_weapons');
+  const dmg1 = p.dmgMult;
+  bldg.trainQueue = [];
+  const tier2Now = g.queueUpgrade(bldg, 'cov_weapons2') === true;   // unlocked once tier-1 done
+  g.finishUpgrade(0, 'cov_weapons2');
+  const dmg2 = p.dmgMult;
+  stopGame();
+  return { tier2Blocked, tier1Queued, tier2Now, dmg0, dmg1, dmg2 };
+};
+
+// Headless ability probe: exercises the two new ability types end-to-end.
+//  heal   — a Covenant temple_guard mends a wounded ally (and doesn't overheal).
+//  summon — a Nephilim shaman raises temporary raiders that don't cost supply and that
+//           crumble once their lifespan runs out.
+window.__abilityCheck = () => {
+  const mk = (pf, ef, seed) => {
+    stopGame();
+    const g = new Game(document.getElementById('game-container'), pf, ef,
+      { seed, biome: Object.keys(BIOMES)[0], timeOfDay: 'noon' });
+    window.__game = g; current = { game: g, ai: null, controls: null, ui: null, raf: 0 };
+    return g;
+  };
+  // — heal —
+  const g = mk('covenant', 'watchers', 3);
+  const bp = g.map.basePlayer;
+  const guard = g.spawnUnit(0, 'temple_guard', (bp.x + 2) * 2, (bp.y + 2) * 2);
+  const ally = g.spawnUnit(0, 'spearman', guard.pos.x + 2, guard.pos.z + 1);
+  ally.hp = 20; const healBefore = ally.hp;
+  guard.abilityCd = 0;
+  const healed = g.useAbility(guard);
+  const healAfter = ally.hp;
+
+  // — summon —
+  const g2 = mk('nephilim', 'covenant', 3);
+  const bp2 = g2.map.basePlayer;
+  const sha = g2.spawnUnit(0, 'shaman', (bp2.x + 2) * 2, (bp2.y + 2) * 2);
+  const supBefore = g2.players[0].supplyUsed;
+  sha.abilityCd = 0;
+  const summonOk = g2.useAbility(sha);
+  const summonedNow = g2.units.filter(u => u.owner === 0 && u.summoned && !u.dead).length;
+  const supAfter = g2.players[0].supplyUsed;    // summons must not add supply
+  window.__game = g2;
+  window.__stepSim(20);                          // outlast the 18 s lifespan
+  const summonedLater = g2.units.filter(u => u.owner === 0 && u.summoned && !u.dead).length;
+  stopGame();
+  return { healed, healBefore, healAfter, summonOk, summonedNow, supBefore, supAfter, summonedLater };
+};
+
+// Headless daily-share probe: injects a known result into the live match and returns the
+// shareable summary the end screen would produce.
+window.__dailyShareCheck = (over = {}) => {
+  const ui = current?.ui, g = current?.game;
+  if (!ui || !g) return null;
+  Object.assign(g, over.game || {});
+  if (over.stats) Object.assign(g.stats, over.stats);
+  return ui.dailyShareText(over.winner ?? 0);
+};
+
 // Headless campaign probe: build a mission by id and fast-forward `seconds`, reporting
 // that it boots in campaign mode, fires its beats (dialogue/spawns), and tracks the
 // objective. With forceWin, it satisfies the mission's win condition afterward and
