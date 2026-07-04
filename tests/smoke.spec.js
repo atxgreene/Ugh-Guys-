@@ -335,6 +335,19 @@ test.describe('touch controls', () => {
   });
 });
 
+test('heroes: one-hero cap holds, XP levels them up, and rank survives save/load', async ({ page }) => {
+  await startMatch(page);
+  const r = await page.evaluate(() => window.__heroCheck());
+  expect(r.noHeroYet).toBe(false);              // no hero fielded at the start
+  expect(r.capBlockedWhileAlive).toBe(true);    // the one-hero cap sees the living hero
+  expect(r.capFreeAfterDeath).toBe(true);       // once it falls, another may walk
+  expect(r.leveled).toBe(true);                 // kills earned levels
+  expect(r.level).toBeGreaterThan(1);
+  expect(r.dmgScales).toBe(true);               // higher level → more damage
+  expect(r.savedLevel).toBe(r.level);           // save/load preserved the rank…
+  expect(r.savedMaxHp).toBe(r.liveMaxHp);       // …and the levelled max HP
+});
+
 test('onboarding: the coach reacts to game state (not a fixed timer)', async ({ page }) => {
   // fresh player state so the coach is armed
   await page.addInitScript(() => { try { localStorage.removeItem('sotw_settings'); } catch {} });

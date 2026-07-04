@@ -22,6 +22,10 @@ let nextId = 1;
 
 const NEUTRAL_COLOR = 0x808078, NEUTRAL_GLOW = 0xc2b89a;
 const UGRID_CELL = 8;   // spatial-hash cell size (world units) for unitsNear queries
+const HERO_MAX_LEVEL = 5;
+// cumulative XP needed to REACH each level (index = current level). XP is the felled
+// foe's supply cost, so ~a dozen soldiers or a couple of elites earns each rank.
+const HERO_XP = [0, 12, 30, 56, 92];
 // Distinct per-seat HUD colours so free-for-all opponents are tell-apart on the minimap,
 // health bars and selection rings. Seats 0/1 keep the classic green/red; 2/3 add blue/gold.
 const SEAT_CSS = ['#9be86e', '#ff5040', '#5aa0ff', '#ffd23c'];
@@ -175,6 +179,9 @@ export class Unit extends Entity {
     this.abilityDebuffDur = 0;  // seconds remaining on an incoming damage debuff
     this.abilityDebuffMult = 1; // incoming damage multiplier while debuffed
     this.stunDur = 0;           // seconds remaining of stun (can't attack)
+    // Heroes level up by felling foes. Level scales damage + max HP; sim-side and
+    // seeded, so it reproduces in replays and (with serialize below) round-trips saves.
+    if (def.hero) { this.hero = true; this.level = 1; this.xp = 0; }
     const f = owner === game.NEUTRAL ? { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW } : game.players[owner].faction;
     this.mesh = buildUnitMesh(def.model, f.color, f.glow, f.accent, f.glow2);
     this.mesh.position.copy(this.pos);
@@ -185,7 +192,29 @@ export class Unit extends Entity {
   effDmg(base) {
     let mult = this.owner < this.game.NEUTRAL ? this.player.dmgMult : 1;
     if (this.abilityBuff?.dmgMult) mult *= this.abilityBuff.dmgMult;
+    if (this.hero) mult *= 1 + (this.level - 1) * 0.14;   // +14% damage per level
     return Math.round(base * mult);
+  }
+
+  // A hero fells a foe: award XP by the victim's weight (supply), and level up (to 5)
+  // when the threshold is crossed — each level lifts max HP (and heals to match) and,
+  // via effDmg, damage. Pure sim: identical across every client and replay.
+  gainHeroXp(victim) {
+    if (!this.hero || this.dead || this.level >= HERO_MAX_LEVEL) return;
+    this.xp += Math.max(1, victim.def.supply || (victim.def.boss ? 20 : 1));
+    while (this.level < HERO_MAX_LEVEL && this.xp >= HERO_XP[this.level]) {
+      this.level++;
+      const grow = 1.15;                       // +15% max HP per level
+      const frac = this.hp / this.maxHp;
+      this.maxHp = Math.round(this.maxHp * grow);
+      this.hp = Math.round(this.maxHp * Math.min(1, frac + 0.25));   // level-up also heals
+      if (this.owner === this.game.localPlayer) {
+        this.game.emit('toast', `★ ${this.def.name} rises to level ${this.level}!`);
+      }
+      if (this.game.map.fogStateAt(this.pos.x, this.pos.z) === 2) {
+        this.game.addEffect(this.pos.x, this.pos.z, this.radius * 2.4, glowMat(0xffe08a, 2.2));
+      }
+    }
   }
   effArmor() {
     return this.def.armor + (this.owner < this.game.NEUTRAL ? this.player.armorAdd : 0) + (this.abilityBuff?.armorAdd || 0);
@@ -680,6 +709,8 @@ export class Unit extends Entity {
     const s = this.game.stats;
     if (this.owner === 0) s.lost++;
     else if (attacker && attacker.owner === 0) s.killed++;
+    // a hero killer earns experience from the fallen
+    if (attacker && attacker.hero && attacker.owner !== this.owner) attacker.gainHeroXp(this);
     this.game.removeUnit(this, attacker);
     Sound.death();
   }
@@ -1878,7 +1909,8 @@ export class Game {
       units: this.units.filter(u => !u.dead).map(u => ({ o: u.owner, k: u.key,
         x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), hp: Math.round(u.hp),
         cy: u.carry || 0, ct: u.carryType || null, leash: u.leash || null,
-        st: u.stance !== 'aggressive' ? u.stance : undefined })),
+        st: u.stance !== 'aggressive' ? u.stance : undefined,
+        lv: u.hero ? u.level : undefined, xp: u.hero ? u.xp : undefined })),
       buildings: this.buildings.filter(b => !b.dead).map(b => ({ o: b.owner, k: b.key, tx: b.tx, ty: b.ty,
         hp: Math.round(b.hp), c: b.complete, p: +(b.progress || 0).toFixed(3),
         q: b.trainQueue.map(j => ({ key: j.key, t: +j.t.toFixed(2), total: j.total, up: !!j.upgrade })),
@@ -1913,6 +1945,11 @@ export class Game {
       const def = this.defFor(us.o, 'unit', us.k); if (!def) continue;
       const hpMult = this.players[us.o]?.hpMult || 1;   // honor researched HP upgrades
       const u = new Unit(this, us.o, { ...def, hp: Math.round(def.hp * hpMult) }, us.k, us.x, us.z);
+      // restore hero rank first so max HP reflects its level, then clamp current HP
+      if (u.hero && us.lv > 1) {
+        u.level = us.lv; u.xp = us.xp || 0;
+        u.maxHp = Math.round(u.maxHp * Math.pow(1.15, us.lv - 1));
+      }
       u.hp = Math.min(u.maxHp, us.hp);
       u.leash = us.leash || null;
       if (us.st) u.setStance(us.st);
@@ -2117,7 +2154,16 @@ export class Game {
   }
   unitAvailable(owner, key) {
     const def = this.players[owner].faction.units[key];
-    return !def.requires || this.hasBuilding(owner, def.requires);
+    if (def.requires && !this.hasBuilding(owner, def.requires)) return false;
+    // "One hero may walk with your host" — block a second while one lives or is queued
+    if (def.hero && this.hasHero(owner)) return false;
+    return true;
+  }
+  // true if this seat already fields a hero (alive) or has one in a train queue
+  hasHero(owner) {
+    if (this.units.some(u => u.owner === owner && u.hero && !u.dead)) return true;
+    return this.buildings.some(b => b.owner === owner && !b.dead &&
+      b.trainQueue?.some(j => this.players[owner].faction.units[j.key]?.hero));
   }
   buildingAvailable(owner, key) {
     const def = this.players[owner].faction.buildings[key];
