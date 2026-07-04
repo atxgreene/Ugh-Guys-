@@ -335,6 +335,37 @@ test.describe('touch controls', () => {
   });
 });
 
+test('campaign: every mission boots, scripts beats, tracks objectives, and can be won', async ({ page }) => {
+  await startMatch(page);
+  // fire the first beat of each mission, then satisfy its win condition
+  for (const [id, secs] of [['m1', 80], ['m2', 5], ['m3', 95], ['m4', 12], ['m5', 65]]) {
+    const r = await page.evaluate(([id, s]) => window.__campaignCheck(id, s, true), [id, secs]);
+    expect(r.mode, `${id} mode`).toBe('campaign');
+    expect(r.playerMain, `${id} player base`).toBe(true);     // the mission gave the player a hall
+    expect(r.objective.length, `${id} objective`).toBeGreaterThan(0);
+    expect(r.forcedOver, `${id} win fires`).toBe(true);        // satisfying the objective ends the mission…
+    expect(r.forcedWinner, `${id} is a win`).toBe(0);          // …as a victory
+  }
+  // m1 specifically scripts a raider band via a timed beat
+  const m1 = await page.evaluate(() => window.__campaignCheck('m1', 80, false));
+  expect(m1.beatsFired).toBeGreaterThan(0);
+  expect(m1.hostiles).toBeGreaterThan(0);
+  expect(m1.objective).toContain('raiders');
+});
+
+test('campaign progression: the menu gates missions in order', async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.removeItem('sotw_settings'); } catch {} });
+  await page.goto('/');
+  await page.waitForSelector('#btn-campaign', { timeout: 15_000 });
+  await page.click('#btn-campaign');
+  await page.waitForSelector('#campaign.show .camp-mission', { timeout: 5_000 });
+  const rows = page.locator('#camp-list .camp-mission');
+  expect(await rows.count()).toBe(5);                              // all five acts listed
+  await expect(rows.nth(0)).not.toHaveClass(/locked/);             // Act I open from the start
+  await expect(rows.nth(1)).toHaveClass(/locked/);                 // Act II gated until I is won
+  expect(await rows.nth(1).isDisabled()).toBe(true);
+});
+
 test('wild events: hidden content is seeded onto normal maps and announced', async ({ page }) => {
   await startMatch(page);
   const scott = await page.evaluate(() => window.__wildCheck(92));   // seed%100 = 92 → Scott band

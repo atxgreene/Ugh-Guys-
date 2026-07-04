@@ -995,12 +995,18 @@ export class Game {
     // Deluge) pits the lone player base against deterministic, escalating monster
     // waves — no enemy seat, score is how many waves you outlast. Mode is part of the
     // sim (waves spawn in update), so it rides the replay header and saves.
-    this.mode = opts.mode === 'survival' ? 'survival' : 'standard';
+    this.mode = opts.mode === 'survival' ? 'survival'
+      : opts.mode === 'campaign' ? 'campaign' : 'standard';
     this.wave = 0;                 // survival: last wave that has risen
     this.nextWaveAt = 70;          // survival: sim time of the next wave
     this.isDaily = opts.daily || null;   // date string when this is the Daily Trial (UI-only)
     this.slainBosses = [];         // boss keys felled by the local player's seat (records)
     this.greeneRazed = false;      // House of Greene destroyed by seat 0 (records)
+    // Campaign: a scripted mission drives objectives, dialogue beats and custom win/
+    // lose. The mission decides victory (not the standard last-one-standing rule).
+    this.mission = opts.mission || null;
+    this.objective = this.mission ? (this.mission.objective || '') : '';
+    this._camp = { fired: new Set(), won: false };
 
     // Real players fill owner ids 0..numPlayers-1; the neutral "Wild" pseudo-player is
     // always LAST (owner id === numPlayers). For 1v1 that keeps neutral at id 2 exactly
@@ -1785,9 +1791,10 @@ export class Game {
         if (grain) u.orderGather(grain);
       }
     }
-    this.spawnMonsterLairs();
+    if (this.mode !== 'campaign') this.spawnMonsterLairs();   // missions place their own foes
     this.recalcSupply();
-    this.rollWildEvents();
+    if (this.mission) { try { this.mission.onStart?.(this); } catch (e) { console.warn('mission onStart', e); } }
+    else this.rollWildEvents();
   }
 
   // Neutral strength scalar from match difficulty — bosses and guardians hit
@@ -2489,6 +2496,42 @@ export class Game {
     this.emit('selection');
   }
 
+  // ---- campaign: scripted missions ----
+  // A mission fires timed story beats (dialogue, reinforcements, reveals), keeps the
+  // HUD objective current, and decides victory/defeat itself. Runs in the sim update
+  // like the survival director; campaigns aren't networked, so this stays simple.
+  updateCampaign() {
+    if (this.mode !== 'campaign' || this.over || !this.mission) return;
+    const m = this.mission, fired = this._camp.fired;
+    (m.beats || []).forEach((b, i) => {
+      if (!fired.has(i) && this.time >= b.at) { fired.add(i); try { b.do(this); } catch (e) { console.warn('beat', e); } }
+    });
+    if (m.objectiveText) { try { this.objective = m.objectiveText(this) || this.objective; } catch {} }
+    // defeat: the mission's own rule, else the classic "your hall has fallen"
+    const lost = m.lose ? m.lose(this) : (!this.playerMain || this.playerMain.dead);
+    if (lost) { this.endGame(1, this.playerMain?.pos); return; }
+    if (!this._camp.won && m.win && m.win(this)) {
+      this._camp.won = true;
+      this.endGame(0, this.playerMain?.pos);
+    }
+  }
+
+  // Fire a portrait dialogue line (reuses the first-contact dialogue UI).
+  dialog(portraitKey, name, line) { this.emit('dialogue', `portraits/${portraitKey}.png`, name, line); }
+
+  // Spawn a hostile neutral raider marching on the player's hall (mission reinforcements
+  // and survival waves share this shape). Returns the unit.
+  spawnRaider(defKey, tx, ty, mult = 1) {
+    const def = NEUTRAL_UNIT_DEFS[defKey] || NEUTRALS.devourer;
+    const w = findNearestWalkable(this.map, Math.floor(tx), Math.floor(ty), 14, 1) || { x: tx | 0, y: ty | 0 };
+    const u = new Unit(this, this.NEUTRAL, this.scaleNeutral(def, mult), defKey, (w.x + 0.5) * TILE, (w.y + 0.5) * TILE);
+    this.units.push(u);
+    const t = this.playerMain && !this.playerMain.dead ? this.playerMain.pos
+      : { x: (this.map.basePlayer.x + 0.5) * TILE, z: (this.map.basePlayer.y + 0.5) * TILE };
+    u.orderMove(t.x + (this.rand() - 0.5) * 6, t.z + (this.rand() - 0.5) * 6, true);
+    return u;
+  }
+
   // ---- survival mode: The Deluge ----
   // Escalating monster waves march on the player's base. Everything here is pure
   // simulation (this.rand + sim time only), so waves are identical across replays,
@@ -2618,6 +2661,9 @@ export class Game {
         if (!hasMain(this.localPlayer)) this.endGame(1, b.pos);
         return;
       }
+      // Campaign decides victory/defeat itself (updateCampaign); a razed player main
+      // is caught there too, so don't run the standard last-one-standing rule.
+      if (this.mode === 'campaign') return;
       const alive = [];
       for (let o = 0; o < this.numPlayers; o++) if (hasMain(o)) alive.push(o);
       if (alive.length <= 1) {
@@ -2874,6 +2920,7 @@ export class Game {
     // every AI seat (skirmish/replay: seats 1..N-1 via spawnAIs; net matches: none)
     if (this.ais) for (const ai of this.ais) ai.update(dt);
     this.updateSurvival();
+    this.updateCampaign();
   }
 
   updateSky(dt) {

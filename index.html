@@ -267,6 +267,49 @@
       border: 1px solid #4a6a3a; padding: 8px 20px; cursor: pointer; font-family: inherit; border-radius: 4px;
       font-size: 13px; letter-spacing: 1px; }
     #btn-records:hover { border-color: #9be86e; }
+    /* campaign menu button + mission select + briefing */
+    #btn-campaign { margin-top: 2px; background: linear-gradient(180deg, #2a2436, #16121f); color: #cbb8e6;
+      border: 1px solid #5a4a7a; padding: 9px 22px; cursor: pointer; font-family: inherit; border-radius: 4px;
+      font-size: 14px; letter-spacing: 1px; }
+    #btn-campaign:hover { border-color: #9a7ad0; box-shadow: 0 0 14px rgba(154,122,208,0.25); }
+    #campaign, #briefing { position: absolute; inset: 0; z-index: 61; display: none; align-items: center;
+      justify-content: center; background: rgba(5,5,8,0.8); }
+    #campaign.show, #briefing.show { display: flex; }
+    #camp-card, #brief-card { width: min(700px, 93vw); max-height: 86vh; overflow: auto; padding: 24px 28px;
+      background: linear-gradient(180deg, rgba(30,26,40,0.98), rgba(14,12,20,0.98));
+      border: 2px solid transparent; border-image: linear-gradient(135deg, #4a3a6a, #9a7ad0, #4a3a6a) 1;
+      border-radius: 6px; box-shadow: 0 10px 44px rgba(0,0,0,0.8); }
+    #camp-head { color: #cbb8e6; font-weight: normal; letter-spacing: 2px; margin-bottom: 16px; }
+    #camp-list { display: flex; flex-direction: column; gap: 9px; }
+    .camp-mission { display: grid; grid-template-columns: 66px 1fr; grid-template-rows: auto auto; column-gap: 12px;
+      text-align: left; padding: 11px 14px; cursor: pointer; font-family: inherit; border-radius: 5px;
+      background: rgba(0,0,0,0.28); border: 1px solid #3a3352; color: #d8d2c4; }
+    .camp-mission:hover:not(.locked) { border-color: #9a7ad0; background: rgba(154,122,208,0.1); }
+    .camp-mission.locked { opacity: 0.5; cursor: default; }
+    .camp-mission.done { border-color: #7a6a4a; }
+    .camp-act { grid-row: 1 / 3; align-self: center; color: #9a7ad0; font-size: 12px; letter-spacing: 2px;
+      text-transform: uppercase; }
+    .camp-name { color: #e6c074; font-size: 15px; }
+    .camp-obj { color: #9a90a4; font-size: 12px; font-style: italic; }
+    #brief-act { color: #9a7ad0; letter-spacing: 3px; text-transform: uppercase; font-size: 12px; }
+    #brief-name { color: #e6c074; font-weight: normal; letter-spacing: 2px; font-size: 24px; margin: 4px 0 12px; }
+    #brief-text { color: #c8c0d4; line-height: 1.7; max-width: 60ch; }
+    #brief-obj { margin-top: 14px; color: #ffd56e; font-size: 14px; }
+    #brief-faction { color: #9a90a4; font-size: 13px; margin-top: 4px; font-style: italic; }
+    .brief-actions { display: flex; gap: 12px; margin-top: 22px; align-items: center; }
+    #brief-begin { flex: 1; background: linear-gradient(180deg, #3a2e1c, #221a10); color: #e6c074;
+      border: 1px solid #7a5a2c; padding: 11px; font-size: 15px; cursor: pointer; font-family: inherit;
+      letter-spacing: 2px; border-radius: 4px; }
+    #brief-begin:hover { background: linear-gradient(180deg, #4a3a24, #2a2014); border-color: #e6c074; }
+    #btn-campaign-next { background: linear-gradient(180deg, #2e2640, #1a1428); color: #cbb8e6;
+      border: 1px solid #6a5a9a; padding: 10px 20px; cursor: pointer; font-family: inherit; border-radius: 4px;
+      letter-spacing: 1px; margin: 0 6px; }
+    /* in-mission objective banner, top-center under the topbar */
+    #objective-panel { top: 48px; left: 50%; transform: translateX(-50%); z-index: 12; max-width: 90vw;
+      padding: 6px 18px; background: rgba(20,16,26,0.9); border: 1px solid #5a4a7a; border-radius: 16px;
+      color: #e6d8b0; font-size: 13px; letter-spacing: 0.5px; text-align: center; }
+    #objective-panel::before { content: '⚑ '; color: #9a7ad0; }
+
     #records { position: absolute; inset: 0; z-index: 60; display: none; align-items: center;
       justify-content: center; background: rgba(5,5,8,0.75); }
     #records.show { display: flex; }
@@ -626,6 +669,7 @@
         <label><span class="md-label">Map Size</span><select id="sel-mapsize"></select></label>
       </div>
       <button id="btn-continue" style="display:none">Continue Campaign</button>
+      <button id="btn-campaign">📜 Campaign</button>
       <button id="btn-daily">☀ Daily Trial</button>
       <button id="btn-records">🏆 Records</button>
       <button id="btn-replay" style="display:none">▶ Watch a Replay</button>
@@ -781,7 +825,31 @@
     <div id="mp-connlost"><div class="mp-cl-card"><span class="mp-spinner big"></span><div class="mp-cl-title" id="mp-cl-title">Opponent reconnecting…</div><div class="mp-cl-sub" id="mp-cl-sub">Holding the line.</div><button id="mp-cl-quit" class="lobby-ghost">Abandon match</button></div></div>
     <div id="net-ping" style="display:none"></div>
     <div id="selbox"></div>
-    <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-restart">Return to the Gathering</button><button id="btn-dlreplay" style="display:none">⭳ Download Replay</button></div>
+    <div id="gameover"><h1>VICTORY</h1><p></p><button id="btn-campaign-next" style="display:none">Next Mission ▸</button><button id="btn-restart">Return to the Gathering</button><button id="btn-dlreplay" style="display:none">⭳ Download Replay</button></div>
+    <!-- campaign mission select -->
+    <div id="campaign">
+      <div id="camp-card">
+        <h2 id="camp-head">The Chronicle of the Fields</h2>
+        <div id="camp-list"></div>
+        <button id="camp-close" class="set-close">Close</button>
+      </div>
+    </div>
+    <!-- mission briefing -->
+    <div id="briefing">
+      <div id="brief-card">
+        <div id="brief-act">Act I</div>
+        <h2 id="brief-name">Mission</h2>
+        <p id="brief-text"></p>
+        <div id="brief-obj"></div>
+        <div id="brief-faction"></div>
+        <div class="brief-actions">
+          <button id="brief-back" class="lobby-ghost">◂ Back</button>
+          <button id="brief-begin">Begin ▸</button>
+        </div>
+      </div>
+    </div>
+    <!-- in-mission objective banner -->
+    <div class="hud" id="objective-panel" style="display:none"><span id="objective-text"></span></div>
     <div id="records">
       <div id="rec-card">
         <h2 id="rec-head">🏆 Records</h2>
