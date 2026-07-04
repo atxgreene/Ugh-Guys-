@@ -20,6 +20,10 @@ const TRAITS = {
 
 let current = null; // { game, ai, controls, ui, raf }
 const SAVE_KEY = 'sotw_save_v1';
+
+// The faction the local player commands — drives the ambient drone's key and the
+// unit acknowledge blips, so each side sounds like itself.
+const seatFaction = (game) => game?.factionKeys?.[game.localPlayer] ?? game?.pfKey ?? 'menu';
 const AUTOSAVE_SECONDS = 45;
 
 // Fixed-timestep simulation. The sim advances in deterministic SIM_DT ticks
@@ -866,7 +870,8 @@ function startNetGame(transport, header, you, players) {
   session.start();
   controls.intro = 0; ui.hideIntroCard();
   ui.toast(`⚔ Networked match — you are Player ${you + 1} (${FACTIONS[factions[you]]?.name || ''}). Press Enter to chat.`);
-  if (Settings.get('music')) Music.start();
+  Sound.setFaction(seatFaction(game));
+  if (Settings.get('music')) Music.play(seatFaction(game));
 
   setupMatchChat(transport, you);
 
@@ -996,7 +1001,8 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
   window.__game = game; window.__controls = controls;
 
-  if (Settings.get('music')) Music.start();   // user gesture (faction click) already unlocked audio
+  Sound.setFaction(seatFaction(game));
+  if (Settings.get('music')) Music.play(seatFaction(game));   // user gesture (faction click) already unlocked audio
 
   if (loading) { controls.intro = 0; ui.hideIntroCard(); ui.toast(`Campaign restored — ${game.map.biome.name}.`); }
   else if (game.mode === 'campaign') {
@@ -1070,7 +1076,8 @@ function returnToMenu() {
   try { _mp.transport?.close?.(); } catch {}
   _mp = {};
   document.getElementById('lobby')?.classList.remove('show');
-  Music.stop();
+  // hand the in-game score back to the calm menu ambience (audio is already unlocked here)
+  if (Settings.get('music')) Music.play('menu'); else Music.stop();
   hideCoach();
   document.getElementById('help')?.classList.remove('show');
   document.getElementById('settings').style.display = 'none';
@@ -1207,7 +1214,7 @@ function bindShell() {
     b.addEventListener('click', () => {
       const on = b.dataset.m === 'on';
       Settings.set('music', on);
-      if (on) { if (current) Music.start(); } else Music.stop();
+      if (on) { Music.play(current ? seatFaction(current.game) : 'menu'); } else Music.stop();
       syncSeg('set-music', 'm', b.dataset.m);
     });
   }
@@ -1486,6 +1493,33 @@ window.__wildCheck = (seed) => {
   };
 };
 
+// Headless audio-identity probe: no ears needed. Verifies the acknowledge blips are
+// drawn from each faction's own palette (and cycle), that the ambient drone switches
+// its faction voice, and that the new event stingers exist and don't throw.
+window.__audioCheck = () => {
+  Sound.setFaction('covenant'); Sound.select(); const cov = Sound._lastAck;
+  Sound.setFaction('nephilim'); Sound.select(); const nep = Sound._lastAck;
+  Sound.setFaction('watchers'); Sound.select(); const wat = Sound._lastAck;
+  // cycling: three consecutive selects for one faction should span >1 distinct pitch
+  Sound.setFaction('covenant');
+  const cycle = [0, 0, 0].map(() => { Sound.select(); return Sound._lastAck; });
+  const cycles = new Set(cycle).size > 1;
+  // drone voicing switches per faction (real Chromium has AudioContext)
+  let droneSwitched = false;
+  try {
+    Music.play('nephilim'); const a = Music._faction;
+    Music.play('watchers'); const b = Music._faction;
+    Music.stop();
+    droneSwitched = a === 'nephilim' && b === 'watchers';
+  } catch {}
+  // stingers must be callable without throwing
+  let stingersOk = true;
+  try { Sound.bossSlain(); Sound.achievement(); Sound.wave(1); Sound.wave(7); }
+  catch { stingersOk = false; }
+  const distinct = new Set([cov, nep, wat]).size === 3;
+  return { cov, nep, wat, distinct, cycles, droneSwitched, stingersOk };
+};
+
 // Headless campaign probe: build a mission by id and fast-forward `seconds`, reporting
 // that it boots in campaign mode, fires its beats (dialogue/spawns), and tracks the
 // objective. With forceWin, it satisfies the mission's win condition afterward and
@@ -1534,6 +1568,15 @@ window.__campaignCheck = (id, seconds = 20, forceWin = false) => {
   }
   bindShell();
   buildMenu();
+  // Menu ambience: WebAudio can't sound until the user interacts, so on the very first
+  // gesture (while still on the menu, no match running) fade in the calm neutral drone.
+  const startMenuAmbience = () => {
+    window.removeEventListener('pointerdown', startMenuAmbience);
+    window.removeEventListener('keydown', startMenuAmbience);
+    if (!current && Settings.get('music')) Music.play('menu');
+  };
+  window.addEventListener('pointerdown', startMenuAmbience, { once: false });
+  window.addEventListener('keydown', startMenuAmbience, { once: false });
   // Deep-link: opening an invite link (?join=CODE) drops you straight into that lobby.
   const code = new URLSearchParams(location.search).get('join');
   if (code) { try { history.replaceState(null, '', location.pathname); } catch {} openLobby(code); }

@@ -1019,6 +1019,7 @@ export class Game {
     // on shared tiles. Clamp here so every caller inherits the limit.
     if (factionKeys.length > 4) factionKeys = factionKeys.slice(0, 4);
     this.numPlayers = factionKeys.length;
+    this.factionKeys = factionKeys;   // per-seat faction ids (audio/UI read the local seat's)
     this.NEUTRAL = this.numPlayers;   // owner id of the neutral pseudo-player
     this.players = factionKeys.map(k => this.makePlayer(FACTIONS[k]));
     this.players.push({ faction: { color: NEUTRAL_COLOR, glow: NEUTRAL_GLOW, name: 'The Wild' }, resources: {}, dmgMult: 1, armorAdd: 0, hpMult: 1, upgrades: new Set() });
@@ -2540,6 +2541,7 @@ export class Game {
     if (this.mode !== 'survival' || this.over || this.time < this.nextWaveAt) return;
     this.wave++;
     const w = this.wave;
+    Sound.wave(w);   // a war-horn that climbs with the wave
     // cadence tightens as the flood rises; size and stat scaling climb steadily.
     // The opening waves are deliberately soft (weaker than an obelisk guard) — the
     // player is still raising walls; by wave 10 the horrors outclass lair guards.
@@ -2607,7 +2609,7 @@ export class Game {
     }
     if (owner === 0) {
       this.slainBosses.push(boss.key);   // records/achievements read this at game end
-      Sound.win();
+      Sound.bossSlain();
       const spoils = Object.entries(boss.def.bounty).map(([k, v]) => `${v} ${k}`).join(', ');
       this.emit('toast', `☠ ${boss.def.name} is slain! Its hoard — ${spoils} — is yours.`);
     }

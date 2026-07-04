@@ -10,6 +10,8 @@
 
 // Convenience: a mission's per-game scratchpad is game._camp (missions never store their
 // own state, so a mission object is reusable across playthroughs).
+import { Sound } from './audio.js';
+
 const scratch = (g) => g._camp;
 
 export const MISSIONS = [
@@ -126,7 +128,8 @@ export const MISSIONS = [
         const bp = g.map.basePlayer;
         for (let i = 0; i < n; i++) g.spawnRaider('devourer', bp.x + (i % 2 ? 24 : -24), bp.y + (i * 3 - n), mult);
         if (boss) g.spawnRaider(boss, bp.x + 22, bp.y - 6, mult);
-        g.emit(k >= 6 ? 'toast' : 'toast', `🌊 Wave ${k + 1} breaks upon your walls${boss ? ' — a champion of the deep leads it!' : ''}.`);
+        Sound.wave(k + 1);
+        g.emit('toast', `🌊 Wave ${k + 1} breaks upon your walls${boss ? ' — a champion of the deep leads it!' : ''}.`);
       },
     })),
     objectiveText(g) {
