@@ -21,6 +21,7 @@ import { Settings } from './settings.js';
 let nextId = 1;
 
 const NEUTRAL_COLOR = 0x808078, NEUTRAL_GLOW = 0xc2b89a;
+const UGRID_CELL = 8;   // spatial-hash cell size (world units) for unitsNear queries
 // Distinct per-seat HUD colours so free-for-all opponents are tell-apart on the minimap,
 // health bars and selection rings. Seats 0/1 keep the classic green/red; 2/3 add blue/gold.
 const SEAT_CSS = ['#9be86e', '#ff5040', '#5aa0ff', '#ffd23c'];
@@ -613,11 +614,14 @@ export class Unit extends Entity {
     // idle breathing keeps standing units alive; running bob while moving
     const bob = this.moving ? Math.abs(Math.sin(this.animT)) * 0.12 : Math.sin(this.animT) * 0.03;
     this.mesh.position.set(this.pos.x, h + bob, this.pos.z);
-    this.mesh.rotation.y = this.facing;
-    this.mesh.rotation.z = this.moving ? Math.sin(this.animT) * 0.06 : 0;
-    // bend/swing while harvesting: a rhythmic chop forward, else lean into the run
-    this.mesh.rotation.x = this.harvesting ? Math.max(0, Math.sin(this.animT)) * 0.5
-      : this.moving ? 0.05 : 0;
+    // bend/swing while harvesting: a rhythmic chop forward, else lean into the run.
+    // One batched rotation write (a single Euler→quaternion recompute instead of
+    // three), skipped entirely when the pose is unchanged — i.e. most idle units.
+    const rx = this.harvesting ? Math.max(0, Math.sin(this.animT)) * 0.5 : this.moving ? 0.05 : 0;
+    const rz = this.moving ? Math.sin(this.animT) * 0.06 : 0;
+    const rot = this.mesh.rotation;
+    if (Math.abs(rot.y - this.facing) > 1e-4 || Math.abs(rot.x - rx) > 1e-4 || Math.abs(rot.z - rz) > 1e-4)
+      rot.set(rx, this.facing, rz);
     // attack: anticipation (pull back) then a snap strike forward, settling home
     if (this.lungeT > 0) {
       this.lungeT -= dt;
@@ -2021,13 +2025,52 @@ export class Game {
 
   // ---------- queries ----------
   allCombatants() { return this._combat || (this._combat = [...this.units, ...this.buildings]); }
-  unitsNear(pos, r, exclude) {
-    const out = [];
-    for (const u of this.units) {
-      if (u === exclude || u.dead) continue;
-      if (Math.abs(u.pos.x - pos.x) > r || Math.abs(u.pos.z - pos.z) > r) continue;
-      out.push(u);
+  // Spatial hash over units, rebuilt once per sim tick. unitsNear is called by every
+  // moving unit every tick (crowd/separation checks), so the old full array scan made
+  // crowds O(n²). The grid matches the linear scan's results: candidates come from
+  // cells padded by more than any unit can move within a tick (so none are missed),
+  // the precise box test runs on live positions, and results are sorted back to
+  // units-array order. Sole difference: a unit SPAWNED mid-tick becomes visible to
+  // neighbours next tick — deterministic (pure sim), and no caller runs after spawns.
+  _rebuildUnitGrid() {
+    const g = (this._ugrid ||= new Map());
+    g.clear();
+    const arr = this.units, cs = UGRID_CELL;
+    for (let i = 0; i < arr.length; i++) {
+      const u = arr[i];
+      if (u.dead) continue;
+      u._gi = i;
+      const key = ((u.pos.x / cs) | 0) * 65536 + ((u.pos.z / cs) | 0);
+      let b = g.get(key);
+      if (!b) g.set(key, (b = []));
+      b.push(u);
     }
+  }
+  unitsNear(pos, r, exclude) {
+    const g = this._ugrid;
+    if (!g) {   // before the first tick's rebuild — fall back to the plain scan
+      const out = [];
+      for (const u of this.units) {
+        if (u === exclude || u.dead) continue;
+        if (Math.abs(u.pos.x - pos.x) > r || Math.abs(u.pos.z - pos.z) > r) continue;
+        out.push(u);
+      }
+      return out;
+    }
+    const cs = UGRID_CELL, pad = r + 1.0;   // > max per-tick movement since rebuild
+    const x0 = ((pos.x - pad) / cs) | 0, x1 = ((pos.x + pad) / cs) | 0;
+    const z0 = ((pos.z - pad) / cs) | 0, z1 = ((pos.z + pad) / cs) | 0;
+    const out = [];
+    for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) {
+      const b = g.get(cx * 65536 + cz);
+      if (!b) continue;
+      for (const u of b) {
+        if (u === exclude || u.dead) continue;
+        if (Math.abs(u.pos.x - pos.x) > r || Math.abs(u.pos.z - pos.z) > r) continue;
+        out.push(u);
+      }
+    }
+    if (out.length > 1) out.sort((a, b) => a._gi - b._gi);
     return out;
   }
   nearestDropoff(owner, pos) {
@@ -2658,6 +2701,7 @@ export class Game {
       this.rec.frame++;
     }
     this.time += dt;
+    this._rebuildUnitGrid();   // fresh spatial hash for this tick's unitsNear queries
     this.combatHeat = Math.max(0, this.combatHeat - dt * 0.14);   // cools between clashes
     this._combat = null;
     // defeat: the world slowly darkens toward the gathering Flood
