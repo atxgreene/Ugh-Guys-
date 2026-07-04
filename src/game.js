@@ -65,17 +65,19 @@ const TIME_PRESETS = {
   noon:  { name: 'High Sun', sun: 0xfff0d0, sunI: 3.1, hemiSky: 0x9ab0d8, hemiGround: 0x46402e, hemiI: 1.7,
            rim: 0x9fb4ff, rimI: 0.7, fog: 0x9aa2b0, fogD: 0.0028, bg: 0x6a7892, env: 0.9,
            skyTop: '#3a5a9a', skyHorizon: '#b9c2cf', skyGround: '#4a4030', exposure: 1.5, storm: 0.15 },
-  dusk:  { name: 'Red Dusk', sun: 0xff9a5a, sunI: 2.85, hemiSky: 0x6e5c82, hemiGround: 0x3c2c1e, hemiI: 1.5,
-           rim: 0x7a6cff, rimI: 1.1, fog: 0x402636, fogD: 0.0046, bg: 0x36222e, env: 0.74,
+  dusk:  { name: 'Red Dusk', sun: 0xff9a5a, sunI: 2.85, hemiSky: 0x6e5c82, hemiGround: 0x3c2c1e, hemiI: 1.62,
+           rim: 0x7a6cff, rimI: 1.25, fog: 0x402636, fogD: 0.0046, bg: 0x36222e, env: 0.74, fogFloor: 0.18,
            skyTop: '#1a1430', skyHorizon: '#d9622e', skyGround: '#1a1012', exposure: 1.6, storm: 0.4 },
-  night: { name: 'The Watch of Night', sun: 0xaebfe8, sunI: 1.9, hemiSky: 0x46587e, hemiGround: 0x282420, hemiI: 1.6,
-           rim: 0x6f8cff, rimI: 1.3, fog: 0x141b2e, fogD: 0.0044, bg: 0x10131f, env: 0.72,
-           skyTop: '#05060f', skyHorizon: '#2a3358', skyGround: '#06060a', exposure: 1.7, storm: 0.45, night: true },
-  storm: { name: 'The Gathering Flood', sun: 0x9aa0b2, sunI: 2.1, hemiSky: 0x4c586e, hemiGround: 0x2c2c36, hemiI: 1.6,
-           rim: 0x6a7cc0, rimI: 1.0, fog: 0x2a313f, fogD: 0.0052, bg: 0x232836, env: 0.74,
-           skyTop: '#10141e', skyHorizon: '#3a4150', skyGround: '#0c0e14', exposure: 1.5, storm: 1.0, lightning: true },
-  bloodmoon: { name: 'The Blood Moon', sun: 0xd8907a, sunI: 2.0, hemiSky: 0x5c3a48, hemiGround: 0x2a2022, hemiI: 1.55,
-           rim: 0xff6a5a, rimI: 1.25, fog: 0x2a1520, fogD: 0.0046, bg: 0x1c0f16, env: 0.72,
+  // dark moods lift the hemisphere fill + rim so units stay readable, and hold a higher
+  // fog-of-war floor so explored ground doesn't crush to black on a bright phone screen.
+  night: { name: 'The Watch of Night', sun: 0xaebfe8, sunI: 2.15, hemiSky: 0x50628a, hemiGround: 0x2a2622, hemiI: 1.95,
+           rim: 0x8fb0ff, rimI: 1.7, fog: 0x141b2e, fogD: 0.0044, bg: 0x10131f, env: 0.8, fogFloor: 0.24,
+           skyTop: '#05060f', skyHorizon: '#2a3358', skyGround: '#06060a', exposure: 1.75, storm: 0.45, night: true },
+  storm: { name: 'The Gathering Flood', sun: 0x9aa0b2, sunI: 2.35, hemiSky: 0x54607a, hemiGround: 0x2c2c36, hemiI: 1.9,
+           rim: 0x86a0e0, rimI: 1.35, fog: 0x2a313f, fogD: 0.0052, bg: 0x232836, env: 0.8, fogFloor: 0.22,
+           skyTop: '#10141e', skyHorizon: '#3a4150', skyGround: '#0c0e14', exposure: 1.55, storm: 1.0, lightning: true },
+  bloodmoon: { name: 'The Blood Moon', sun: 0xe0a086, sunI: 2.2, hemiSky: 0x66404e, hemiGround: 0x2a2022, hemiI: 1.9,
+           rim: 0xff8a7a, rimI: 1.6, fog: 0x2a1520, fogD: 0.0046, bg: 0x1c0f16, env: 0.78, fogFloor: 0.22,
            skyTop: '#120510', skyHorizon: '#7a2432', skyGround: '#0a0508', exposure: 1.65, storm: 0.5, night: true },
 };
 
@@ -990,7 +992,7 @@ export class Game {
     // this.rand() so a match is fully reproducible from (seed + input stream).
     // Derived from the (now-fixed) map seed so a save/replay reloads identically.
     this.rng = makeRng((this.map.seed ^ 0x53c0ffee) >>> 0);
-    this.scene.add(this.map.buildMesh());
+    this.scene.add(this.map.buildMesh(this.preset.fogFloor ?? 0.14));
     const _wm = this.map.buildWaterMesh();
     if (_wm) this.scene.add(_wm);
     this.map.scatterDoodads(this.scene);

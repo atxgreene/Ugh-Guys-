@@ -1006,30 +1006,76 @@ function returnToMenu() {
   refreshContinue();
 }
 
-// ---------- onboarding coach: a short sequence of first-match nudges ----------
-let coachTimers = [];
+// ---------- onboarding coach: a STATE-REACTIVE tutor ----------
+// Instead of firing four toasts on a timer regardless of what the player is doing, the
+// coach watches the live game and surfaces each lesson the moment its trigger is met —
+// and only if the player hasn't already done the thing. Ordered so it teaches the core
+// loop (gather → build → train → attack) in sequence, plus context nudges (idle workers,
+// first contact, supply block). Runs in the UI layer only; never touches the sim.
+let coachTimer = null, coachHideT = null;
 function hideCoach() {
-  coachTimers.forEach(clearTimeout); coachTimers = [];
+  clearInterval(coachTimer); coachTimer = null;
+  clearTimeout(coachHideT); coachHideT = null;
   document.getElementById('coach')?.classList.remove('show');
 }
 function showCoachHints() {
-  if (Settings.get('coachSeen')) return;     // once per player, ever
+  if (Settings.get('coachSeen')) return;     // once per player, ever (Settings → Replay tips resets)
   const el = document.getElementById('coach');
   if (!el) return;
-  const hints = [
-    '⛏  Select a laborer and right-click grain or timber to gather. Workers win wars.',
-    '🏗  Press B with a laborer selected to build. A granary raises your population cap.',
-    '⚔  Build a barracks, train soldiers, then press F to attack-move toward the enemy.',
-    '☠  Destroy the enemy\'s seat of power to win. Press ? any time for the full controls.',
+
+  const mine = (g, pred) => g.units.filter(u => u.owner === g.localPlayer && !u.dead && pred(u));
+  const hasBuilding = (g, pred) => g.buildings.some(b => b.owner === g.localPlayer && !b.dead && pred(b));
+  const survival = () => current?.game?.mode === 'survival';
+
+  // Each step: id, when(game) trigger, text. `once:false` steps can re-fire (idle workers).
+  const STEPS = [
+    { id: 'gather', text: '⛏  Drag-select your laborers, then tap grain or timber to gather. Workers win wars.',
+      when: (g) => g.time > 2 },
+    { id: 'build', text: '🏗  Tap Build (B) with a laborer selected. A granary raises your population cap.',
+      when: (g) => mine(g, u => u.def.worker && u.gatherNode).length >= 1 || g.time > 28 },
+    { id: 'supply', text: '⌂  Population capped — raise a granary (or your faction\'s supply building) to train more.', once: true,
+      when: (g) => { const p = g.players[g.localPlayer]; return p.supplyCap - p.supplyUsed <= 1 && p.supplyCap > 0 && p.supplyCap < 60; } },
+    { id: 'army', text: '⚔  Build a barracks and train soldiers from it — an army is how you win.',
+      when: (g) => hasBuilding(g, b => b.complete && !b.def.main && b.def.trains?.some(k => !g.players[g.localPlayer].faction.units[k].worker)) },
+    { id: 'attack', text: () => survival()
+        ? '🌊  The Deluge is coming. Mass soldiers and hold near your hall — waves march on YOU.'
+        : '⚔  Select your soldiers and use Attack-Move (F) to advance on the enemy\'s seat of power.',
+      when: (g) => mine(g, u => !u.def.worker && u.def.attack).length >= 2 },
+    { id: 'contact', text: '⚠  You\'re under attack! Tap the red alert to jump there, and rally your fighters.', once: true,
+      when: (g) => g.combatHeat > 0.15 && mine(g, u => u.owner === g.localPlayer).length > 0 && g.lastAlertPos },
+    { id: 'idle', text: '⛏  Idle laborers are wasted wages — tap the ⛏ (top bar) to find and put them to work.', once: true,
+      when: (g) => g.time > 45 && mine(g, u => u.def.worker && u.state === 'idle').length >= 3 },
+    { id: 'help', text: '☰  Tip: the ? button lists every control. Press it any time.',
+      when: (g) => g.time > 150 },
   ];
-  let i = 0;
-  const show = () => {
-    if (i >= hints.length) { el.classList.remove('show'); return; }
-    el.textContent = hints[i++];
+  const shown = new Set();
+  let busyUntil = 0;
+
+  const display = (text) => {
+    el.textContent = typeof text === 'function' ? text() : text;
     el.classList.add('show');
-    coachTimers.push(setTimeout(() => { el.classList.remove('show'); coachTimers.push(setTimeout(show, 600)); }, 7000));
+    busyUntil = performance.now() + 8200;
+    clearTimeout(coachHideT);
+    coachHideT = setTimeout(() => el.classList.remove('show'), 8000);
   };
-  coachTimers.push(setTimeout(show, 6000));   // let the intro flyover land first
+
+  coachTimer = setInterval(() => {
+    const g = current?.game;
+    if (!g || g.over || g.paused) return;
+    if (performance.now() < busyUntil) return;   // let the current tip breathe
+    for (const s of STEPS) {
+      if (shown.has(s.id)) continue;
+      if (s.when(g)) {
+        // an ordered core step is skipped (already satisfied) rather than shown late —
+        // e.g. if the player already has an army, don't teach "build a barracks"
+        shown.add(s.id);
+        display(s.text);
+        break;
+      }
+    }
+    if (shown.size >= STEPS.length) hideCoach();
+  }, 1000);
+
   Settings.set('coachSeen', true);
 }
 
@@ -1096,6 +1142,13 @@ function bindShell() {
     Sound.select();   // audible preview
   });
 
+  // re-arm the first-match coaching tips (they otherwise show only once, ever)
+  $('set-tips')?.addEventListener('click', () => {
+    Settings.set('coachSeen', false);
+    Sound.click();
+    const b = $('set-tips'); if (b) { b.textContent = 'Tips will replay next match ✓'; b.disabled = true; }
+  });
+
   // help / hotkey reference
   const help = $('help');
   const toggleHelp = () => help?.classList.toggle('show');
@@ -1135,6 +1188,8 @@ function syncSettingsUI() {
   $('set-svol').value = sv; $('set-svol-val').textContent = Math.round(sv * 100) + '%';
   syncSeg('set-quality', 'q', Settings.get('quality'));
   syncSeg('set-music', 'm', Settings.get('music') ? 'on' : 'off');
+  const tips = $('set-tips');
+  if (tips) { tips.disabled = false; tips.textContent = Settings.get('coachSeen') ? 'Replay tips' : 'Tips armed ✓'; }
 }
 
 // test/debug hook: drive deterministic replay playback from a recording object
