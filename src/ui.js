@@ -520,10 +520,14 @@ export class UI {
     setTimeout(() => {
       const div = document.getElementById('gameover');
       div.style.display = 'flex';
-      const g = this.game, survival = g.mode === 'survival';
-      div.querySelector('h1').textContent = survival ? 'THE DELUGE' : winner === 0 ? 'VICTORY' : 'DEFEAT';
-      div.querySelector('h1').style.color = survival ? '#5aa0ff' : winner === 0 ? '#ffd56e' : '#e05540';
-      div.querySelector('p').textContent = survival
+      const g = this.game, survival = g.mode === 'survival', campaign = g.mode === 'campaign';
+      div.querySelector('h1').textContent = campaign ? (winner === 0 ? 'MISSION WON' : 'MISSION LOST')
+        : survival ? 'THE DELUGE' : winner === 0 ? 'VICTORY' : 'DEFEAT';
+      div.querySelector('h1').style.color = campaign ? (winner === 0 ? '#cbb8e6' : '#e05540')
+        : survival ? '#5aa0ff' : winner === 0 ? '#ffd56e' : '#e05540';
+      div.querySelector('p').textContent = campaign
+        ? (winner === 0 ? `Act ${this.campaign?.mission.act} complete — ${this.campaign?.mission.name}.` : `${this.campaign?.mission.name} — the Fields are not yet yours. Try again.`)
+        : survival
         ? `The waters closed over your hall at wave ${g.wave}.${g.isDaily ? ' The Daily Trial is written.' : ' Stand longer next time.'}`
         : winner === 0
           ? `The enemy's seat of power lies in ruin. The age endures — for now.${g.isDaily ? ' The Daily Trial is won.' : ''}`
@@ -539,6 +543,20 @@ export class UI {
         `<span>☩ razed <b>${s.razed}</b></span><span>🕯 lost <b>${s.lost}</b></span>` +
         `<span>⛏ raised <b>${s.trained}</b></span>`;
       document.getElementById('btn-restart').onclick = () => this.onRestart();
+      // campaign: a Next Mission (on a win) or Retry (on a loss) button
+      const nextBtn = document.getElementById('btn-campaign-next');
+      if (nextBtn) {
+        if (campaign) {
+          nextBtn.style.display = 'inline-block';
+          if (winner === 0) {
+            nextBtn.textContent = this.campaign?.hasNext ? 'Next Mission ▸' : 'The Chronicle Complete ✦';
+            nextBtn.onclick = () => this.onCampaignNext?.();
+          } else {
+            nextBtn.textContent = '↻ Retry Mission';
+            nextBtn.onclick = () => this.onCampaignRetry?.();
+          }
+        } else nextBtn.style.display = 'none';
+      }
       // offer the deterministic replay of the match just played
       const dl = document.getElementById('btn-dlreplay');
       if (dl) {
@@ -578,6 +596,14 @@ export class UI {
       this.drawResources();
       this.drawMinimap();
       this.refreshGroupBar();
+      // campaign objective banner tracks the mission's live objective text
+      const objP = document.getElementById('objective-panel');
+      if (objP) {
+        if (this.game.mode === 'campaign' && !this.game.over && this.game.objective) {
+          objP.style.display = 'block';
+          document.getElementById('objective-text').textContent = this.game.objective;
+        } else objP.style.display = 'none';
+      }
       // live-refresh queue/progress text when a building is selected,
       // and cooldown countdown when a unit with an ability is selected
       const s = this.game.selection;

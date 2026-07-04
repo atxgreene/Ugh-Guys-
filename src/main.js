@@ -10,6 +10,7 @@ import { Settings } from './settings.js';
 import { LockstepSession, WebSocketTransport } from './net.js';
 import { initDiscord, isDiscordActivity } from './discord.js';
 import { onGameOver as achievementsOnGameOver, recordsSummary } from './achievements.js';
+import { MISSIONS, missionById, missionIndex } from './campaign.js';
 
 const TRAITS = {
   covenant: 'Balanced economy · strong defenses · disciplined bronze infantry · temple favor',
@@ -67,7 +68,8 @@ function dailyConfig() {
 }
 
 function saveGame(silent) {
-  if (!current || current.game.over) return false;
+  // campaign missions replay from the menu; they aren't autosaved as skirmishes
+  if (!current || current.game.over || current.game.mode === 'campaign') return false;
   try {
     const g = current.game;
     const payload = { data: g.serialize(), meta: { faction: g.pfKey, enemy: g.efKey,
@@ -89,6 +91,61 @@ function loadSavedGame() {
     const { data } = JSON.parse(raw);
     showLoading(() => startGameNow(data.pf, data.ef, data));
   } catch (e) { console.error('Load failed', e); }
+}
+
+// ---------- campaign: mission select, briefing, progress ----------
+function campaignProgress() { return Settings.get('campaign') || {}; }
+// a mission is unlocked if it's the first, or the previous one is completed
+function missionUnlocked(id) {
+  const i = missionIndex(id);
+  if (i <= 0) return true;
+  return !!campaignProgress()[MISSIONS[i - 1].id];
+}
+let _activeMission = null;
+
+function showCampaign() {
+  const ov = document.getElementById('campaign');
+  if (!ov) return;
+  const prog = campaignProgress();
+  const done = MISSIONS.filter(m => prog[m.id]).length;
+  document.getElementById('camp-head').textContent = `The Chronicle of the Fields — ${done}/${MISSIONS.length} won`;
+  document.getElementById('camp-list').innerHTML = MISSIONS.map(m => {
+    const unlocked = missionUnlocked(m.id), complete = !!prog[m.id];
+    const state = complete ? '✦' : unlocked ? '▸' : '🔒';
+    return `<button class="camp-mission ${unlocked ? '' : 'locked'} ${complete ? 'done' : ''}" data-id="${m.id}" ${unlocked ? '' : 'disabled'}>
+      <span class="camp-act">Act ${m.act}</span>
+      <span class="camp-name">${state} ${m.name}</span>
+      <span class="camp-obj">${m.objective}</span></button>`;
+  }).join('');
+  ov.querySelectorAll('.camp-mission').forEach(b => {
+    b.onclick = () => { if (!b.disabled) { Sound.click(); showBriefing(b.dataset.id); } };
+  });
+  ov.classList.add('show');
+  document.getElementById('camp-close').onclick = () => { Sound.click(); ov.classList.remove('show'); };
+}
+
+function showBriefing(id) {
+  const m = missionById(id); if (!m) return;
+  const ov = document.getElementById('briefing');
+  document.getElementById('brief-act').textContent = `Act ${m.act}`;
+  document.getElementById('brief-name').textContent = m.name;
+  document.getElementById('brief-text').textContent = m.brief;
+  document.getElementById('brief-obj').textContent = `Objective: ${m.objective}`;
+  document.getElementById('brief-faction').textContent = `You lead: ${FACTIONS[m.faction].name}`;
+  ov.classList.add('show');
+  document.getElementById('brief-begin').onclick = () => { Sound.click(); ov.classList.remove('show'); startCampaignMission(id); };
+  document.getElementById('brief-back').onclick = () => { Sound.click(); ov.classList.remove('show'); showCampaign(); };
+}
+
+function startCampaignMission(id) {
+  const m = missionById(id); if (!m) return;
+  _activeMission = m;
+  document.getElementById('campaign')?.classList.remove('show');
+  window.__forceOpts = {
+    mode: 'campaign', mission: m, biome: m.biome, timeOfDay: m.mood,
+    seed: m.seed, mapSize: m.mapSize, difficulty: m.difficulty || 'normal',
+  };
+  showLoading(() => startGameNow(m.faction, m.enemy || null));
 }
 
 // Records panel: achievements + headline bests, rendered from local storage.
@@ -244,6 +301,9 @@ function buildMenu() {
   // Records: achievements + bests
   const rec = document.getElementById('btn-records');
   if (rec) rec.onclick = () => { Sound.click(); showRecords(); };
+  // Campaign: the five-mission story arc
+  const camp = document.getElementById('btn-campaign');
+  if (camp) camp.onclick = () => { Sound.click(); showCampaign(); };
   refreshContinue();
 }
 
@@ -889,7 +949,10 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   // Free-for-all: the local player is seat 0, then N AI opponents fill seats 1..N.
   // Saved games are always 1v1 (FFA isn't persisted). Seat 1 uses the chosen enemy
   // faction; extra seats take random factions.
-  const opponents = loading ? 1 : opponentCount();
+  // Campaign missions dictate their own opponent count: 1 AI seat if the mission has an
+  // enemy faction, else none (its foes are scripted neutrals). Skirmish uses the menu.
+  const mission = window.__forceOpts?.mission || null;
+  const opponents = loading ? 1 : mission ? (mission.enemy ? 1 : 0) : opponentCount();
   const others = Object.keys(FACTIONS).filter(k => k !== playerFactionKey);
   const aiFactions = Array.from({ length: opponents }, (_, i) =>
     i === 0 ? enemyKey : others[Math.floor(Math.random() * others.length)]);
@@ -916,6 +979,19 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   if (loading && game.ai && game._aiState) Object.assign(game.ai, game._aiState);
   // records + achievements observe every finished offline match
   game.on('gameover', (w) => achievementsOnGameOver(game, w, (t) => ui.toast(t)));
+  // campaign: persist progress on victory and wire the end-screen's Next/Retry button
+  if (game.mode === 'campaign' && mission) {
+    ui.campaign = { mission, hasNext: !!MISSIONS[missionIndex(mission.id) + 1] };
+    ui.onCampaignNext = () => {
+      const next = MISSIONS[missionIndex(mission.id) + 1];
+      if (next) showBriefing(next.id); else { returnToMenu(); showCampaign(); }
+    };
+    ui.onCampaignRetry = () => startCampaignMission(mission.id);
+    game.on('gameover', (w) => {
+      if (w !== 0) return;
+      const p = campaignProgress(); p[mission.id] = { at: Date.now() }; Settings.set('campaign', p);
+    });
+  }
   // pin quality if the player chose a fixed level (auto leaves the loop in charge)
   if (game.qualityMode !== 'auto') game.setQualityMode(game.qualityMode);
   window.__game = game; window.__controls = controls;
@@ -923,6 +999,11 @@ function startGameNow(playerFactionKey, enemyKey, loadData, biome) {
   if (Settings.get('music')) Music.start();   // user gesture (faction click) already unlocked audio
 
   if (loading) { controls.intro = 0; ui.hideIntroCard(); ui.toast(`Campaign restored — ${game.map.biome.name}.`); }
+  else if (game.mode === 'campaign') {
+    ui.showIntroCard(FACTIONS[playerFactionKey]);
+    ui.toast(`Act ${mission.act} — ${mission.name}`);
+    ui.toast(`⚑ Objective: ${mission.objective}`);
+  }
   else if (game.mode === 'survival') {
     ui.showIntroCard(FACTIONS[playerFactionKey]);
     ui.toast(`${game.map.biome.name} — the Deluge gathers. The first wave breaks in little over a minute; build fast.`);
@@ -997,6 +1078,7 @@ function returnToMenu() {
   document.getElementById('topbar').style.display = 'none';
   document.getElementById('minimap-wrap').style.display = 'none';
   document.getElementById('groupbar')?.classList.remove('show');
+  const op = document.getElementById('objective-panel'); if (op) op.style.display = 'none';
   document.getElementById('panel').style.display = 'none';
   document.getElementById('gameover').style.display = 'none';
   const pm = document.getElementById('pausemenu'); if (pm) pm.style.display = 'none';
@@ -1402,6 +1484,42 @@ window.__wildCheck = (seed) => {
     lairs: g.lairs?.length || 0,
     notes: g.wildEventNotes || [],
   };
+};
+
+// Headless campaign probe: build a mission by id and fast-forward `seconds`, reporting
+// that it boots in campaign mode, fires its beats (dialogue/spawns), and tracks the
+// objective. With forceWin, it satisfies the mission's win condition afterward and
+// steps once to prove the victory plumbing fires (endGame(0)).
+window.__campaignCheck = (id, seconds = 20, forceWin = false) => {
+  const m = missionById(id);
+  stopGame();
+  const factions = m.enemy ? [m.faction, m.enemy] : [m.faction];
+  const g = new Game(document.getElementById('game-container'), m.faction, m.enemy || 'watchers',
+    { seed: m.seed, biome: m.biome, timeOfDay: m.mood, mapSize: m.mapSize, mode: 'campaign', mission: m, factions });
+  let dialogues = 0; g.on('dialogue', () => dialogues++);   // count from here (onStart already ran)
+  g.ais = m.enemy ? [new AI(g, 1)] : []; g.ai = g.ais[0] || null;
+  window.__game = g; window.__controls = null;
+  current = { game: g, ai: g.ai, controls: null, ui: null, raf: 0 };
+  const ticks = Math.round(seconds * SIM_HZ);
+  for (let i = 0; i < ticks && !g.over; i++) g.update(1 / SIM_HZ);
+  const mid = {
+    id, mode: g.mode, objective: g.objective, dialogues,
+    beatsFired: g._camp.fired.size, beatCount: (m.beats || []).length,
+    hostiles: g.units.filter(u => u.owner === g.NEUTRAL && !u.dead && u.def.attack).length,
+    playerMain: !!(g.playerMain && !g.playerMain.dead),
+    over: g.over, winner: g.winner,
+  };
+  if (forceWin && !g.over) {
+    // satisfy each mission's win condition, then step to let updateCampaign end it
+    if (id === 'm1') g.units.forEach(u => { if (u.owner === g.NEUTRAL && u.def.attack) u.dead = true; });
+    else if (id === 'm2') g.buildings.forEach(b => { if (b.owner === 1 && b.def.main) b.dead = true; });
+    else if (id === 'm3') g.slainBosses.push('scott');
+    else if (id === 'm4') g.greeneRazed = true;
+    else if (id === 'm5') { for (let i = 0; i < SIM_HZ * 2; i++) { g.time = 361; g.update(1 / SIM_HZ); } }
+    g.update(1 / SIM_HZ);
+    mid.forcedOver = g.over; mid.forcedWinner = g.winner;
+  }
+  return mid;
 };
 
 // Boot. When running as a Discord Activity, complete the embedded-app handshake and
