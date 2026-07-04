@@ -107,25 +107,32 @@ export class UI {
         z: (e.clientY - r.top) / r.height * WORLD,
       };
     };
+    // Pointer events so fingers get the same treatment as the mouse: tap/press jumps
+    // the camera, dragging scrubs it (the old mouse-only listeners left touch with a
+    // single synthesized jump and no drag). Right-click keeps the move-order.
     let panning = false;
+    mm.style.touchAction = 'none';
     mm.addEventListener('contextmenu', e => e.preventDefault());
-    mm.addEventListener('mousedown', e => {
+    mm.addEventListener('pointerdown', e => {
       const w = toWorld(e);
-      if (e.button === 0) { panning = true; this.controls.moveCameraTo(w.x, w.z); }
-      else if (e.button === 2) {
+      if (e.button === 2) {
         const sel = this.game.selection.filter(s => s.isUnit && s.owner === this.game.localPlayer);
         if (sel.length) { this.game.cmd('formation', { sel, x: w.x, z: w.z, am: false, q: e.shiftKey }); Sound.command(); }
+        return;
       }
+      panning = true;
+      try { mm.setPointerCapture(e.pointerId); } catch {}
+      this.controls.moveCameraTo(w.x, w.z);
+      e.preventDefault();
     });
-    window.addEventListener('mousemove', e => {
-      if (panning) {
-        const r = mm.getBoundingClientRect();
-        if (e.clientX >= r.left - 30 && e.clientX <= r.right + 30 && e.clientY >= r.top - 30 && e.clientY <= r.bottom + 30) {
-          const w = toWorld(e); this.controls.moveCameraTo(w.x, w.z);
-        }
-      }
+    mm.addEventListener('pointermove', e => {
+      if (!panning) return;
+      const w = toWorld(e);
+      this.controls.moveCameraTo(w.x, w.z);
     });
-    window.addEventListener('mouseup', () => { panning = false; });
+    const stop = () => { panning = false; };
+    mm.addEventListener('pointerup', stop);
+    mm.addEventListener('pointercancel', stop);
   }
 
   drawMinimap() {
@@ -267,7 +274,12 @@ export class UI {
     const faction = this.game.me.faction;
 
     if (units.length) {
-      cmds.push({ icon: '⚔', label: 'Attack-Move (F)', cls: 'cmd-act', fn: () => { this.controls.attackMoveArm = true; } });
+      cmds.push({ icon: '⚔', label: 'Attack-Move (F)', cls: 'cmd-act' + (this.controls?.attackMoveArm ? ' cmd-on' : ''),
+        tip: 'Attack-move — advance and engage everything hostile on the way. Tap/click the destination next.',
+        fn: () => { this.controls.attackMoveArm = true; this.controls.patrolArm = false; this.toast('⚔ Now tap where to attack-move'); this.refreshPanel(); } });
+      cmds.push({ icon: '♺', label: 'Patrol (R)', cls: 'cmd-act' + (this.controls?.patrolArm ? ' cmd-on' : ''),
+        tip: 'Patrol — walk between here and the destination, engaging what appears. Tap/click the far point next.',
+        fn: () => { this.controls.patrolArm = true; this.controls.attackMoveArm = false; this.toast('♺ Now tap the far patrol point'); this.refreshPanel(); } });
       cmds.push({ icon: '✋', label: 'Stop (X)', cls: 'cmd-act', fn: () => this.game.cmd('stop', { sel: units }) });
       // combat stance — shared value highlighted when the whole selection agrees
       const fighters = units.filter(u => u.def.attack && !u.def.worker);
@@ -354,9 +366,72 @@ export class UI {
       btn.title = c.tip || c.label;
       btn.innerHTML = `<span class="cmd-icon">${c.icon}</span><span class="cmd-label">${c.label}</span>` +
         (c.sub ? `<span class="cmd-sub">${c.sub}</span>` : '');
-      btn.onclick = () => { if (!c.disabled) c.fn(); };
+      // hold-to-preview: touch has no hover, so a ~half-second press surfaces the
+      // tooltip (costs, requirements, what an ability does) as a toast instead of
+      // firing the command. Works on disabled buttons too (.disabled is a class).
+      let holdT = null, held = false;
+      btn.addEventListener('pointerdown', () => {
+        held = false;
+        if (c.tip) holdT = setTimeout(() => { held = true; this.toast('ℹ ' + c.tip.split('\n')[0]); }, 450);
+      });
+      const clearHold = () => { clearTimeout(holdT); holdT = null; };
+      btn.addEventListener('pointerup', clearHold);
+      btn.addEventListener('pointerleave', clearHold);
+      btn.addEventListener('pointercancel', clearHold);
+      btn.onclick = () => { if (held) { held = false; return; } if (!c.disabled) c.fn(); };
       this.elCmds.appendChild(btn);
     }
+    this.refreshGroupBar();
+  }
+
+  // ---------- control-group bar (touch-first: chips for Army + groups 1-4) ----------
+  // Chips build once and read this.controls only inside their handlers (set before any
+  // tap), so the bar can be built before controls is wired.
+  refreshGroupBar() {
+    const bar = document.getElementById('groupbar');
+    if (!bar) return;
+    if (!bar._built) {
+      bar._built = true;
+      const mk = (label, tap, hold, title) => {
+        const b = document.createElement('button');
+        b.className = 'gchip'; b.textContent = label; b.title = title;
+        let t = null, fired = false;
+        b.addEventListener('pointerdown', () => {
+          fired = false;
+          if (hold) t = setTimeout(() => { fired = true; hold(b); }, 450);
+        });
+        const clr = () => { clearTimeout(t); t = null; };
+        b.addEventListener('pointerup', clr);
+        b.addEventListener('pointerleave', clr);
+        b.addEventListener('pointercancel', clr);
+        b.onclick = () => { if (fired) { fired = false; return; } tap(b); };
+        bar.appendChild(b);
+        return b;
+      };
+      mk('⚔ Army', () => {
+        const n = this.controls.selectArmy();
+        if (n) { this.controls.snapToSelection(); Sound.click(); } else this.toast('No warriors in the field yet.');
+      }, null, 'Select every warrior you command');
+      for (const k of ['1', '2', '3', '4']) {
+        mk(k, (b) => {
+          if (this.controls.groupSize(k)) { this.controls.recallGroup(k); this.controls.snapToSelection(); }
+          else this.toast(`Hold ${k} to bind the current selection to it.`);
+        }, (b) => {
+          const n = this.controls.assignGroup(k);
+          this.toast(n ? `⚑ Group ${k} bound — ${n} under its banner.` : 'Select units first, then hold to bind.');
+          this.refreshGroupBar();
+        }, `Tap: select group ${k} · Hold: bind selection`);
+      }
+    }
+    // live counts on the chips
+    if (!this.controls) return;
+    const chips = bar.querySelectorAll('.gchip');
+    chips.forEach((b, i) => {
+      if (i === 0) return;
+      const n = this.controls.groupSize(String(i));
+      b.textContent = n ? `${i}·${n}` : String(i);
+      b.classList.toggle('gchip-set', n > 0);
+    });
   }
 
   // ---------- health bars ----------
@@ -423,6 +498,12 @@ export class UI {
     const el = document.createElement('div');
     el.className = 'toast';
     el.textContent = msg;
+    // battle alerts are tappable: touch has no Space key, so the toast itself jumps
+    // the camera to the trouble
+    if (/[⚠☠🌊]/.test(msg)) {
+      el.classList.add('toast-alert');
+      el.onclick = () => { if (this.controls?.jumpToAlert()) Sound.click(); };
+    }
     this.elToasts.appendChild(el);
     setTimeout(() => el.classList.add('fade'), 2600);
     setTimeout(() => el.remove(), 3300);
@@ -491,6 +572,7 @@ export class UI {
       this.refreshT = 0.25;
       this.drawResources();
       this.drawMinimap();
+      this.refreshGroupBar();
       // live-refresh queue/progress text when a building is selected,
       // and cooldown countdown when a unit with an ability is selected
       const s = this.game.selection;
