@@ -179,6 +179,8 @@ export class Unit extends Entity {
     this.abilityDebuffDur = 0;  // seconds remaining on an incoming damage debuff
     this.abilityDebuffMult = 1; // incoming damage multiplier while debuffed
     this.stunDur = 0;           // seconds remaining of stun (can't attack)
+    this.summoned = false;      // true for temporary ability-summoned thralls
+    this.life = 0;              // seconds of borrowed time left (summoned only)
     // Heroes level up by felling foes. Level scales damage + max HP; sim-side and
     // seeded, so it reproduces in replays and (with serialize below) round-trips saves.
     if (def.hero) { this.hero = true; this.level = 1; this.xp = 0; }
@@ -430,6 +432,22 @@ export class Unit extends Entity {
       if (this.abilityDebuffDur <= 0) { this.abilityDebuffDur = 0; this.abilityDebuffMult = 1; }
     }
     if (this.stunDur > 0) this.stunDur = Math.max(0, this.stunDur - dt);
+    // summoned thralls crumble when their borrowed time runs out
+    if (this.summoned) {
+      this.life -= dt;
+      if (this.life <= 0) {
+        if (this.game.map.fogStateAt(this.pos.x, this.pos.z) === 2) {
+          const dy = this.game.map.heightAt(this.pos.x, this.pos.z);
+          for (let i = 0; i < 6; i++) {
+            const a = Math.random() * Math.PI * 2, r = 0.3 + Math.random() * 0.6;
+            this.game.fxSpark.spawn(this.pos.x + Math.cos(a) * r, dy + 0.7, this.pos.z + Math.sin(a) * r,
+              0, 0.6, 0, 0.5, 0.14, 0.8);
+          }
+        }
+        this.die(null);
+        return;
+      }
+    }
 
     // deferred melee blow: lands when the lunge reaches the target — but only if
     // we're still attacking that same target (orders/target may have changed).
@@ -1611,6 +1629,55 @@ export class Game {
         }
         break;
       }
+      case 'heal': {
+        // restore HP to nearby allies (and, with repair, allied buildings). Deterministic:
+        // a flat amount, no randomness in what's healed.
+        const r = ab.radius || 6, amount = ab.amount || 40;
+        let touched = 0;
+        for (const u of this.units) {
+          if (u.dead || u.owner !== unit.owner) continue;
+          if (u === unit && !ab.selfToo) continue;
+          if (unit.distTo(u) <= r && u.hp < u.maxHp) { u.hp = Math.min(u.maxHp, u.hp + amount); touched++; }
+        }
+        if (ab.repair) for (const b of this.buildings) {
+          if (b.dead || b.owner !== unit.owner) continue;
+          if (unit.distTo(b) <= r + b.radius && b.hp < b.maxHp) { b.hp = Math.min(b.maxHp, b.hp + amount); touched++; }
+        }
+        // nothing hurt nearby — refund the cooldown (deterministic for every seat) and,
+        // for the local player only, explain why nothing happened
+        if (!touched) {
+          unit.abilityCd = 0;
+          if (unit.owner === this.localPlayer) this.emit('toast', 'Nothing nearby needs mending.');
+          return false;
+        }
+        if (visible) {
+          for (let i = 0; i < 10; i++) {
+            const a = i / 10 * Math.PI * 2, fr = 1.2 + Math.random() * r * 0.4;
+            this.fxSpark.spawn(unit.pos.x + Math.cos(a) * fr, gy + 0.9, unit.pos.z + Math.sin(a) * fr,
+              (Math.random() - 0.5), 1.8 + Math.random(), (Math.random() - 0.5), 0.6, 0.11, 0.9);
+          }
+          Sound.abilityBuff();
+        }
+        break;
+      }
+      case 'summon': {
+        // call up a few short-lived thralls that fight for the caster then crumble. The
+        // key must be a real faction unit; summoned units carry a lifespan and don't count
+        // against supply. All placement uses this.rand() so it stays replay/lockstep-safe.
+        const n = ab.count || 3, life = ab.duration || 18;
+        for (let i = 0; i < n; i++) {
+          const a = this.rand() * Math.PI * 2, r = 1.6 + this.rand() * 2.2;
+          const sx = unit.pos.x + Math.cos(a) * r, sz = unit.pos.z + Math.sin(a) * r;
+          const s = this.spawnUnit(unit.owner, ab.unit, sx, sz);
+          if (s) { s.summoned = true; s.life = life; if (unit.target) s.orderAttack(unit.target); }
+        }
+        this.recalcSupply();   // exclude the fresh summons from supply
+        if (visible) {
+          this.addEffect(unit.pos.x, unit.pos.z, (ab.count || 3) * 0.9 + 2, glowMat(0x9b6bff, 1.6));
+          Sound.abilityAoe();
+        }
+        break;
+      }
       case 'multi_shot': {
         const range = (unit.def.attack?.range || 12) + 3;
         const enemies = [];
@@ -1941,7 +2008,8 @@ export class Game {
         x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), hp: Math.round(u.hp),
         cy: u.carry || 0, ct: u.carryType || null, leash: u.leash || null,
         st: u.stance !== 'aggressive' ? u.stance : undefined,
-        lv: u.hero ? u.level : undefined, xp: u.hero ? u.xp : undefined })),
+        lv: u.hero ? u.level : undefined, xp: u.hero ? u.xp : undefined,
+        sm: u.summoned ? 1 : undefined, life: u.summoned ? +u.life.toFixed(2) : undefined })),
       buildings: this.buildings.filter(b => !b.dead).map(b => ({ o: b.owner, k: b.key, tx: b.tx, ty: b.ty,
         hp: Math.round(b.hp), c: b.complete, p: +(b.progress || 0).toFixed(3),
         q: b.trainQueue.map(j => ({ key: j.key, t: +j.t.toFixed(2), total: j.total, up: !!j.upgrade })),
@@ -1985,6 +2053,7 @@ export class Game {
       u.leash = us.leash || null;
       if (us.st) u.setStance(us.st);
       if (us.cy) { u.carry = us.cy; u.carryType = us.ct; }
+      if (us.sm) { u.summoned = true; u.life = us.life ?? 1; }   // keep summons temporary across save/load
       this.units.push(u);
     }
     this._combat = null;
@@ -2174,7 +2243,7 @@ export class Game {
   recalcSupply() {
     for (let owner = 0; owner < this.numPlayers; owner++) {
       const p = this.players[owner];
-      p.supplyUsed = this.units.filter(u => u.owner === owner && !u.dead).reduce((s, u) => s + (u.def.supply || 1), 0);
+      p.supplyUsed = this.units.filter(u => u.owner === owner && !u.dead && !u.summoned).reduce((s, u) => s + (u.def.supply || 1), 0);
       p.supplyCap = Math.min(SUPPLY_CAP, this.buildings.filter(b => b.owner === owner && b.complete && !b.dead)
         .reduce((s, b) => s + (b.def.supplyProvided || 0), 0));
     }
@@ -2226,6 +2295,8 @@ export class Game {
     const up = UPGRADES[key];
     const p = this.players[building.owner];
     if (!up || p.upgrades.has(key) || building.trainQueue.some(j => j.key === key)) return false;
+    // tier-2 upgrades require their tier-1 to be finished first (guards AI + net commands)
+    if (up.requires && !p.upgrades.has(up.requires)) return false;
     if (!this.canAfford(building.owner, up.cost)) {
       if (building.owner === 0) this.emit('toast', 'Not enough resources');
       return false;
