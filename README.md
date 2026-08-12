@@ -1,3 +1,5 @@
+
+
 # Shadow of the Watchers
 
 > An ancient-apocalyptic, browser-based real-time strategy game. Command one of three asymmetric factions across a mythic, pre-flood wasteland — build an economy, raise an army, and shatter your enemy before they shatter you.
@@ -8,7 +10,7 @@
 ![License: CC0-1.0](https://img.shields.io/badge/License-CC0%201.0-lightgrey.svg)
 ![Assets](https://img.shields.io/badge/assets-100%25%20procedural-orange)
 
-**[▶ Play it in your browser](https://atxgreene.github.io/Ugh-Guys-/)**
+**[▶ Play it in your browser](https://aethercraft.vercel.app/)**
 
 ---
 
@@ -91,7 +93,7 @@ The build output in `dist/` is plain static files, so it also deploys to Vercel,
 
 ## Deployment
 
-Every push to `main` triggers the [GitHub Actions workflow](.github/workflows/deploy.yml), which builds the Vite bundle and publishes it to GitHub Pages at **https://atxgreene.github.io/Ugh-Guys-/**.
+The playable game is hosted on Vercel. Pushes to `main` also trigger the [GitHub Actions workflow](.github/workflows/deploy.yml) to publish the marketing landing page to GitHub Pages at **https://atxgreene.github.io/Ugh-Guys-/**.
 
 ## License
 
